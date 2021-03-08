@@ -1,13 +1,13 @@
 [package]
 name = "session-open-group-server"
 version = "1.0.0"
-authors = ["Niels Andriesse <andriesseniels@gmail.com>"]
+authors = ["Niels Andriesse <niels@oxen.io>"]
 edition = "2018"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 rusqlite = "0.24"
+r2d2_sqlite = "0.17.0"
+r2d2 = "0.8.9"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tokio = { version = "1", features = ["full"] }
