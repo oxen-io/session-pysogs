@@ -24,22 +24,23 @@ async fn main() {
 }
 
 mod routes {
-    use warp::Filter;
+    use warp::{Filter, Rejection};
 
     use super::handlers;
-    use super::models::QueryOptions;
+    use super::models;
     use super::storage;
 
     /// POST /messages
     pub fn send_message(
         db_pool: storage::DatabaseConnectionPool,
-    ) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
-        warp::post()
+    ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+        return warp::post()
             .and(warp::path("messages"))
             .and(warp::body::content_length_limit(1024 * 256)) // Limit body size to 256 kb
             .and(warp::body::json()) // Expect JSON
             .and(warp::any().map(move || db_pool.clone()))
             .and_then(handlers::insert_message)
+            .recover(handle_error);
     }
 
     /// GET /messages
@@ -47,27 +48,36 @@ mod routes {
     /// Returns the last `count` messages.
     pub fn get_messages(
         db_pool: storage::DatabaseConnectionPool,
-    ) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
-        warp::get()
+    ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+        return warp::get()
             .and(warp::path("messages"))
-            .and(warp::query::<QueryOptions>())
+            .and(warp::query::<models::QueryOptions>())
             .and(warp::any().map(move || db_pool.clone()))
             .and_then(handlers::get_messages)
+            .recover(handle_error);
+    }
+
+    async fn handle_error(e: Rejection) -> Result<impl warp::Reply, Rejection> {
+        let reply = warp::reply::reply();
+        if let Some(models::ValidationError) = e.find() {
+            return Ok(warp::reply::with_status(reply, warp::http::StatusCode::BAD_REQUEST));
+        } else {
+            return Ok(warp::reply::with_status(reply, warp::http::StatusCode::INTERNAL_SERVER_ERROR));
+        }
     }
 }
 
 mod handlers {
     use log;
     use rusqlite::params;
-    use warp::http::StatusCode;
+    use warp::{Rejection, http::StatusCode};
 
-    use super::models::Message;
-    use super::models::QueryOptions;
+    use super::models;
     use super::storage;
 
     /// Inserts the given `message` into the database.
-    pub async fn insert_message(message: Message, db_pool: storage::DatabaseConnectionPool) -> Result<impl warp::Reply, warp::reject::Rejection> {
-        // TODO: Validation
+    pub async fn insert_message(message: models::Message, db_pool: storage::DatabaseConnectionPool) -> Result<impl warp::Reply, Rejection> {
+        if !message.is_valid() { return Err(warp::reject::custom(models::ValidationError)); }
         // Get a database connection
         let db_conn = storage::get_db_conn(&db_pool)?;
         // Insert the message
@@ -76,11 +86,11 @@ mod handlers {
             params![message.text],
         ).expect("Couldn't insert message into database."); // TODO: Fail gracefully
         // Return
-        Ok(StatusCode::CREATED)
+        return Ok(StatusCode::CREATED);
     }
 
     /// Returns the last `options.limit` messages from the database.
-    pub async fn get_messages(options: QueryOptions, db_pool: storage::DatabaseConnectionPool) -> Result<impl warp::Reply, warp::reject::Rejection> {
+    pub async fn get_messages(options: models::QueryOptions, db_pool: storage::DatabaseConnectionPool) -> Result<impl warp::Reply, Rejection> {
         // Get a database connection
         let db_conn = storage::get_db_conn(&db_pool)?;
         // Query the database
@@ -88,27 +98,36 @@ mod handlers {
             Ok(query) => query,
             Err(e) => { 
                 log::warn!("Couldn't create database query due to error: {:?}.", e);
-                return Err(warp::reject::custom(storage::DatabaseError)) 
+                return Err(warp::reject::custom(storage::DatabaseError)); 
             }
         };
-        let messages: Result<Vec<Message>, rusqlite::Error> = query.query_map(params![], |row| {
-            Ok(Message {
+        let messages: Result<Vec<models::Message>, rusqlite::Error> = query.query_map(params![], |row| {
+            Ok(models::Message {
                 text: row.get(0).unwrap() // TODO: Fail gracefully
             })
         }).unwrap().into_iter().take(options.limit.unwrap_or(std::u16::MAX).into()).collect(); // TODO: Fail gracefully
         // Return the messages
-        Ok(warp::reply::json(&messages.unwrap())) // TODO: Fail gracefully
+        return Ok(warp::reply::json(&messages.unwrap())); // TODO: Fail gracefully
     }
-
-    
 }
 
 mod models {
     use serde::{Deserialize, Serialize};
 
+    #[derive(Debug)]
+    pub struct ValidationError;
+    impl warp::reject::Reject for ValidationError { }
+
     #[derive(Deserialize, Serialize, Debug)]
     pub struct Message {
         pub text: String
+    }
+
+    impl Message {
+
+        pub fn is_valid(&self) -> bool {
+            return !self.text.is_empty();
+        }
     }
 
     #[derive(Debug, Deserialize)]
@@ -138,7 +157,7 @@ mod storage {
             Ok(db_conn) => return Ok(db_conn),
             Err(e) => { 
                 log::warn!("Couldn't get database connection from pool due to error: {:?}.", e);
-                return Err(warp::reject::custom(DatabaseError)) 
+                return Err(warp::reject::custom(DatabaseError));
             }
         }
     }
