@@ -1,12 +1,6 @@
 use rusqlite::{params};
 use r2d2_sqlite::SqliteConnectionManager;
-use serde::{Deserialize, Serialize};
 use warp::Filter;
-
-#[derive(Deserialize, Serialize, Debug)]
-struct Message {
-    text: String
-}
 
 #[tokio::main]
 async fn main() {
@@ -16,39 +10,94 @@ async fn main() {
     let db_conn = db_pool.get().unwrap();
 
     db_conn.execute(
-        "CREATE TABLE messages (
+        "CREATE TABLE IF NOT EXISTS messages (
             id INTEGER PRIMARY KEY,
             text TEXT
         )",
         params![]
     ).expect("Couldn't create messages table.");
 
-    // POST /messages
-    let send_message = warp::post()
-        .and(warp::path("messages"))
-        .and(warp::body::content_length_limit(1024 * 256)) // Limit body size to 256 kb
-        .and(warp::body::json()) // Expect JSON
-        .map(move |message: Message| {
-            let db_conn = db_pool.get().unwrap(); // TODO: Fail gracefully
+    // Routes
+    let get_messages = routes::get_messages(db_pool.clone());
+    let send_message = routes::send_message(db_pool.clone());
+    let routes = get_messages.or(send_message);
 
-            db_conn.execute(
-                "INSERT INTO messages (text) VALUES (?1)",
-                params![message.text],
-            ).expect("Couldn't insert message into database."); // TODO: Fail gracefully
+    warp::serve(routes).run(([127, 0, 0, 1], 3030)).await;
+}
 
-            let mut stmt = db_conn.prepare("SELECT text FROM messages").unwrap();
-            let mut messages_iter = stmt.query_map(params![], |row| {
-                Ok(Message {
-                    text: row.get(0).unwrap() // TODO: Fail gracefully
-                })
-            }).unwrap();
+mod routes {
+    use r2d2_sqlite::SqliteConnectionManager;
+    use warp::Filter;
 
-            for message in messages_iter {
-                println!("message {:?}", message.unwrap());
-            }
+    use super::handlers;
 
-            warp::reply::json(&message)
-        });
+    /// POST /messages
+    pub fn send_message(
+        db_pool: r2d2::Pool<SqliteConnectionManager>,
+    ) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
+        warp::post()
+            .and(warp::path("messages"))
+            .and(warp::body::content_length_limit(1024 * 256)) // Limit body size to 256 kb
+            .and(warp::body::json()) // Expect JSON
+            .and(warp::any().map(move || db_pool.clone()))
+            .and_then(handlers::insert_message)
+    }
 
-    warp::serve(send_message).run(([127, 0, 0, 1], 3030)).await;
+    /// GET /messages
+    /// 
+    /// Returns the last `count` messages.
+    pub fn get_messages(
+        db_pool: r2d2::Pool<SqliteConnectionManager>,
+    ) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
+        // TODO: Count
+        warp::get()
+            .and(warp::path("messages"))
+            .and(warp::any().map(move || db_pool.clone()))
+            .and_then(handlers::get_messages)
+    }
+}
+
+mod handlers {
+    use std::convert::Infallible;
+
+    use rusqlite::{params};
+    use r2d2_sqlite::SqliteConnectionManager;
+    use warp::http::StatusCode;
+
+    use super::models::Message;
+
+    /// Inserts the given `message` into the database.
+    pub async fn insert_message(message: Message, db_pool: r2d2::Pool<SqliteConnectionManager>) -> Result<impl warp::Reply, Infallible> {
+        let db_conn = db_pool.get().unwrap(); // TODO: Fail gracefully
+        db_conn.execute(
+            "INSERT INTO messages (text) VALUES (?1)",
+            params![message.text],
+        ).expect("Couldn't insert message into database."); // TODO: Fail gracefully
+        Ok(StatusCode::CREATED)
+    }
+
+    /// Returns the last `count` messages from the database.
+    pub async fn get_messages(db_pool: r2d2::Pool<SqliteConnectionManager>) -> Result<impl warp::Reply, Infallible> {
+        // TODO: Count
+        let db_conn = db_pool.get().unwrap(); // TODO: Fail gracefully
+        // TODO: Implement
+
+        // let mut stmt = db_conn.prepare("SELECT text FROM messages").unwrap(); // TODO: Fail gracefully
+        // let messages = stmt.query_map(params![], |row| {
+        //     Ok(Message {
+        //         text: row.get(0).unwrap() // TODO: Fail gracefully
+        //     })
+        // }).unwrap(); // TODO: Fail gracefully
+
+        Ok(StatusCode::CREATED)
+    }
+}
+
+mod models {
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Deserialize, Serialize, Debug)]
+    pub struct Message {
+        pub text: String
+    }
 }
