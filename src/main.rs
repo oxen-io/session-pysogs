@@ -82,14 +82,14 @@ mod handlers {
         let db_conn = db_pool.get().unwrap(); // TODO: Fail gracefully
         // TODO: Implement
 
-        // let mut stmt = db_conn.prepare("SELECT text FROM messages").unwrap(); // TODO: Fail gracefully
-        // let messages = stmt.query_map(params![], |row| {
-        //     Ok(Message {
-        //         text: row.get(0).unwrap() // TODO: Fail gracefully
-        //     })
-        // }).unwrap(); // TODO: Fail gracefully
+        let mut stmt = db_conn.prepare("SELECT text FROM messages").unwrap(); // TODO: Fail gracefully
+        let messages: Result<Vec<Message>, rusqlite::Error> = stmt.query_map(params![], |row| {
+            Ok(Message {
+                text: row.get(0).unwrap() // TODO: Fail gracefully
+            })
+        }).unwrap().into_iter().collect(); // TODO: Fail gracefully
 
-        Ok(StatusCode::CREATED)
+        Ok(warp::reply::json(&messages.unwrap()))
     }
 }
 
