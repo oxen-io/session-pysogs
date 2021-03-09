@@ -32,9 +32,11 @@ mod routes {
     use super::handlers;
     use super::models::QueryOptions;
 
+    type DatabaseConnectionPool = r2d2::Pool<SqliteConnectionManager>;
+
     /// POST /messages
     pub fn send_message(
-        db_pool: r2d2::Pool<SqliteConnectionManager>,
+        db_pool: DatabaseConnectionPool,
     ) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
         warp::post()
             .and(warp::path("messages"))
@@ -48,7 +50,7 @@ mod routes {
     /// 
     /// Returns the last `count` messages.
     pub fn get_messages(
-        db_pool: r2d2::Pool<SqliteConnectionManager>,
+        db_pool: DatabaseConnectionPool,
     ) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
         warp::get()
             .and(warp::path("messages"))
@@ -76,6 +78,7 @@ mod handlers {
 
     /// Inserts the given `message` into the database.
     pub async fn insert_message(message: Message, db_pool: DatabaseConnectionPool) -> Result<impl warp::Reply, warp::reject::Rejection> {
+        // TODO: Validation
         // Get a database connection
         let db_conn = get_db_conn(db_pool)?;
         // Insert the message
@@ -92,7 +95,8 @@ mod handlers {
         // Get a database connection
         let db_conn = get_db_conn(db_pool)?;
         // Query the database
-        let mut query = get_db_query("SELECT text FROM messages", db_conn)?;
+        let raw_query = "SELECT text FROM messages";
+        let mut query = get_db_query(&raw_query, db_conn)?;
         let messages: Result<Vec<Message>, rusqlite::Error> = query.query_map(params![], |row| {
             Ok(Message {
                 text: row.get(0).unwrap() // TODO: Fail gracefully
