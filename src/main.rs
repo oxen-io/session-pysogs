@@ -61,14 +61,15 @@ mod routes {
         let reply = warp::reply::reply();
         if let Some(models::ValidationError) = e.find() {
             return Ok(warp::reply::with_status(reply, warp::http::StatusCode::BAD_REQUEST));
-        } else {
+        } else if let Some(storage::DatabaseError) = e.find() {
             return Ok(warp::reply::with_status(reply, warp::http::StatusCode::INTERNAL_SERVER_ERROR));
+        } else {
+            return Err(e);
         }
     }
 }
 
 mod handlers {
-    use log;
     use rusqlite::params;
     use warp::{Rejection, http::StatusCode};
 
@@ -88,7 +89,7 @@ mod handlers {
         ) {
             Ok(_) => return Ok(StatusCode::OK),
             Err(e) => {
-                log::warn!("Couldn't insert message due to error: {:?}.", e);
+                println!("Couldn't insert message due to error: {:?}.", e);
                 return Err(warp::reject::custom(storage::DatabaseError)); 
             }
         }
@@ -104,7 +105,7 @@ mod handlers {
         let mut query = match db_conn.prepare(&raw_query) {
             Ok(query) => query,
             Err(e) => { 
-                log::warn!("Couldn't create database query due to error: {:?}.", e);
+                println!("Couldn't create database query due to error: {:?}.", e);
                 return Err(warp::reject::custom(storage::DatabaseError));
             }
         };
@@ -113,7 +114,7 @@ mod handlers {
         }) {
             Ok(rows) => rows,
             Err(e) => {
-                log::warn!("Couldn't query database due to error: {:?}.", e);
+                println!("Couldn't query database due to error: {:?}.", e);
                 return Err(warp::reject::custom(storage::DatabaseError));
             }
         };
@@ -124,7 +125,7 @@ mod handlers {
             match row {
                 Ok(message) => messages.push(message),
                 Err(e) => {
-                    log::warn!("Excluding message from response due to database error: {:?}.", e);
+                    println!("Excluding message from response due to database error: {:?}.", e);
                     continue;
                 }
             }
@@ -160,7 +161,6 @@ mod models {
 }
 
 mod storage {
-    use log;
     use r2d2_sqlite::SqliteConnectionManager;
 
     pub type DatabaseConnection = r2d2::PooledConnection<SqliteConnectionManager>;
@@ -179,7 +179,7 @@ mod storage {
         match db_pool.get() {
             Ok(db_conn) => return Ok(db_conn),
             Err(e) => { 
-                log::warn!("Couldn't get database connection from pool due to error: {:?}.", e);
+                println!("Couldn't get database connection from pool due to error: {:?}.", e);
                 return Err(warp::reject::custom(DatabaseError));
             }
         }
