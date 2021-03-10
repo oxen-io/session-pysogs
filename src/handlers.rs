@@ -5,32 +5,26 @@ use super::models;
 use super::storage;
 
 /// Inserts the given `message` into the database if it's valid.
-pub async fn insert_message(mut message: models::Message, db_pool: storage::DatabaseConnectionPool) -> Result<impl warp::Reply, Rejection> {
+pub async fn insert_message(mut message: models::Message, pool: storage::DatabaseConnectionPool) -> Result<impl warp::Reply, Rejection> {
     // Validate the message
     if !message.is_valid() { return Err(warp::reject::custom(models::ValidationError)); }
-    // Get a database connection
-    let db_conn = storage::get_db_conn(&db_pool)?;
+    // Get a database connection and open a transaction
+    let conn = storage::conn(&pool)?;
+    let tx = storage::tx(conn)?;
     // Insert the message
-    match db_conn.execute(
-        "INSERT INTO messages (text) VALUES (?1)",
-        params![message.text],
-    ) {
-        Ok(_) => {
-            let id = db_conn.last_insert_rowid(); // TODO: Is there a risk of the `execute()` above and this call not being sync?
-            message.server_id = Some(id);
-            return Ok(warp::reply::json(&message));
-        }
-        Err(e) => {
-            println!("Couldn't insert message due to error: {:?}.", e);
-            return Err(warp::reject::custom(storage::DatabaseError)); 
-        }
-    }
+    storage::exec("INSERT INTO messages (text) VALUES (?1)", params![message.text], &conn)?;
+    let id = conn.last_insert_rowid(); // TODO: Is there a risk of the `execute()` above and this call not being sync?
+    message.server_id = Some(id);
+    // Commit
+    tx.commit(); // TODO: Unwrap?
+    // Return
+    return Ok(warp::reply::json(&message));
 }
 
 /// Returns the last `options.limit` messages from the database.
-pub async fn get_messages(options: models::QueryOptions, db_pool: storage::DatabaseConnectionPool) -> Result<impl warp::Reply, Rejection> {
+pub async fn get_messages(options: models::QueryOptions, pool: storage::DatabaseConnectionPool) -> Result<impl warp::Reply, Rejection> {
     // Get a database connection
-    let db_conn = storage::get_db_conn(&db_pool)?;
+    let conn = storage::conn(&pool)?;
     // Unwrap parameters
     let from_server_id = options.from_server_id.unwrap_or(0);
     let limit = options.limit.unwrap_or(256); // Never return more than 256 messages at once
@@ -41,7 +35,7 @@ pub async fn get_messages(options: models::QueryOptions, db_pool: storage::Datab
     } else {
         raw_query = "SELECT id, text FROM messages ORDER BY rowid DESC LIMIT (?2)";
     }
-    let mut query = match db_conn.prepare(&raw_query) {
+    let mut query = match conn.prepare(&raw_query) {
         Ok(query) => query,
         Err(e) => { 
             println!("Couldn't create database query due to error: {:?}.", e);
@@ -74,18 +68,18 @@ pub async fn get_messages(options: models::QueryOptions, db_pool: storage::Datab
 }
 
 /// Deletes the message with the given `row_id` from the database, if it's present.
-pub async fn delete_message(row_id: i64, db_pool: storage::DatabaseConnectionPool) -> Result<impl warp::Reply, Rejection> {
+pub async fn delete_message(row_id: i64, pool: storage::DatabaseConnectionPool) -> Result<impl warp::Reply, Rejection> {
     // Get a database connection and open a transaction
-    let db_conn = storage::get_db_conn(&db_pool)?;
-    let tx = storage::get_tx(&db_conn)?;
+    let conn = storage::conn(&pool)?;
+    let tx = storage::tx(conn)?;
     // Delete the message if it's present
-    let changed_row_count = storage::execute("DELETE FROM messages WHERE rowid = (?1)", params![row_id], &db_conn)?;
+    let changed_row_count = storage::exec("DELETE FROM messages WHERE rowid = (?1)", params![row_id], &conn)?;
     // Update the deletions table if needed
     if changed_row_count > 0 {
-        storage::execute("INSERT INTO deletions (id) VALUES (?1)", params![row_id], &db_conn);
+        storage::exec("INSERT INTO deletions (id) VALUES (?1)", params![row_id], &conn);
     }
     // Commit
-    tx.commit();
+    tx.commit(); // TODO: Unwrap?
     // Return
     return Ok(StatusCode::OK);
 }
