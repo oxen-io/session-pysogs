@@ -4,6 +4,10 @@ use warp::{Rejection, http::StatusCode};
 use super::models;
 use super::storage;
 
+#[derive(Debug)]
+pub struct UnauthorizedError;
+impl warp::reject::Reject for UnauthorizedError { }
+
 /// Inserts the given `message` into the database if it's valid.
 pub async fn insert_message(mut message: models::Message, pool: storage::DatabaseConnectionPool) -> Result<impl warp::Reply, Rejection> {
     // Validate the message
@@ -101,6 +105,25 @@ pub async fn get_deleted_messages(options: models::QueryOptions, pool: storage::
 
 /// Returns the full list of moderators.
 pub async fn get_moderators(pool: storage::DatabaseConnectionPool) -> Result<impl warp::Reply, Rejection> {
+    let public_keys = get_moderators_vector(&pool)?;
+    return Ok(warp::reply::json(&public_keys));
+}
+
+/// Bans the given `public_key`, if the requesting user is a moderator.
+pub async fn ban(public_key: String, pool: storage::DatabaseConnectionPool) -> Result<impl warp::Reply, Rejection> {
+    // TODO: Authentication
+    return Ok(warp::reply::reply());
+}
+
+/// Unbans the given `public_key`, if the requesting user is a moderator.
+pub async fn unban(public_key: String, pool: storage::DatabaseConnectionPool) -> Result<impl warp::Reply, Rejection> {
+    // TODO: Authentication
+    return Ok(warp::reply::reply());
+}
+
+// Utilities
+
+pub fn get_moderators_vector(pool: &storage::DatabaseConnectionPool) -> Result<Vec<String>, Rejection> {
     // Get a database connection
     let conn = storage::conn(&pool)?;
     // Query the database
@@ -115,7 +138,11 @@ pub async fn get_moderators(pool: storage::DatabaseConnectionPool) -> Result<imp
             return Err(warp::reject::custom(storage::DatabaseError));
         }
     };
-    let public_keys: Vec<String> = rows.filter_map(|result| result.ok()).collect();
-    // Return the IDs
-    return Ok(warp::reply::json(&public_keys));
+    // Return
+    return Ok(rows.filter_map(|result| result.ok()).collect());
+}
+
+pub fn is_moderator(public_key: &str, pool: &storage::DatabaseConnectionPool) -> Result<bool, Rejection> {
+    let public_keys = get_moderators_vector(&pool)?;
+    return Ok(public_keys.contains(&public_key.to_owned()));
 }

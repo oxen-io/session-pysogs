@@ -1,4 +1,4 @@
-use warp::{Filter, Rejection};
+use warp::{Filter, http::StatusCode, Rejection};
 
 use super::handlers;
 use super::models;
@@ -43,6 +43,8 @@ pub fn delete_message(
 }
 
 /// GET /deleted_messages
+/// 
+/// Returns either the last `limit` deleted message IDs or all deleted message IDs since `from_server_id, limited to `limit`.
 pub fn get_deleted_messages(
     db_pool: storage::DatabaseConnectionPool
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
@@ -55,6 +57,8 @@ pub fn get_deleted_messages(
 }
 
 /// GET /moderators
+/// 
+/// Returns the full list of moderators.
 pub fn get_moderators(
     db_pool: storage::DatabaseConnectionPool
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
@@ -62,6 +66,30 @@ pub fn get_moderators(
         .and(warp::path("moderators"))
         .and(warp::any().map(move || db_pool.clone()))
         .and_then(handlers::get_moderators)
+        .recover(handle_error);
+}
+
+/// POST /block_list
+pub fn ban(
+    db_pool: storage::DatabaseConnectionPool
+) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+    return warp::post()
+        .and(warp::path("block_list"))
+        .and(warp::body::content_length_limit(256 * 1024)) // Limit body to an arbitrary low-ish size
+        .and(warp::body::json()) // Expect JSON
+        .and(warp::any().map(move || db_pool.clone()))
+        .and_then(handlers::ban)
+        .recover(handle_error);
+}
+
+/// DELETE /block_list/:public_key
+pub fn unban(
+    db_pool: storage::DatabaseConnectionPool
+) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+    return warp::delete()
+        .and(warp::path!("block_list" / String))
+        .and(warp::any().map(move || db_pool.clone()))
+        .and_then(handlers::unban)
         .recover(handle_error);
 }
 
@@ -74,16 +102,20 @@ pub fn get_all(
         .or(get_messages(db_pool.clone()))
         .or(delete_message(db_pool.clone()))
         .or(get_deleted_messages(db_pool.clone()))
-        .or(get_moderators(db_pool.clone()));
+        .or(get_moderators(db_pool.clone()))
+        .or(ban(db_pool.clone()));
 }
 
 async fn handle_error(e: Rejection) -> Result<impl warp::Reply, Rejection> {
     let reply = warp::reply::reply();
     if let Some(models::ValidationError) = e.find() {
-        return Ok(warp::reply::with_status(reply, warp::http::StatusCode::BAD_REQUEST)); // 400
+        return Ok(warp::reply::with_status(reply, StatusCode::BAD_REQUEST)); // 400
+    }
+    if let Some(handlers::UnauthorizedError) = e.find() {
+        return Ok(warp::reply::with_status(reply, StatusCode::FORBIDDEN)); // 403
     }
     if let Some(storage::DatabaseError) = e.find() {
-        return Ok(warp::reply::with_status(reply, warp::http::StatusCode::INTERNAL_SERVER_ERROR)); // 500
+        return Ok(warp::reply::with_status(reply, StatusCode::INTERNAL_SERVER_ERROR)); // 500
     }
     return Err(e);
 }
