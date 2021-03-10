@@ -10,7 +10,7 @@ pub fn send_message(
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     return warp::post()
         .and(warp::path("messages"))
-        .and(warp::body::content_length_limit(1024 * 256)) // Limit body size to 256 kb
+        .and(warp::body::content_length_limit(10 * 1024 * 1024)) // Match storage server
         .and(warp::body::json()) // Expect JSON
         .and(warp::any().map(move || db_pool.clone()))
         .and_then(handlers::insert_message)
@@ -28,6 +28,17 @@ pub fn get_messages(
         .and(warp::query::<models::QueryOptions>())
         .and(warp::any().map(move || db_pool.clone()))
         .and_then(handlers::get_messages)
+        .recover(handle_error);
+}
+
+/// DELETE /messages/:id
+pub fn delete_message(
+    db_pool: storage::DatabaseConnectionPool,
+) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+    return warp::delete()
+        .and(warp::path!("messages" / u32))
+        .and(warp::any().map(move || db_pool.clone()))
+        .and_then(handlers::delete_message)
         .recover(handle_error);
 }
 

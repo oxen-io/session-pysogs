@@ -29,15 +29,14 @@ pub async fn get_messages(options: models::QueryOptions, db_pool: storage::Datab
     let db_conn = storage::get_db_conn(&db_pool)?;
     // Query the database
     let limit = options.limit.unwrap_or(256); // Never return more than 256 messages at once
-    let raw_query = format!("SELECT text FROM messages ORDER BY rowid DESC LIMIT {}", limit); // Get the last `limit` messages
-    let mut query = match db_conn.prepare(&raw_query) {
+    let mut query = match db_conn.prepare("SELECT text FROM messages ORDER BY rowid DESC LIMIT (?1)") {
         Ok(query) => query,
         Err(e) => { 
             println!("Couldn't create database query due to error: {:?}.", e);
             return Err(warp::reject::custom(storage::DatabaseError));
         }
     };
-    let rows = match query.query_map(params![], |row| {
+    let rows = match query.query_map(params![limit], |row| {
         Ok(models::Message { text: row.get(0)? })
     }) {
         Ok(rows) => rows,
@@ -60,4 +59,21 @@ pub async fn get_messages(options: models::QueryOptions, db_pool: storage::Datab
     }
     // Return the messages
     return Ok(warp::reply::json(&messages));
+}
+
+/// Deletes the message with the given `row_id` from the database, if it's present.
+pub async fn delete_message(row_id: u32, db_pool: storage::DatabaseConnectionPool) -> Result<impl warp::Reply, Rejection> {
+    // Get a database connection
+    let db_conn = storage::get_db_conn(&db_pool)?;
+    // Delete the message if it's present
+    match db_conn.execute(
+        "DELETE FROM messages WHERE rowid = (?1)",
+        params![row_id],
+    ) {
+        Ok(_) => return Ok(StatusCode::OK),
+        Err(e) => {
+            println!("Couldn't delete message due to error: {:?}.", e);
+            return Err(warp::reject::custom(storage::DatabaseError)); 
+        }
+    }
 }

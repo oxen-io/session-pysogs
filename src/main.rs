@@ -21,9 +21,10 @@ async fn main() {
     ).expect("Couldn't create messages table.");
 
     // Routes
-    let get_messages = routes::get_messages(db_pool.clone());
     let send_message = routes::send_message(db_pool.clone());
-    let routes = get_messages.or(send_message);
+    let get_messages = routes::get_messages(db_pool.clone());
+    let delete_message = routes::delete_message(db_pool.clone());
+    let routes = send_message.or(get_messages).or(delete_message);
 
     warp::serve(routes).run(([127, 0, 0, 1], 3030)).await;
 }
