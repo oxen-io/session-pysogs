@@ -13,10 +13,10 @@ pub async fn insert_message(mut message: models::Message, pool: storage::Databas
     let tx = storage::tx(&mut conn)?;
     // Insert the message
     storage::exec("INSERT INTO messages (text) VALUES (?1)", params![message.text], &tx)?;
-    let id = tx.last_insert_rowid(); // TODO: Is there a risk of the `execute()` above and this call not being sync?
+    let id = tx.last_insert_rowid();
     message.server_id = Some(id);
     // Commit
-    tx.commit(); // TODO: Unwrap?
+    tx.commit(); // TODO: Unwrap
     // Return
     return Ok(warp::reply::json(&message));
 }
@@ -79,7 +79,7 @@ pub async fn delete_message(row_id: i64, pool: storage::DatabaseConnectionPool) 
         storage::exec("INSERT INTO deletions (id) VALUES (?1)", params![row_id], &tx)?;
     }
     // Commit
-    tx.commit(); // TODO: Unwrap?
+    tx.commit(); // TODO: Unwrap
     // Return
     return Ok(StatusCode::OK);
 }

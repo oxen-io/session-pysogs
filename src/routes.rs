@@ -4,14 +4,6 @@ use super::handlers;
 use super::models;
 use super::storage;
 
-pub fn get_all(
-    db_pool: &storage::DatabaseConnectionPool
-) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
-    return send_message(db_pool.clone())
-        .or(get_messages(db_pool.clone()))
-        .or(delete_message(db_pool.clone()));
-}
-
 /// POST /messages
 pub fn send_message(
     db_pool: storage::DatabaseConnectionPool
@@ -48,6 +40,16 @@ pub fn delete_message(
         .and(warp::any().map(move || db_pool.clone()))
         .and_then(handlers::delete_message)
         .recover(handle_error);
+}
+
+// Utilities
+
+pub fn get_all(
+    db_pool: &storage::DatabaseConnectionPool
+) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+    return send_message(db_pool.clone())
+        .or(get_messages(db_pool.clone()))
+        .or(delete_message(db_pool.clone()));
 }
 
 async fn handle_error(e: Rejection) -> Result<impl warp::Reply, Rejection> {

@@ -39,7 +39,7 @@ pub fn conn(pool: &DatabaseConnectionPool) -> Result<DatabaseConnection, Rejecti
     match pool.get() {
         Ok(conn) => return Ok(conn),
         Err(e) => { 
-            println!("Couldn't get database connection from pool due to error: {:?}.", e);
+            println!("Couldn't get database connection due to error: {:?}.", e);
             return Err(warp::reject::custom(DatabaseError));
         }
     }
