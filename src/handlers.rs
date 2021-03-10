@@ -98,3 +98,24 @@ pub async fn get_deleted_messages(options: models::QueryOptions, pool: storage::
     // Return the IDs
     return Ok(warp::reply::json(&ids));
 }
+
+/// Returns the full list of moderators.
+pub async fn get_moderators(pool: storage::DatabaseConnectionPool) -> Result<impl warp::Reply, Rejection> {
+    // Get a database connection
+    let conn = storage::conn(&pool)?;
+    // Query the database
+    let raw_query = format!("SELECT public_key FROM {}", storage::MODERATORS_TABLE);
+    let mut query = storage::query(&raw_query, &conn)?;
+    let rows = match query.query_map(params![], |row| {
+        Ok(row.get(0)?)
+    }) {
+        Ok(rows) => rows,
+        Err(e) => {
+            println!("Couldn't query database due to error: {:?}.", e);
+            return Err(warp::reject::custom(storage::DatabaseError));
+        }
+    };
+    let public_keys: Vec<String> = rows.filter_map(|result| result.ok()).collect();
+    // Return the IDs
+    return Ok(warp::reply::json(&public_keys));
+}

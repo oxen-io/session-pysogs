@@ -54,6 +54,17 @@ pub fn get_deleted_messages(
         .recover(handle_error);
 }
 
+/// GET /moderators
+pub fn get_moderators(
+    db_pool: storage::DatabaseConnectionPool
+) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+    return warp::get()
+        .and(warp::path("moderators"))
+        .and(warp::any().map(move || db_pool.clone()))
+        .and_then(handlers::get_moderators)
+        .recover(handle_error);
+}
+
 // Utilities
 
 pub fn get_all(
@@ -62,7 +73,8 @@ pub fn get_all(
     return send_message(db_pool.clone())
         .or(get_messages(db_pool.clone()))
         .or(delete_message(db_pool.clone()))
-        .or(get_deleted_messages(db_pool.clone()));
+        .or(get_deleted_messages(db_pool.clone()))
+        .or(get_moderators(db_pool.clone()));
 }
 
 async fn handle_error(e: Rejection) -> Result<impl warp::Reply, Rejection> {
