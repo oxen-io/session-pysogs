@@ -46,18 +46,7 @@ pub async fn get_messages(options: models::QueryOptions, pool: storage::Database
             return Err(warp::reject::custom(storage::DatabaseError));
         }
     };
-    // FIXME: It'd be cleaner to do the below using `collect()`, but the compiler has trouble
-    // inferring the item type of `rows` in that case.
-    let mut messages: Vec<models::Message> = Vec::new();
-    for row in rows {
-        match row {
-            Ok(message) => messages.push(message),
-            Err(e) => {
-                println!("Excluding message from response due to database error: {:?}.", e);
-                continue;
-            }
-        }
-    }
+    let messages: Vec<models::Message> = rows.filter_map(|result| result.ok()).collect();
     // Return the messages
     return Ok(warp::reply::json(&messages));
 }
@@ -105,18 +94,7 @@ pub async fn get_deleted_messages(options: models::QueryOptions, pool: storage::
             return Err(warp::reject::custom(storage::DatabaseError));
         }
     };
-    // FIXME: It'd be cleaner to do the below using `collect()`, but the compiler has trouble
-    // inferring the item type of `rows` in that case.
-    let mut ids: Vec<i64> = Vec::new();
-    for row in rows {
-        match row {
-            Ok(id) => ids.push(id),
-            Err(e) => {
-                println!("Excluding deleted message from response due to database error: {:?}.", e);
-                continue;
-            }
-        }
-    }
+    let ids: Vec<i64> = rows.filter_map(|result| result.ok()).collect();
     // Return the IDs
     return Ok(warp::reply::json(&ids));
 }
