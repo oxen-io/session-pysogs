@@ -1,3 +1,4 @@
+use regex::Regex;
 use rusqlite::params;
 use warp::{Rejection, http::StatusCode};
 
@@ -12,6 +13,9 @@ impl warp::reject::Reject for UnauthorizedError { }
 pub async fn insert_message(mut message: models::Message, pool: storage::DatabaseConnectionPool) -> Result<impl warp::Reply, Rejection> {
     // Validate the message
     if !message.is_valid() { return Err(warp::reject::custom(models::ValidationError)); }
+
+    // TODO: Check that the requesting user isn't banned
+
     // Get a connection and open a transaction
     let mut conn = storage::conn(&pool)?;
     let tx = storage::tx(&mut conn)?;
@@ -111,13 +115,39 @@ pub async fn get_moderators(pool: storage::DatabaseConnectionPool) -> Result<imp
 
 /// Bans the given `public_key`, if the requesting user is a moderator.
 pub async fn ban(public_key: String, pool: storage::DatabaseConnectionPool) -> Result<impl warp::Reply, Rejection> {
+    // Validate the public key
+    if !is_valid_public_key(&public_key) { return Err(warp::reject::custom(models::ValidationError)); }
+
     // TODO: Authentication
+
+    // Get a connection and open a transaction
+    let mut conn = storage::conn(&pool)?;
+    let tx = storage::tx(&mut conn)?;
+    // Insert the message
+    let stmt = format!("INSERT INTO {} (public_key) VALUES (?1)", storage::BLOCK_LIST_TABLE);
+    storage::exec(&stmt, params![ public_key ], &tx)?;
+    // Commit
+    tx.commit(); // TODO: Unwrap
+    // Return
     return Ok(warp::reply::reply());
 }
 
 /// Unbans the given `public_key`, if the requesting user is a moderator.
 pub async fn unban(public_key: String, pool: storage::DatabaseConnectionPool) -> Result<impl warp::Reply, Rejection> {
+    // Validate the public key
+    if !is_valid_public_key(&public_key) { return Err(warp::reject::custom(models::ValidationError)); }
+
     // TODO: Authentication
+
+    // Get a connection and open a transaction
+    let mut conn = storage::conn(&pool)?;
+    let tx = storage::tx(&mut conn)?;
+    // Insert the message
+    let stmt = format!("DELETE FROM {} WHERE public_key = (?1)", storage::BLOCK_LIST_TABLE);
+    storage::exec(&stmt, params![ public_key ], &tx)?;
+    // Commit
+    tx.commit(); // TODO: Unwrap
+    // Return
     return Ok(warp::reply::reply());
 }
 
@@ -145,4 +175,9 @@ pub fn get_moderators_vector(pool: &storage::DatabaseConnectionPool) -> Result<V
 pub fn is_moderator(public_key: &str, pool: &storage::DatabaseConnectionPool) -> Result<bool, Rejection> {
     let public_keys = get_moderators_vector(&pool)?;
     return Ok(public_keys.contains(&public_key.to_owned()));
+}
+
+pub fn is_valid_public_key(public_key: &str) -> bool {
+    let re = Regex::new(r"^[0-9a-fA-F]+$").unwrap(); // Force
+    return re.is_match(public_key);
 }

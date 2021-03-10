@@ -5,6 +5,7 @@ authors = ["Niels Andriesse <niels@oxen.io>"]
 edition = "2018"
 
 [dependencies]
+regex = "1.4"
 rusqlite = "0.24"
 r2d2_sqlite = "0.17.0"
 r2d2 = "0.8.9"
