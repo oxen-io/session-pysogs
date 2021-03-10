@@ -9,22 +9,25 @@ pub type DatabaseConnectionPool = r2d2::Pool<SqliteConnectionManager>;
 pub struct DatabaseError;
 impl warp::reject::Reject for DatabaseError { }
 
+pub const MESSAGES_TABLE: &str = "messages";
+pub const DELETED_MESSAGES_TABLE: &str = "deleted_messages";
+
 pub fn create_tables_if_needed(conn: &DatabaseConnection) {
     // Messages
     // The `id` field is needed to make `rowid` stable
     conn.execute(
-        "CREATE TABLE IF NOT EXISTS messages (
+        "CREATE TABLE IF NOT EXISTS (?1) (
             id INTEGER PRIMARY KEY,
             text TEXT
         )",
-        params![]
+        params![MESSAGES_TABLE]
     ).expect("Couldn't create messages table.");
     // Deletions
     conn.execute(
-        "CREATE TABLE IF NOT EXISTS deleted_messages (
+        "CREATE TABLE IF NOT EXISTS (?1) (
             id INTEGER PRIMARY KEY
         )",
-        params![]
+        params![DELETED_MESSAGES_TABLE]
     ).expect("Couldn't create deleted messages table.");
 }
 
@@ -64,4 +67,14 @@ pub fn exec(stmt: &str, params: &[&dyn rusqlite::ToSql], tx: &rusqlite::Transact
             return Err(warp::reject::custom(DatabaseError)); 
         }
     }
+}
+
+pub fn query<'a>(raw_query: &str, conn: &'a DatabaseConnection) -> Result<rusqlite::Statement<'a>, Rejection> {
+    match conn.prepare(raw_query) {
+        Ok(query) => return Ok(query),
+        Err(e) => { 
+            println!("Couldn't create database query due to error: {:?}.", e);
+            return Err(warp::reject::custom(DatabaseError));
+        }
+    };
 }
