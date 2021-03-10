@@ -36,7 +36,7 @@ pub fn delete_message(
     db_pool: storage::DatabaseConnectionPool,
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     return warp::delete()
-        .and(warp::path!("messages" / u32))
+        .and(warp::path!("messages" / i64))
         .and(warp::any().map(move || db_pool.clone()))
         .and_then(handlers::delete_message)
         .recover(handle_error);

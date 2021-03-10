@@ -1,4 +1,5 @@
 use rusqlite::params;
+use serde::{Deserialize, Serialize};
 use warp::{Rejection, http::StatusCode};
 
 use super::models;
@@ -15,7 +16,13 @@ pub async fn insert_message(message: models::Message, db_pool: storage::Database
         "INSERT INTO messages (text) VALUES (?1)",
         params![message.text],
     ) {
-        Ok(_) => return Ok(StatusCode::OK),
+        Ok(_) => {
+            let row_id = db_conn.last_insert_rowid();
+            #[derive(Deserialize, Serialize, Debug)]
+            struct JSON { server_id: i64 }
+            let json = JSON { server_id : row_id };
+            return Ok(warp::reply::json(&json));
+        }
         Err(e) => {
             println!("Couldn't insert message due to error: {:?}.", e);
             return Err(warp::reject::custom(storage::DatabaseError)); 
@@ -27,16 +34,24 @@ pub async fn insert_message(message: models::Message, db_pool: storage::Database
 pub async fn get_messages(options: models::QueryOptions, db_pool: storage::DatabaseConnectionPool) -> Result<impl warp::Reply, Rejection> {
     // Get a database connection
     let db_conn = storage::get_db_conn(&db_pool)?;
-    // Query the database
+    // Unwrap parameters
+    let from_server_id = options.from_server_id.unwrap_or(0);
     let limit = options.limit.unwrap_or(256); // Never return more than 256 messages at once
-    let mut query = match db_conn.prepare("SELECT text FROM messages ORDER BY rowid DESC LIMIT (?1)") {
+    // Query the database
+    let raw_query: &str;
+    if options.from_server_id.is_some() {
+        raw_query = "SELECT text FROM messages WHERE rowid > (?1) LIMIT (?2)";
+    } else {
+        raw_query = "SELECT text FROM messages ORDER BY rowid DESC LIMIT (?2)";
+    }
+    let mut query = match db_conn.prepare(&raw_query) {
         Ok(query) => query,
         Err(e) => { 
             println!("Couldn't create database query due to error: {:?}.", e);
             return Err(warp::reject::custom(storage::DatabaseError));
         }
     };
-    let rows = match query.query_map(params![limit], |row| {
+    let rows = match query.query_map(params![from_server_id, limit], |row| {
         Ok(models::Message { text: row.get(0)? })
     }) {
         Ok(rows) => rows,
@@ -62,7 +77,7 @@ pub async fn get_messages(options: models::QueryOptions, db_pool: storage::Datab
 }
 
 /// Deletes the message with the given `row_id` from the database, if it's present.
-pub async fn delete_message(row_id: u32, db_pool: storage::DatabaseConnectionPool) -> Result<impl warp::Reply, Rejection> {
+pub async fn delete_message(row_id: i64, db_pool: storage::DatabaseConnectionPool) -> Result<impl warp::Reply, Rejection> {
     // Get a database connection
     let db_conn = storage::get_db_conn(&db_pool)?;
     // Delete the message if it's present

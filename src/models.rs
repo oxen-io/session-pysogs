@@ -18,5 +18,6 @@ impl Message {
 
 #[derive(Debug, Deserialize)]
 pub struct QueryOptions {
-    pub limit: Option<u16>
+    pub limit: Option<u16>,
+    pub from_server_id: Option<i64>
 }
