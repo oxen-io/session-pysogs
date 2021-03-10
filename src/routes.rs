@@ -4,9 +4,17 @@ use super::handlers;
 use super::models;
 use super::storage;
 
+pub fn get_all(
+    db_pool: &storage::DatabaseConnectionPool
+) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+    return send_message(db_pool.clone())
+        .or(get_messages(db_pool.clone()))
+        .or(delete_message(db_pool.clone()));
+}
+
 /// POST /messages
 pub fn send_message(
-    db_pool: storage::DatabaseConnectionPool,
+    db_pool: storage::DatabaseConnectionPool
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     return warp::post()
         .and(warp::path("messages"))
@@ -21,7 +29,7 @@ pub fn send_message(
 /// 
 /// Returns the last `count` messages.
 pub fn get_messages(
-    db_pool: storage::DatabaseConnectionPool,
+    db_pool: storage::DatabaseConnectionPool
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     return warp::get()
         .and(warp::path("messages"))
@@ -33,7 +41,7 @@ pub fn get_messages(
 
 /// DELETE /messages/:id
 pub fn delete_message(
-    db_pool: storage::DatabaseConnectionPool,
+    db_pool: storage::DatabaseConnectionPool
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     return warp::delete()
         .and(warp::path!("messages" / i64))
