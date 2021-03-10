@@ -1,12 +1,11 @@
 use rusqlite::params;
-use serde::{Deserialize, Serialize};
 use warp::{Rejection, http::StatusCode};
 
 use super::models;
 use super::storage;
 
 /// Inserts the given `message` into the database if it's valid.
-pub async fn insert_message(message: models::Message, db_pool: storage::DatabaseConnectionPool) -> Result<impl warp::Reply, Rejection> {
+pub async fn insert_message(mut message: models::Message, db_pool: storage::DatabaseConnectionPool) -> Result<impl warp::Reply, Rejection> {
     // Validate the message
     if !message.is_valid() { return Err(warp::reject::custom(models::ValidationError)); }
     // Get a database connection
@@ -17,11 +16,9 @@ pub async fn insert_message(message: models::Message, db_pool: storage::Database
         params![message.text],
     ) {
         Ok(_) => {
-            let row_id = db_conn.last_insert_rowid();
-            #[derive(Deserialize, Serialize, Debug)]
-            struct JSON { server_id: i64 }
-            let json = JSON { server_id : row_id };
-            return Ok(warp::reply::json(&json));
+            let id = db_conn.last_insert_rowid();
+            message.server_id = Some(id);
+            return Ok(warp::reply::json(&message));
         }
         Err(e) => {
             println!("Couldn't insert message due to error: {:?}.", e);
@@ -40,9 +37,9 @@ pub async fn get_messages(options: models::QueryOptions, db_pool: storage::Datab
     // Query the database
     let raw_query: &str;
     if options.from_server_id.is_some() {
-        raw_query = "SELECT text FROM messages WHERE rowid > (?1) LIMIT (?2)";
+        raw_query = "SELECT id, text FROM messages WHERE rowid > (?1) LIMIT (?2)";
     } else {
-        raw_query = "SELECT text FROM messages ORDER BY rowid DESC LIMIT (?2)";
+        raw_query = "SELECT id, text FROM messages ORDER BY rowid DESC LIMIT (?2)";
     }
     let mut query = match db_conn.prepare(&raw_query) {
         Ok(query) => query,
@@ -52,7 +49,7 @@ pub async fn get_messages(options: models::QueryOptions, db_pool: storage::Datab
         }
     };
     let rows = match query.query_map(params![from_server_id, limit], |row| {
-        Ok(models::Message { text: row.get(0)? })
+        Ok(models::Message { server_id : row.get(0)?, text : row.get(1)? })
     }) {
         Ok(rows) => rows,
         Err(e) => {

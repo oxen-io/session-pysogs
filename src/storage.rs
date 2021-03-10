@@ -1,3 +1,4 @@
+use rusqlite::{params};
 use r2d2_sqlite::SqliteConnectionManager;
 
 pub type DatabaseConnection = r2d2::PooledConnection<SqliteConnectionManager>;
@@ -20,4 +21,15 @@ pub fn get_db_conn(db_pool: &DatabaseConnectionPool) -> Result<DatabaseConnectio
             return Err(warp::reject::custom(DatabaseError));
         }
     }
+}
+
+pub fn create_table_if_needed(db_conn: &DatabaseConnection) {
+    // The `id` field is needed to make `rowid` stable
+    db_conn.execute(
+        "CREATE TABLE IF NOT EXISTS messages (
+            id INTEGER PRIMARY KEY,
+            text TEXT
+        )",
+        params![]
+    ).expect("Couldn't create messages table.");
 }
