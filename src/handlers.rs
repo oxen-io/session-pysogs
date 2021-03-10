@@ -12,7 +12,8 @@ pub async fn insert_message(mut message: models::Message, pool: storage::Databas
     let mut conn = storage::conn(&pool)?;
     let tx = storage::tx(&mut conn)?;
     // Insert the message
-    storage::exec("INSERT INTO (?1) (text) VALUES (?2)", params![ storage::MESSAGES_TABLE, message.text ], &tx)?;
+    let stmt = format!("INSERT INTO {} (text) VALUES (?1)", storage::MESSAGES_TABLE);
+    storage::exec(&stmt, params![ message.text ], &tx)?;
     let id = tx.last_insert_rowid();
     message.server_id = Some(id);
     // Commit
@@ -29,14 +30,14 @@ pub async fn get_messages(options: models::QueryOptions, pool: storage::Database
     let from_server_id = options.from_server_id.unwrap_or(0);
     let limit = options.limit.unwrap_or(256); // Never return more than 256 messages at once
     // Query the database
-    let raw_query: &str;
+    let raw_query: String;
     if options.from_server_id.is_some() {
-        raw_query = "SELECT id, text FROM (?1) WHERE rowid > (?2) LIMIT (?3)";
+        raw_query = format!("SELECT id, text FROM {} WHERE rowid > (?1) LIMIT (?2)", storage::MESSAGES_TABLE);
     } else {
-        raw_query = "SELECT id, text FROM (?1) ORDER BY rowid DESC LIMIT (?3)";
+        raw_query = format!("SELECT id, text FROM {} ORDER BY rowid DESC LIMIT (?2)", storage::MESSAGES_TABLE);
     }
     let mut query = storage::query(&raw_query, &conn)?;
-    let rows = match query.query_map(params![ storage::MESSAGES_TABLE, from_server_id, limit ], |row| {
+    let rows = match query.query_map(params![ from_server_id, limit ], |row| {
         Ok(models::Message { server_id : row.get(0)?, text : row.get(1)? })
     }) {
         Ok(rows) => rows,
@@ -67,10 +68,12 @@ pub async fn delete_message(row_id: i64, pool: storage::DatabaseConnectionPool) 
     let mut conn = storage::conn(&pool)?;
     let tx = storage::tx(&mut conn)?;
     // Delete the message if it's present
-    let count = storage::exec("DELETE FROM (?1) WHERE rowid = (?2)", params![ storage::MESSAGES_TABLE, row_id ], &tx)?;
+    let stmt = format!("DELETE FROM {} WHERE rowid = (?1)", storage::MESSAGES_TABLE);
+    let count = storage::exec(&stmt, params![ row_id ], &tx)?;
     // Update the deletions table if needed
     if count > 0 {
-        storage::exec("INSERT INTO (?1) (id) VALUES (?2)", params![ storage::DELETED_MESSAGES_TABLE, row_id ], &tx)?;
+        let stmt = format!("INSERT INTO {} (id) VALUES (?1)", storage::DELETED_MESSAGES_TABLE);
+        storage::exec(&stmt, params![ row_id ], &tx)?;
     }
     // Commit
     tx.commit(); // TODO: Unwrap
@@ -86,14 +89,14 @@ pub async fn get_deleted_messages(options: models::QueryOptions, pool: storage::
     let from_server_id = options.from_server_id.unwrap_or(0);
     let limit = options.limit.unwrap_or(256); // Never return more than 256 deleted messages at once
     // Query the database
-    let raw_query: &str;
+    let raw_query: String;
     if options.from_server_id.is_some() {
-        raw_query = "SELECT id FROM (?1) WHERE rowid > (?2) LIMIT (?3)";
+        raw_query = format!("SELECT id FROM {} WHERE rowid > (?1) LIMIT (?2)", storage::DELETED_MESSAGES_TABLE);
     } else {
-        raw_query = "SELECT id FROM (?1) ORDER BY rowid DESC LIMIT (?3)";
+        raw_query = format!("SELECT id FROM {} ORDER BY rowid DESC LIMIT (?2)", storage::DELETED_MESSAGES_TABLE);
     }
     let mut query = storage::query(&raw_query, &conn)?;
-    let rows = match query.query_map(params![ storage::DELETED_MESSAGES_TABLE, from_server_id, limit ], |row| {
+    let rows = match query.query_map(params![ from_server_id, limit ], |row| {
         Ok(row.get(0)?)
     }) {
         Ok(rows) => rows,

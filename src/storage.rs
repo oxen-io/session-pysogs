@@ -15,20 +15,18 @@ pub const DELETED_MESSAGES_TABLE: &str = "deleted_messages";
 pub fn create_tables_if_needed(conn: &DatabaseConnection) {
     // Messages
     // The `id` field is needed to make `rowid` stable
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS (?1) (
-            id INTEGER PRIMARY KEY,
-            text TEXT
-        )",
-        params![MESSAGES_TABLE]
-    ).expect("Couldn't create messages table.");
-    // Deletions
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS (?1) (
+    let messages_table_cmd = format!(
+    "CREATE TABLE IF NOT EXISTS {} (
+        id INTEGER PRIMARY KEY,
+        text TEXT
+    )", MESSAGES_TABLE);
+    conn.execute(&messages_table_cmd, params![]).expect("Couldn't create messages table.");
+    // Deleted messages
+    let deleted_messages_table_cmd = format!(
+        "CREATE TABLE IF NOT EXISTS {} (
             id INTEGER PRIMARY KEY
-        )",
-        params![DELETED_MESSAGES_TABLE]
-    ).expect("Couldn't create deleted messages table.");
+        )", DELETED_MESSAGES_TABLE);
+    conn.execute(&deleted_messages_table_cmd, params![]).expect("Couldn't create deleted messages table.");
 }
 
 // Utilities
