@@ -19,7 +19,7 @@ pub fn send_message(
 
 /// GET /messages
 /// 
-/// Returns the last `count` messages.
+/// Returns either the last `limit` messages or all messages since `from_server_id, limited to `limit`.
 pub fn get_messages(
     db_pool: storage::DatabaseConnectionPool
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
@@ -42,6 +42,18 @@ pub fn delete_message(
         .recover(handle_error);
 }
 
+/// GET /deleted_messages
+pub fn get_deleted_messages(
+    db_pool: storage::DatabaseConnectionPool
+) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+    return warp::get()
+        .and(warp::path("deleted_messages"))
+        .and(warp::query::<models::QueryOptions>())
+        .and(warp::any().map(move || db_pool.clone()))
+        .and_then(handlers::get_deleted_messages)
+        .recover(handle_error);
+}
+
 // Utilities
 
 pub fn get_all(
@@ -49,7 +61,8 @@ pub fn get_all(
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     return send_message(db_pool.clone())
         .or(get_messages(db_pool.clone()))
-        .or(delete_message(db_pool.clone()));
+        .or(delete_message(db_pool.clone()))
+        .or(get_deleted_messages(db_pool.clone()));
 }
 
 async fn handle_error(e: Rejection) -> Result<impl warp::Reply, Rejection> {

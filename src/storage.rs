@@ -21,11 +21,11 @@ pub fn create_tables_if_needed(conn: &DatabaseConnection) {
     ).expect("Couldn't create messages table.");
     // Deletions
     conn.execute(
-        "CREATE TABLE IF NOT EXISTS deletions (
+        "CREATE TABLE IF NOT EXISTS deleted_messages (
             id INTEGER PRIMARY KEY
         )",
         params![]
-    ).expect("Couldn't create deletions table.");
+    ).expect("Couldn't create deleted messages table.");
 }
 
 // Utilities
