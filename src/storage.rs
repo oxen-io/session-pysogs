@@ -56,8 +56,8 @@ pub fn tx(conn: &mut DatabaseConnection) -> Result<rusqlite::Transaction, Reject
 }
 
 /// Returns the number of rows that changed as a result of executing the given `stmt`.
-pub fn exec(stmt: &str, params: &[&dyn rusqlite::ToSql], conn: &DatabaseConnection) -> Result<usize, Rejection> {
-    match conn.execute(stmt, params) {
+pub fn exec(stmt: &str, params: &[&dyn rusqlite::ToSql], tx: &rusqlite::Transaction) -> Result<usize, Rejection> {
+    match tx.execute(stmt, params) {
         Ok(count) => return Ok(count),
         Err(e) => {
             println!("Couldn't execute SQL statement due to error: {:?}.", e);

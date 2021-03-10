@@ -8,12 +8,12 @@ use super::storage;
 pub async fn insert_message(mut message: models::Message, pool: storage::DatabaseConnectionPool) -> Result<impl warp::Reply, Rejection> {
     // Validate the message
     if !message.is_valid() { return Err(warp::reject::custom(models::ValidationError)); }
-    // Get a database connection and open a transaction
-    let conn = storage::conn(&pool)?;
-    let tx = storage::tx(conn)?;
+    // Get a connection and open a transaction
+    let mut conn = storage::conn(&pool)?;
+    let tx = storage::tx(&mut conn)?;
     // Insert the message
-    storage::exec("INSERT INTO messages (text) VALUES (?1)", params![message.text], &conn)?;
-    let id = conn.last_insert_rowid(); // TODO: Is there a risk of the `execute()` above and this call not being sync?
+    storage::exec("INSERT INTO messages (text) VALUES (?1)", params![message.text], &tx)?;
+    let id = tx.last_insert_rowid(); // TODO: Is there a risk of the `execute()` above and this call not being sync?
     message.server_id = Some(id);
     // Commit
     tx.commit(); // TODO: Unwrap?
@@ -69,14 +69,14 @@ pub async fn get_messages(options: models::QueryOptions, pool: storage::Database
 
 /// Deletes the message with the given `row_id` from the database, if it's present.
 pub async fn delete_message(row_id: i64, pool: storage::DatabaseConnectionPool) -> Result<impl warp::Reply, Rejection> {
-    // Get a database connection and open a transaction
-    let conn = storage::conn(&pool)?;
-    let tx = storage::tx(conn)?;
+    // Get a connection and open a transaction
+    let mut conn = storage::conn(&pool)?;
+    let tx = storage::tx(&mut conn)?;
     // Delete the message if it's present
-    let changed_row_count = storage::exec("DELETE FROM messages WHERE rowid = (?1)", params![row_id], &conn)?;
+    let count = storage::exec("DELETE FROM messages WHERE rowid = (?1)", params![row_id], &tx)?;
     // Update the deletions table if needed
-    if changed_row_count > 0 {
-        storage::exec("INSERT INTO deletions (id) VALUES (?1)", params![row_id], &conn);
+    if count > 0 {
+        storage::exec("INSERT INTO deletions (id) VALUES (?1)", params![row_id], &tx)?;
     }
     // Commit
     tx.commit(); // TODO: Unwrap?
