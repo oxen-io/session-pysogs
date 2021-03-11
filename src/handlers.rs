@@ -12,7 +12,10 @@ impl warp::reject::Reject for UnauthorizedError { }
 /// Inserts the given `message` into the database if it's valid.
 pub async fn insert_message(mut message: models::Message, pool: storage::DatabaseConnectionPool) -> Result<impl warp::Reply, Rejection> {
     // Validate the message
-    if !message.is_valid() { return Err(warp::reject::custom(models::ValidationError)); }
+    if !message.is_valid() { 
+        println!("Ignoring invalid message.");
+        return Err(warp::reject::custom(models::ValidationError)); 
+    }
 
     // TODO: Check that the requesting user isn't banned
 
@@ -119,7 +122,10 @@ pub async fn get_moderators(pool: storage::DatabaseConnectionPool) -> Result<imp
 /// Bans the given `public_key`, if the requesting user is a moderator.
 pub async fn ban(public_key: String, pool: storage::DatabaseConnectionPool) -> Result<impl warp::Reply, Rejection> {
     // Validate the public key
-    if !is_valid_public_key(&public_key) { return Err(warp::reject::custom(models::ValidationError)); }
+    if !is_valid_public_key(&public_key) { 
+        println!("Ignoring ban request for invalid public key.");
+        return Err(warp::reject::custom(models::ValidationError)); 
+    }
 
     // TODO: Check that the requesting user is a moderator
 
@@ -140,7 +146,10 @@ pub async fn ban(public_key: String, pool: storage::DatabaseConnectionPool) -> R
 /// Unbans the given `public_key`, if the requesting user is a moderator.
 pub async fn unban(public_key: String, pool: storage::DatabaseConnectionPool) -> Result<impl warp::Reply, Rejection> {
     // Validate the public key
-    if !is_valid_public_key(&public_key) { return Err(warp::reject::custom(models::ValidationError)); }
+    if !is_valid_public_key(&public_key) { 
+        println!("Ignoring unban request for invalid public key.");
+        return Err(warp::reject::custom(models::ValidationError)); 
+    }
 
     // TODO: Check that the requesting user is a moderator
 

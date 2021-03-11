@@ -1,3 +1,4 @@
+mod crypto;
 mod handlers;
 mod models;
 mod routes;
