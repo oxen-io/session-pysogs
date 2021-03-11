@@ -93,6 +93,19 @@ pub fn unban(
         .recover(handle_error);
 }
 
+/// GET /block_list
+/// 
+/// Returns the full list of banned public keys.
+pub fn get_block_list(
+    db_pool: storage::DatabaseConnectionPool
+) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+    return warp::get()
+        .and(warp::path("block_list"))
+        .and(warp::any().map(move || db_pool.clone()))
+        .and_then(handlers::get_banned_public_keys)
+        .recover(handle_error);
+}
+
 // Utilities
 
 pub fn get_all(
@@ -103,7 +116,9 @@ pub fn get_all(
         .or(delete_message(db_pool.clone()))
         .or(get_deleted_messages(db_pool.clone()))
         .or(get_moderators(db_pool.clone()))
-        .or(ban(db_pool.clone()));
+        .or(ban(db_pool.clone()))
+        .or(unban(db_pool.clone()))
+        .or(get_block_list(db_pool.clone()));
 }
 
 async fn handle_error(e: Rejection) -> Result<impl warp::Reply, Rejection> {

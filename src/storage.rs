@@ -12,7 +12,7 @@ impl warp::reject::Reject for DatabaseError { }
 pub const MESSAGES_TABLE: &str = "messages";
 pub const DELETED_MESSAGES_TABLE: &str = "deleted_messages";
 pub const MODERATORS_TABLE: &str = "moderators";
-pub const BLOCK_LIST_TABLE: &str = "moderators";
+pub const BLOCK_LIST_TABLE: &str = "block_list";
 
 pub fn create_tables_if_needed(conn: &DatabaseConnection) {
     // Messages

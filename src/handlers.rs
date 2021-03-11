@@ -61,6 +61,9 @@ pub async fn get_messages(options: models::QueryOptions, pool: storage::Database
 
 /// Deletes the message with the given `row_id` from the database, if it's present.
 pub async fn delete_message(row_id: i64, pool: storage::DatabaseConnectionPool) -> Result<impl warp::Reply, Rejection> {
+    
+    // TODO: Check that the requesting user has permission (either it's their own message or they're a moderator)
+
     // Get a connection and open a transaction
     let mut conn = storage::conn(&pool)?;
     let tx = storage::tx(&mut conn)?;
@@ -118,7 +121,7 @@ pub async fn ban(public_key: String, pool: storage::DatabaseConnectionPool) -> R
     // Validate the public key
     if !is_valid_public_key(&public_key) { return Err(warp::reject::custom(models::ValidationError)); }
 
-    // TODO: Authentication
+    // TODO: Check that the requesting user is a moderator
 
     // Get a connection and open a transaction
     let mut conn = storage::conn(&pool)?;
@@ -137,7 +140,7 @@ pub async fn unban(public_key: String, pool: storage::DatabaseConnectionPool) ->
     // Validate the public key
     if !is_valid_public_key(&public_key) { return Err(warp::reject::custom(models::ValidationError)); }
 
-    // TODO: Authentication
+    // TODO: Check that the requesting user is a moderator
 
     // Get a connection and open a transaction
     let mut conn = storage::conn(&pool)?;
@@ -149,6 +152,15 @@ pub async fn unban(public_key: String, pool: storage::DatabaseConnectionPool) ->
     tx.commit(); // TODO: Unwrap
     // Return
     return Ok(warp::reply::reply());
+}
+
+/// Returns the full list of banned public keys.
+pub async fn get_banned_public_keys(pool: storage::DatabaseConnectionPool) -> Result<impl warp::Reply, Rejection> {
+
+    // TODO: Check that the requesting user is a moderator
+
+    let public_keys = get_banned_public_keys_vector(&pool)?;
+    return Ok(warp::reply::json(&public_keys));
 }
 
 // Utilities
@@ -177,7 +189,36 @@ pub fn is_moderator(public_key: &str, pool: &storage::DatabaseConnectionPool) ->
     return Ok(public_keys.contains(&public_key.to_owned()));
 }
 
+pub fn get_banned_public_keys_vector(pool: &storage::DatabaseConnectionPool) -> Result<Vec<String>, Rejection> {
+    // Get a database connection
+    let conn = storage::conn(&pool)?;
+    // Query the database
+    let raw_query = format!("SELECT public_key FROM {}", storage::BLOCK_LIST_TABLE);
+    let mut query = storage::query(&raw_query, &conn)?;
+    let rows = match query.query_map(params![], |row| {
+        Ok(row.get(0)?)
+    }) {
+        Ok(rows) => rows,
+        Err(e) => {
+            println!("Couldn't query database due to error: {:?}.", e);
+            return Err(warp::reject::custom(storage::DatabaseError));
+        }
+    };
+    // Return
+    return Ok(rows.filter_map(|result| result.ok()).collect());
+}
+
+pub fn is_banned(public_key: &str, pool: &storage::DatabaseConnectionPool) -> Result<bool, Rejection> {
+    let public_keys = get_banned_public_keys_vector(&pool)?;
+    return Ok(public_keys.contains(&public_key.to_owned()));
+}
+
 pub fn is_valid_public_key(public_key: &str) -> bool {
+    // Check that it's a valid hex encoding
     let re = Regex::new(r"^[0-9a-fA-F]+$").unwrap(); // Force
-    return re.is_match(public_key);
+    if !re.is_match(public_key) { return false; };
+    // Check that it's the right length
+    if public_key.len() != 66 { return false } // The version byte + 32 bytes of random data
+    // It appears to be a valid public key
+    return true
 }
