@@ -123,6 +123,8 @@ pub async fn ban(public_key: String, pool: storage::DatabaseConnectionPool) -> R
 
     // TODO: Check that the requesting user is a moderator
 
+    // Don't double ban public keys
+    if is_banned(&public_key, &pool)? { return Ok(warp::reply::reply()); }
     // Get a connection and open a transaction
     let mut conn = storage::conn(&pool)?;
     let tx = storage::tx(&mut conn)?;
