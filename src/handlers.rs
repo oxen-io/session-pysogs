@@ -163,6 +163,11 @@ pub async fn get_banned_public_keys(pool: storage::DatabaseConnectionPool) -> Re
     return Ok(warp::reply::json(&public_keys));
 }
 
+pub async fn get_member_count(pool: storage::DatabaseConnectionPool) -> Result<impl warp::Reply, Rejection> {
+    let member_count = 5;
+    return Ok(warp::reply::json(&member_count));
+}
+
 // Utilities
 
 pub fn get_moderators_vector(pool: &storage::DatabaseConnectionPool) -> Result<Vec<String>, Rejection> {

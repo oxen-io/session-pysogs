@@ -106,6 +106,17 @@ pub fn get_block_list(
         .recover(handle_error);
 }
 
+/// GET /member_count
+pub fn get_member_count(
+    db_pool: storage::DatabaseConnectionPool
+) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+    return warp::get()
+        .and(warp::path("member_count"))
+        .and(warp::any().map(move || db_pool.clone()))
+        .and_then(handlers::get_member_count)
+        .recover(handle_error);
+}
+
 // Utilities
 
 pub fn get_all(
@@ -118,7 +129,8 @@ pub fn get_all(
         .or(get_moderators(db_pool.clone()))
         .or(ban(db_pool.clone()))
         .or(unban(db_pool.clone()))
-        .or(get_block_list(db_pool.clone()));
+        .or(get_block_list(db_pool.clone()))
+        .or(get_member_count(db_pool.clone()));
 }
 
 async fn handle_error(e: Rejection) -> Result<impl warp::Reply, Rejection> {
