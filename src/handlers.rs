@@ -3,6 +3,7 @@ use rusqlite::params;
 use warp::{Rejection, http::StatusCode};
 
 use super::models;
+use super::routes;
 use super::storage;
 
 #[derive(Debug)]
@@ -34,7 +35,7 @@ pub async fn insert_message(mut message: models::Message, pool: storage::Databas
 }
 
 /// Returns either the last `limit` messages or all messages since `from_server_id, limited to `limit`.
-pub async fn get_messages(options: models::QueryOptions, pool: storage::DatabaseConnectionPool) -> Result<impl warp::Reply, Rejection> {
+pub async fn get_messages(options: routes::QueryOptions, pool: storage::DatabaseConnectionPool) -> Result<impl warp::Reply, Rejection> {
     // Get a database connection
     let conn = storage::conn(&pool)?;
     // Unwrap parameters
@@ -85,7 +86,7 @@ pub async fn delete_message(row_id: i64, pool: storage::DatabaseConnectionPool) 
 }
 
 /// Returns either the last `limit` deleted messages or all deleted messages since `from_server_id, limited to `limit`.
-pub async fn get_deleted_messages(options: models::QueryOptions, pool: storage::DatabaseConnectionPool) -> Result<impl warp::Reply, Rejection> {
+pub async fn get_deleted_messages(options: routes::QueryOptions, pool: storage::DatabaseConnectionPool) -> Result<impl warp::Reply, Rejection> {
     // Get a database connection
     let conn = storage::conn(&pool)?;
     // Unwrap parameters

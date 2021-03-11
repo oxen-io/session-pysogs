@@ -16,7 +16,8 @@ pub const BLOCK_LIST_TABLE: &str = "block_list";
 
 pub fn create_tables_if_needed(conn: &DatabaseConnection) {
     // Messages
-    // The `id` field is needed to make `rowid` stable
+    // The `id` field is needed to make `rowid` stable, which is important because otherwise
+    // the `id`s in this table won't correspond to those in the deleted messages table
     let messages_table_cmd = format!(
     "CREATE TABLE IF NOT EXISTS {} (
         id INTEGER PRIMARY KEY,

@@ -1,8 +1,30 @@
+use serde::Deserialize;
 use warp::{Filter, http::StatusCode, Rejection};
 
+use super::crypto;
 use super::handlers;
+use super::lsrpc;
 use super::models;
 use super::storage;
+
+#[derive(Debug, Deserialize)]
+pub struct QueryOptions {
+    pub limit: Option<u16>,
+    pub from_server_id: Option<i64>
+}
+
+/// POST /loki/v3/lsrpc
+pub fn lsrpc(
+    db_pool: storage::DatabaseConnectionPool
+) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+    return warp::post()
+        .and(warp::path("loki/v3/lsrpc"))
+        .and(warp::body::content_length_limit(10 * 1024 * 1024)) // Match storage server
+        .and(warp::body::bytes()) // Expect bytes
+        .and(warp::any().map(move || db_pool.clone()))
+        .and_then(lsrpc::handle_lsrpc_request)
+        .recover(handle_error);
+}
 
 /// POST /messages
 pub fn send_message(
@@ -25,7 +47,7 @@ pub fn get_messages(
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     return warp::get()
         .and(warp::path("messages"))
-        .and(warp::query::<models::QueryOptions>())
+        .and(warp::query::<QueryOptions>())
         .and(warp::any().map(move || db_pool.clone()))
         .and_then(handlers::get_messages)
         .recover(handle_error);
@@ -50,7 +72,7 @@ pub fn get_deleted_messages(
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     return warp::get()
         .and(warp::path("deleted_messages"))
-        .and(warp::query::<models::QueryOptions>())
+        .and(warp::query::<QueryOptions>())
         .and(warp::any().map(move || db_pool.clone()))
         .and_then(handlers::get_deleted_messages)
         .recover(handle_error);
@@ -122,7 +144,8 @@ pub fn get_member_count(
 pub fn get_all(
     db_pool: &storage::DatabaseConnectionPool
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
-    return send_message(db_pool.clone())
+    return lsrpc(db_pool.clone())
+        .or(send_message(db_pool.clone()))
         .or(get_messages(db_pool.clone()))
         .or(delete_message(db_pool.clone()))
         .or(get_deleted_messages(db_pool.clone()))
@@ -136,6 +159,12 @@ pub fn get_all(
 async fn handle_error(e: Rejection) -> Result<impl warp::Reply, Rejection> {
     let reply = warp::reply::reply();
     if let Some(models::ValidationError) = e.find() {
+        return Ok(warp::reply::with_status(reply, StatusCode::BAD_REQUEST)); // 400
+    }
+    if let Some(crypto::DecryptionError) = e.find() {
+        return Ok(warp::reply::with_status(reply, StatusCode::BAD_REQUEST)); // 400
+    }
+    if let Some(lsrpc::ParsingError) = e.find() {
         return Ok(warp::reply::with_status(reply, StatusCode::BAD_REQUEST)); // 400
     }
     if let Some(handlers::UnauthorizedError) = e.find() {

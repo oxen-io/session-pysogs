@@ -1,5 +1,6 @@
 mod crypto;
 mod handlers;
+mod lsrpc;
 mod models;
 mod routes;
 mod storage;

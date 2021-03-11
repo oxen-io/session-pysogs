@@ -1,3 +1,4 @@
 /target
 *.db
 .DS_Store
+*.pem
