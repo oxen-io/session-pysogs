@@ -164,7 +164,7 @@ pub async fn get_banned_public_keys(pool: storage::DatabaseConnectionPool) -> Re
 }
 
 pub async fn get_member_count(pool: storage::DatabaseConnectionPool) -> Result<impl warp::Reply, Rejection> {
-    let member_count = 5;
+    let member_count = 5; // TODO: Implement
     return Ok(warp::reply::json(&member_count));
 }
 
