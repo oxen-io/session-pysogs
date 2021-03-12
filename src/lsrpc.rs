@@ -110,7 +110,7 @@ fn get_private_key() -> x25519_dalek::StaticSecret {
     return curve25519_parser::parse_openssl_25519_privkey(bytes).unwrap();
 }
 
-fn get_public_key() -> x25519_dalek::PublicKey {
+pub fn get_public_key() -> x25519_dalek::PublicKey {
     let bytes = include_bytes!("../x25519_public_key.pem");
     return curve25519_parser::parse_openssl_25519_pubkey(bytes).unwrap();
 }

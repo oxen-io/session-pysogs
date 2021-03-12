@@ -30,6 +30,9 @@ pub async fn insert_message(mut message: models::Message, pool: &storage::Databa
     message.server_id = Some(id);
     // Commit
     tx.commit(); // TODO: Unwrap
+
+    println!("Inserted message with text: {}.", message.text);
+
     // Return
     return Ok(warp::reply::json(&message).into_response());
 }
