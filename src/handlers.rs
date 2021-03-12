@@ -1,6 +1,6 @@
 use regex::Regex;
 use rusqlite::params;
-use warp::{Rejection, http::StatusCode};
+use warp::{Rejection, http::StatusCode, reply::Reply, reply::Response};
 
 use super::models;
 use super::rpc;
@@ -11,7 +11,7 @@ pub struct UnauthorizedError;
 impl warp::reject::Reject for UnauthorizedError { }
 
 /// Inserts the given `message` into the database if it's valid.
-pub async fn insert_message(mut message: models::Message, pool: &storage::DatabaseConnectionPool) -> Result<warp::reply::Json, Rejection> {
+pub async fn insert_message(mut message: models::Message, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
     // Validate the message
     if !message.is_valid() { 
         println!("Ignoring invalid message.");
@@ -31,11 +31,11 @@ pub async fn insert_message(mut message: models::Message, pool: &storage::Databa
     // Commit
     tx.commit(); // TODO: Unwrap
     // Return
-    return Ok(warp::reply::json(&message));
+    return Ok(warp::reply::json(&message).into_response());
 }
 
 /// Returns either the last `limit` messages or all messages since `from_server_id, limited to `limit`.
-pub async fn get_messages(options: rpc::QueryOptions, pool: &storage::DatabaseConnectionPool) -> Result<warp::reply::Json, Rejection> {
+pub async fn get_messages(options: rpc::QueryOptions, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
     // Get a database connection
     let conn = storage::conn(pool)?;
     // Unwrap parameters
@@ -60,11 +60,11 @@ pub async fn get_messages(options: rpc::QueryOptions, pool: &storage::DatabaseCo
     };
     let messages: Vec<models::Message> = rows.filter_map(|result| result.ok()).collect();
     // Return the messages
-    return Ok(warp::reply::json(&messages));
+    return Ok(warp::reply::json(&messages).into_response());
 }
 
 /// Deletes the message with the given `row_id` from the database, if it's present.
-pub async fn delete_message(row_id: i64, pool: &storage::DatabaseConnectionPool) -> Result<StatusCode, Rejection> {
+pub async fn delete_message(row_id: i64, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
     
     // TODO: Check that the requesting user has permission (either it's their own message or they're a moderator)
 
@@ -82,11 +82,11 @@ pub async fn delete_message(row_id: i64, pool: &storage::DatabaseConnectionPool)
     // Commit
     tx.commit(); // TODO: Unwrap
     // Return
-    return Ok(StatusCode::OK);
+    return Ok(StatusCode::OK.into_response());
 }
 
 /// Returns either the last `limit` deleted messages or all deleted messages since `from_server_id, limited to `limit`.
-pub async fn get_deleted_messages(options: rpc::QueryOptions, pool: &storage::DatabaseConnectionPool) -> Result<warp::reply::Json, Rejection> {
+pub async fn get_deleted_messages(options: rpc::QueryOptions, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
     // Get a database connection
     let conn = storage::conn(pool)?;
     // Unwrap parameters
@@ -111,17 +111,17 @@ pub async fn get_deleted_messages(options: rpc::QueryOptions, pool: &storage::Da
     };
     let ids: Vec<i64> = rows.filter_map(|result| result.ok()).collect();
     // Return the IDs
-    return Ok(warp::reply::json(&ids));
+    return Ok(warp::reply::json(&ids).into_response());
 }
 
 /// Returns the full list of moderators.
-pub async fn get_moderators(pool: &storage::DatabaseConnectionPool) -> Result<warp::reply::Json, Rejection> {
-    let public_keys = get_moderators_vector(pool)?;
-    return Ok(warp::reply::json(&public_keys));
+pub async fn get_moderators(pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
+    let public_keys = get_moderators_vector(pool).await?;
+    return Ok(warp::reply::json(&public_keys).into_response());
 }
 
 /// Bans the given `public_key`, if the requesting user is a moderator.
-pub async fn ban(public_key: String, pool: &storage::DatabaseConnectionPool) -> Result<StatusCode, Rejection> {
+pub async fn ban(public_key: String, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
     // Validate the public key
     if !is_valid_public_key(&public_key) { 
         println!("Ignoring ban request for invalid public key.");
@@ -131,7 +131,7 @@ pub async fn ban(public_key: String, pool: &storage::DatabaseConnectionPool) -> 
     // TODO: Check that the requesting user is a moderator
 
     // Don't double ban public keys
-    if is_banned(&public_key, pool)? { return Ok(StatusCode::OK); }
+    if is_banned(&public_key, pool).await? { return Ok(StatusCode::OK.into_response()); }
     // Get a connection and open a transaction
     let mut conn = storage::conn(pool)?;
     let tx = storage::tx(&mut conn)?;
@@ -141,11 +141,11 @@ pub async fn ban(public_key: String, pool: &storage::DatabaseConnectionPool) -> 
     // Commit
     tx.commit(); // TODO: Unwrap
     // Return
-    return Ok(StatusCode::OK);
+    return Ok(StatusCode::OK.into_response());
 }
 
 /// Unbans the given `public_key`, if the requesting user is a moderator.
-pub async fn unban(public_key: String, pool: &storage::DatabaseConnectionPool) -> Result<StatusCode, Rejection> {
+pub async fn unban(public_key: String, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
     // Validate the public key
     if !is_valid_public_key(&public_key) { 
         println!("Ignoring unban request for invalid public key.");
@@ -155,7 +155,7 @@ pub async fn unban(public_key: String, pool: &storage::DatabaseConnectionPool) -
     // TODO: Check that the requesting user is a moderator
 
     // Don't double unban public keys
-    if !is_banned(&public_key, pool)? { return Ok(StatusCode::OK); }
+    if !is_banned(&public_key, pool).await? { return Ok(StatusCode::OK.into_response()); }
     // Get a connection and open a transaction
     let mut conn = storage::conn(pool)?;
     let tx = storage::tx(&mut conn)?;
@@ -165,26 +165,26 @@ pub async fn unban(public_key: String, pool: &storage::DatabaseConnectionPool) -
     // Commit
     tx.commit(); // TODO: Unwrap
     // Return
-    return Ok(StatusCode::OK);
+    return Ok(StatusCode::OK.into_response());
 }
 
 /// Returns the full list of banned public keys.
-pub async fn get_banned_public_keys(pool: &storage::DatabaseConnectionPool) -> Result<warp::reply::Json, Rejection> {
+pub async fn get_banned_public_keys(pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
 
     // TODO: Check that the requesting user is a moderator
 
-    let public_keys = get_banned_public_keys_vector(pool)?;
-    return Ok(warp::reply::json(&public_keys));
+    let public_keys = get_banned_public_keys_vector(pool).await?;
+    return Ok(warp::reply::json(&public_keys).into_response());
 }
 
-pub async fn get_member_count(pool: &storage::DatabaseConnectionPool) -> Result<warp::reply::Json, Rejection> {
+pub async fn get_member_count(pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
     let member_count = 5; // TODO: Implement
-    return Ok(warp::reply::json(&member_count));
+    return Ok(warp::reply::json(&member_count).into_response());
 }
 
 // Utilities
 
-pub fn get_moderators_vector(pool: &storage::DatabaseConnectionPool) -> Result<Vec<String>, Rejection> {
+pub async fn get_moderators_vector(pool: &storage::DatabaseConnectionPool) -> Result<Vec<String>, Rejection> {
     // Get a database connection
     let conn = storage::conn(&pool)?;
     // Query the database
@@ -203,12 +203,12 @@ pub fn get_moderators_vector(pool: &storage::DatabaseConnectionPool) -> Result<V
     return Ok(rows.filter_map(|result| result.ok()).collect());
 }
 
-pub fn is_moderator(public_key: &str, pool: &storage::DatabaseConnectionPool) -> Result<bool, Rejection> {
-    let public_keys = get_moderators_vector(&pool)?;
+pub async fn is_moderator(public_key: &str, pool: &storage::DatabaseConnectionPool) -> Result<bool, Rejection> {
+    let public_keys = get_moderators_vector(&pool).await?;
     return Ok(public_keys.contains(&public_key.to_owned()));
 }
 
-pub fn get_banned_public_keys_vector(pool: &storage::DatabaseConnectionPool) -> Result<Vec<String>, Rejection> {
+pub async fn get_banned_public_keys_vector(pool: &storage::DatabaseConnectionPool) -> Result<Vec<String>, Rejection> {
     // Get a database connection
     let conn = storage::conn(&pool)?;
     // Query the database
@@ -227,8 +227,8 @@ pub fn get_banned_public_keys_vector(pool: &storage::DatabaseConnectionPool) -> 
     return Ok(rows.filter_map(|result| result.ok()).collect());
 }
 
-pub fn is_banned(public_key: &str, pool: &storage::DatabaseConnectionPool) -> Result<bool, Rejection> {
-    let public_keys = get_banned_public_keys_vector(&pool)?;
+pub async fn is_banned(public_key: &str, pool: &storage::DatabaseConnectionPool) -> Result<bool, Rejection> {
+    let public_keys = get_banned_public_keys_vector(&pool).await?;
     return Ok(public_keys.contains(&public_key.to_owned()));
 }
 

@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use warp::{http::StatusCode, Rejection};
+use warp::{Rejection, reply::Response};
 
 use super::handlers;
 use super::lsrpc;
@@ -15,7 +15,7 @@ pub struct QueryOptions {
 pub struct InvalidRequestError;
 impl warp::reject::Reject for InvalidRequestError { }
 
-pub async fn handle_rpc_call(rpc_call: lsrpc::RpcCall, pool: &storage::DatabaseConnectionPool) -> Result<impl warp::Reply, Rejection> {
+pub async fn handle_rpc_call(rpc_call: lsrpc::RpcCall, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
     // Check that the endpoint is a valid URI
     let uri = match rpc_call.endpoint.parse::<http::Uri>() {
         Ok(uri) => uri,
@@ -36,7 +36,7 @@ pub async fn handle_rpc_call(rpc_call: lsrpc::RpcCall, pool: &storage::DatabaseC
     }
 }
 
-async fn handle_get_request(rpc_call: lsrpc::RpcCall, uri: http::Uri, pool: &storage::DatabaseConnectionPool) -> Result<warp::reply::Json, Rejection> {
+async fn handle_get_request(rpc_call: lsrpc::RpcCall, uri: http::Uri, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
     // Parse query options if needed
     let mut query_options = QueryOptions { limit : None, from_server_id : None };
     if let Some(query) = uri.query() {
@@ -62,7 +62,7 @@ async fn handle_get_request(rpc_call: lsrpc::RpcCall, uri: http::Uri, pool: &sto
     }
 }
 
-async fn handle_post_request(rpc_call: lsrpc::RpcCall, uri: http::Uri, pool: &storage::DatabaseConnectionPool) -> Result<impl warp::Reply, Rejection> {
+async fn handle_post_request(rpc_call: lsrpc::RpcCall, uri: http::Uri, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
     match uri.path() {
         "/messages" => {
             let message = match serde_json::from_str(&rpc_call.body) {
@@ -85,7 +85,7 @@ async fn handle_post_request(rpc_call: lsrpc::RpcCall, uri: http::Uri, pool: &st
     }
 }
 
-async fn handle_delete_request(rpc_call: lsrpc::RpcCall, uri: http::Uri, pool: &storage::DatabaseConnectionPool) -> Result<StatusCode, Rejection> {
+async fn handle_delete_request(rpc_call: lsrpc::RpcCall, uri: http::Uri, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
     // DELETE /messages/:server_id
     if uri.path().starts_with("/messages") {
         let components: Vec<&str> = uri.path()[1..].split("/").collect(); // Drop the leading slash and split on subsequent slashes
@@ -95,7 +95,7 @@ async fn handle_delete_request(rpc_call: lsrpc::RpcCall, uri: http::Uri, pool: &
         }
         let server_id: i64 = match components[1].parse() {
             Ok(server_id) => server_id,
-            Err(e) => {
+            Err(_) => {
                 println!("Invalid endpoint: {:?}.", rpc_call.endpoint);
                 return Err(warp::reject::custom(InvalidRequestError));
             }
