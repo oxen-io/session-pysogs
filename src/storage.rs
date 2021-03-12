@@ -1,4 +1,4 @@
-use rusqlite::{params};
+use rusqlite::params;
 use r2d2_sqlite::SqliteConnectionManager;
 use warp::Rejection;
 

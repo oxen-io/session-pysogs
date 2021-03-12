@@ -6,9 +6,8 @@ edition = "2018"
 
 [dependencies]
 aes-gcm = "0.8.0"
+curve25519-parser = "0.2.0"
 hex = "0.4.3"
-lazy_static = "1.4.0"
-pem = "0.8.3"
 regex = "1.4"
 rusqlite = "0.24"
 r2d2_sqlite = "0.17.0"

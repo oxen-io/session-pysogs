@@ -18,7 +18,7 @@ pub fn lsrpc(
     db_pool: storage::DatabaseConnectionPool
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     return warp::post()
-        .and(warp::path("loki/v3/lsrpc"))
+        .and(warp::path("loki")).and(warp::path("v3")).and(warp::path("lsrpc"))
         .and(warp::body::content_length_limit(10 * 1024 * 1024)) // Match storage server
         .and(warp::body::bytes()) // Expect bytes
         .and(warp::any().map(move || db_pool.clone()))

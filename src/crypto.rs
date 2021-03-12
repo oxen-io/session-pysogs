@@ -15,16 +15,14 @@ impl warp::reject::Reject for DecryptionError { }
 
 const IV_SIZE: usize = 12;
 
-pub fn get_x25519_symmetric_key(public_key: Vec<u8>, private_key: Vec<u8>) -> Result<Vec<u8>, warp::reject::Rejection> {
+pub fn get_x25519_symmetric_key(public_key: Vec<u8>, private_key: x25519_dalek::StaticSecret) -> Result<Vec<u8>, warp::reject::Rejection> {
     if public_key.len() != 32 {
         println!("Couldn't create symmetric key using public key of invalid length.");
         return Err(warp::reject::custom(DecryptionError)); 
     }
-    let private_key: [u8; 32] = private_key.try_into().unwrap(); // Guaranteed to be 32 bytes
-    let dalek_private_key = x25519_dalek::StaticSecret::from(private_key);
     let public_key: [u8; 32] = public_key.try_into().unwrap();
     let dalek_public_key = x25519_dalek::PublicKey::from(public_key);
-    let symmetric_key = dalek_private_key.diffie_hellman(&dalek_public_key);
+    let symmetric_key = private_key.diffie_hellman(&dalek_public_key);
     return Ok(symmetric_key.to_bytes().try_into().unwrap());
 }
 

@@ -66,19 +66,25 @@ fn parse_lsrpc_request(blob: warp::hyper::body::Bytes) -> Result<LSRPCPayload, R
 }
 
 fn decrypt_lsrpc_request(payload: LSRPCPayload) -> Result<Vec<u8>, Rejection> {
-    let public_key = hex::decode(payload.metadata.ephemeral_key).unwrap(); // Safe because it was validated in the parsing step
-    let symmetric_key = crypto::get_x25519_symmetric_key(public_key, get_private_key())?;
+    let ephemeral_key = hex::decode(payload.metadata.ephemeral_key).unwrap(); // Safe because it was validated in the parsing step
+    let symmetric_key = crypto::get_x25519_symmetric_key(ephemeral_key, get_private_key())?;
     let plaintext = crypto::decrypt_aes_gcm(payload.ciphertext, symmetric_key)?;
     return Ok(plaintext);
 }
 
 // Utilities
 
-// FIXME: get_private_key() should be a lazy static variable
+// FIXME: get_private_key() and get_public_key() should be lazy static variables
 
-fn get_private_key() -> Vec<u8> {
-    let raw = std::fs::read_to_string("x25519_private_key.pem").unwrap();
-    return pem::parse(raw).unwrap().contents;
+fn get_private_key() -> x25519_dalek::StaticSecret {
+    let bytes = include_bytes!("../x25519_private_key.pem");
+    return curve25519_parser::parse_openssl_25519_privkey(bytes).unwrap(); // Force
+}
+
+pub fn get_public_key() -> x25519_dalek::PublicKey {
+    let bytes = include_bytes!("../x25519_public_key.pem");
+    return curve25519_parser::parse_openssl_25519_pubkey(bytes).unwrap(); // Force
+    
 }
 
 fn as_le_u32(array: &[u8; 4]) -> u32 {
