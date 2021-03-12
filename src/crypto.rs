@@ -19,7 +19,7 @@ impl warp::reject::Reject for DecryptionError { }
 
 const IV_SIZE: usize = 12;
 
-pub fn get_x25519_symmetric_key(public_key: Vec<u8>, private_key: x25519_dalek::StaticSecret) -> Result<Vec<u8>, warp::reject::Rejection> {
+pub async fn get_x25519_symmetric_key(public_key: Vec<u8>, private_key: x25519_dalek::StaticSecret) -> Result<Vec<u8>, warp::reject::Rejection> {
     if public_key.len() != 32 {
         println!("Couldn't create symmetric key using public key of invalid length.");
         return Err(warp::reject::custom(DecryptionError)); 
@@ -32,7 +32,7 @@ pub fn get_x25519_symmetric_key(public_key: Vec<u8>, private_key: x25519_dalek::
     return Ok(mac.finalize().into_bytes().to_vec());
 }
 
-pub fn decrypt_aes_gcm(iv_and_ciphertext: Vec<u8>, symmetric_key: Vec<u8>) -> Result<Vec<u8>, warp::reject::Rejection> {
+pub async fn decrypt_aes_gcm(iv_and_ciphertext: Vec<u8>, symmetric_key: Vec<u8>) -> Result<Vec<u8>, warp::reject::Rejection> {
     if iv_and_ciphertext.len() < IV_SIZE { 
         println!("Ignoring ciphertext of invalid size.");
         return Err(warp::reject::custom(DecryptionError)); 

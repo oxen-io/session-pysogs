@@ -1,12 +1,8 @@
-use std::convert::TryFrom;
-
 use serde::Deserialize;
-use warp::{Filter, http::StatusCode, Rejection};
+use warp::{http::StatusCode, Rejection};
 
-use super::crypto;
 use super::handlers;
 use super::lsrpc;
-use super::models;
 use super::storage;
 
 #[derive(Debug, Deserialize)]
@@ -30,9 +26,9 @@ pub async fn handle_rpc_call(rpc_call: lsrpc::RpcCall, pool: &storage::DatabaseC
     };
     // Switch on the HTTP method
     match rpc_call.method.as_ref() {
-        "GET" => return handle_get_rpc_call(rpc_call, uri, pool).await,
-        "POST" => return handle_post_rpc_call(rpc_call, uri, pool).await,
-        "DELETE" => return handle_delete_rpc_call(rpc_call, uri, pool).await,
+        "GET" => return handle_get_request(rpc_call, uri, pool).await,
+        "POST" => return handle_post_request(rpc_call, uri, pool).await,
+        "DELETE" => return handle_delete_request(rpc_call, uri, pool).await,
         _ => {
             println!("Ignoring RPC call with invalid or unused HTTP method: {:?}.", rpc_call.method);
             return Err(warp::reject::custom(InvalidRequestError));
@@ -40,7 +36,7 @@ pub async fn handle_rpc_call(rpc_call: lsrpc::RpcCall, pool: &storage::DatabaseC
     }
 }
 
-pub async fn handle_get_rpc_call(rpc_call: lsrpc::RpcCall, uri: http::Uri, pool: &storage::DatabaseConnectionPool) -> Result<warp::reply::Json, Rejection> {
+async fn handle_get_request(rpc_call: lsrpc::RpcCall, uri: http::Uri, pool: &storage::DatabaseConnectionPool) -> Result<warp::reply::Json, Rejection> {
     // Parse query options if needed
     let mut query_options = QueryOptions { limit : None, from_server_id : None };
     if let Some(query) = uri.query() {
@@ -66,7 +62,7 @@ pub async fn handle_get_rpc_call(rpc_call: lsrpc::RpcCall, uri: http::Uri, pool:
     }
 }
 
-pub async fn handle_post_rpc_call(rpc_call: lsrpc::RpcCall, uri: http::Uri, pool: &storage::DatabaseConnectionPool) -> Result<impl warp::Reply, Rejection> {
+async fn handle_post_request(rpc_call: lsrpc::RpcCall, uri: http::Uri, pool: &storage::DatabaseConnectionPool) -> Result<impl warp::Reply, Rejection> {
     match uri.path() {
         "/messages" => {
             let message = match serde_json::from_str(&rpc_call.body) {
@@ -78,7 +74,10 @@ pub async fn handle_post_rpc_call(rpc_call: lsrpc::RpcCall, uri: http::Uri, pool
             };
             return handlers::insert_message(message, pool).await; 
         },
-        "/block_list" => return handlers::ban(rpc_call.body, pool).await,
+        "/block_list" => {
+            let public_key = rpc_call.body;
+            return handlers::ban(public_key, pool).await;
+        },
         _ => {
             println!("Ignoring RPC call with invalid or unused endpoint: {:?}.", rpc_call.endpoint);
             return Err(warp::reject::custom(InvalidRequestError));        
@@ -86,7 +85,7 @@ pub async fn handle_post_rpc_call(rpc_call: lsrpc::RpcCall, uri: http::Uri, pool
     }
 }
 
-pub async fn handle_delete_rpc_call(rpc_call: lsrpc::RpcCall, uri: http::Uri, pool: &storage::DatabaseConnectionPool) -> Result<StatusCode, Rejection> {
+async fn handle_delete_request(rpc_call: lsrpc::RpcCall, uri: http::Uri, pool: &storage::DatabaseConnectionPool) -> Result<StatusCode, Rejection> {
     // DELETE /messages/:server_id
     if uri.path().starts_with("/messages") {
         let components: Vec<&str> = uri.path()[1..].split("/").collect(); // Drop the leading slash and split on subsequent slashes
@@ -114,6 +113,6 @@ pub async fn handle_delete_rpc_call(rpc_call: lsrpc::RpcCall, uri: http::Uri, po
         return handlers::unban(public_key, pool).await;
     }
     // Unrecognized endpoint
-    println!("Invalid endpoint: {:?}.", rpc_call.endpoint);
+    println!("Ignoring RPC call with invalid or unused endpoint: {:?}.", rpc_call.endpoint);
     return Err(warp::reject::custom(InvalidRequestError));
 }
