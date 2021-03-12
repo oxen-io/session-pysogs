@@ -8,14 +8,21 @@ use super::crypto;
 use super::storage;
 
 #[derive(Deserialize, Serialize, Debug)]
-struct LSRPCPayload {
+struct LsrpcPayload {
     pub ciphertext: Vec<u8>,
-    pub metadata: LSRPCPayloadMetadata
+    pub metadata: LsrpcPayloadMetadata
 }
 
 #[derive(Deserialize, Serialize, Debug)]
-struct LSRPCPayloadMetadata {
+struct LsrpcPayloadMetadata {
     pub ephemeral_key: String
+}
+
+#[derive(Deserialize, Serialize, Debug)]
+struct RpcCall {
+    pub endpoint: String,
+    pub body: String,
+    pub method: String
 }
 
 #[derive(Debug)]
@@ -23,13 +30,26 @@ pub struct ParsingError;
 impl warp::reject::Reject for ParsingError { }
 
 pub async fn handle_lsrpc_request(blob: warp::hyper::body::Bytes, pool: storage::DatabaseConnectionPool) -> Result<impl warp::Reply, Rejection> {
-    let payload = parse_lsrpc_request(blob)?;
-    let plaintext = decrypt_lsrpc_request(payload)?;
-    println!("{}", String::from_utf8(plaintext).unwrap());
+    let payload = parse_lsrpc_payload(blob)?;
+    let plaintext = decrypt_lsrpc_payload(payload)?;
+    let json = match String::from_utf8(plaintext) {
+        Ok(json) => json,
+        Err(e) => {
+            println!("Couldn't parse RPC call from JSON due to error: {:?}.", e);
+            return Err(warp::reject::custom(ParsingError));
+        }
+    };
+    let rpc_call = match serde_json::from_str(&json) {
+        Ok(rpc_call) => rpc_call,
+        Err(e) => {
+            println!("Couldn't parse RPC call from JSON due to error: {:?}.", e);
+            return Err(warp::reject::custom(ParsingError));
+        }
+    };
     return Ok(warp::reply::reply());
 }
 
-fn parse_lsrpc_request(blob: warp::hyper::body::Bytes) -> Result<LSRPCPayload, Rejection> {
+fn parse_lsrpc_payload(blob: warp::hyper::body::Bytes) -> Result<LsrpcPayload, Rejection> {
     // The encoding of onion requests looks like: | 4 bytes: size N of ciphertext | N bytes: ciphertext | json as utf8 |
     if blob.len() < 4 { 
         println!("Ignoring blob of invalid size.");
@@ -49,24 +69,24 @@ fn parse_lsrpc_request(blob: warp::hyper::body::Bytes) -> Result<LSRPCPayload, R
         }
     };
     // Parse metadata
-    let metadata: LSRPCPayloadMetadata = match serde_json::from_str(&json) {
+    let metadata: LsrpcPayloadMetadata = match serde_json::from_str(&json) {
         Ok(metadata) => metadata,
         Err(e) => {
-            println!("Couldn't parse LSRPC request metadata due to error: {:?}.", e);
+            println!("Couldn't parse LSRPC payload metadata due to error: {:?}.", e);
             return Err(warp::reject::custom(ParsingError));
         }
     };
     // Check that the ephemeral public key is valid hex
     let re = Regex::new(r"^[0-9a-fA-F]+$").unwrap();
     if !re.is_match(&metadata.ephemeral_key) { 
-        println!("Ignoring non hex encoded LSRPC request ephemeral key.");
+        println!("Ignoring non hex encoded LSRPC payload ephemeral key.");
         return Err(warp::reject::custom(ParsingError)); 
     };
     // Return
-    return Ok(LSRPCPayload { ciphertext : ciphertext, metadata : metadata });
+    return Ok(LsrpcPayload { ciphertext : ciphertext, metadata : metadata });
 }
 
-fn decrypt_lsrpc_request(payload: LSRPCPayload) -> Result<Vec<u8>, Rejection> {
+fn decrypt_lsrpc_payload(payload: LsrpcPayload) -> Result<Vec<u8>, Rejection> {
     let ephemeral_key = hex::decode(payload.metadata.ephemeral_key).unwrap(); // Safe because it was validated in the parsing step
     let symmetric_key = crypto::get_x25519_symmetric_key(ephemeral_key, get_private_key())?;
     let plaintext = crypto::decrypt_aes_gcm(payload.ciphertext, symmetric_key)?;
