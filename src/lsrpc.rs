@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use warp::Rejection;
 
 use super::crypto;
+use super::rpc;
 use super::storage;
 
 #[derive(Deserialize, Serialize, Debug)]
@@ -19,17 +20,24 @@ struct LsrpcPayloadMetadata {
 }
 
 #[derive(Deserialize, Serialize, Debug)]
-struct RpcCall {
+pub struct RpcCall {
     pub endpoint: String,
     pub body: String,
     pub method: String
 }
 
 #[derive(Debug)]
+pub struct RequestSizeExceededError;
+impl warp::reject::Reject for RequestSizeExceededError { }
+
+#[derive(Debug)]
 pub struct ParsingError;
 impl warp::reject::Reject for ParsingError { }
 
 pub async fn handle_lsrpc_request(blob: warp::hyper::body::Bytes, pool: storage::DatabaseConnectionPool) -> Result<impl warp::Reply, Rejection> {
+    if blob.len() > 10 * 1024 * 1024 { // Match storage server
+        return Err(warp::reject::custom(RequestSizeExceededError));
+    }
     let payload = parse_lsrpc_payload(blob)?;
     let plaintext = decrypt_lsrpc_payload(payload)?;
     let json = match String::from_utf8(plaintext) {
@@ -46,7 +54,7 @@ pub async fn handle_lsrpc_request(blob: warp::hyper::body::Bytes, pool: storage:
             return Err(warp::reject::custom(ParsingError));
         }
     };
-    return Ok(warp::reply::reply());
+    return rpc::handle_rpc_call(rpc_call, &pool).await;
 }
 
 fn parse_lsrpc_payload(blob: warp::hyper::body::Bytes) -> Result<LsrpcPayload, Rejection> {

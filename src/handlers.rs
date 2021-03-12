@@ -3,7 +3,7 @@ use rusqlite::params;
 use warp::{Rejection, http::StatusCode};
 
 use super::models;
-use super::routes;
+use super::rpc;
 use super::storage;
 
 #[derive(Debug)]
@@ -11,7 +11,7 @@ pub struct UnauthorizedError;
 impl warp::reject::Reject for UnauthorizedError { }
 
 /// Inserts the given `message` into the database if it's valid.
-pub async fn insert_message(mut message: models::Message, pool: storage::DatabaseConnectionPool) -> Result<impl warp::Reply, Rejection> {
+pub async fn insert_message(mut message: models::Message, pool: &storage::DatabaseConnectionPool) -> Result<warp::reply::Json, Rejection> {
     // Validate the message
     if !message.is_valid() { 
         println!("Ignoring invalid message.");
@@ -21,7 +21,7 @@ pub async fn insert_message(mut message: models::Message, pool: storage::Databas
     // TODO: Check that the requesting user isn't banned
 
     // Get a connection and open a transaction
-    let mut conn = storage::conn(&pool)?;
+    let mut conn = storage::conn(pool)?;
     let tx = storage::tx(&mut conn)?;
     // Insert the message
     let stmt = format!("INSERT INTO {} (text) VALUES (?1)", storage::MESSAGES_TABLE);
@@ -35,9 +35,9 @@ pub async fn insert_message(mut message: models::Message, pool: storage::Databas
 }
 
 /// Returns either the last `limit` messages or all messages since `from_server_id, limited to `limit`.
-pub async fn get_messages(options: routes::QueryOptions, pool: storage::DatabaseConnectionPool) -> Result<impl warp::Reply, Rejection> {
+pub async fn get_messages(options: rpc::QueryOptions, pool: &storage::DatabaseConnectionPool) -> Result<warp::reply::Json, Rejection> {
     // Get a database connection
-    let conn = storage::conn(&pool)?;
+    let conn = storage::conn(pool)?;
     // Unwrap parameters
     let from_server_id = options.from_server_id.unwrap_or(0);
     let limit = options.limit.unwrap_or(256); // Never return more than 256 messages at once
@@ -64,12 +64,12 @@ pub async fn get_messages(options: routes::QueryOptions, pool: storage::Database
 }
 
 /// Deletes the message with the given `row_id` from the database, if it's present.
-pub async fn delete_message(row_id: i64, pool: storage::DatabaseConnectionPool) -> Result<impl warp::Reply, Rejection> {
+pub async fn delete_message(row_id: i64, pool: &storage::DatabaseConnectionPool) -> Result<StatusCode, Rejection> {
     
     // TODO: Check that the requesting user has permission (either it's their own message or they're a moderator)
 
     // Get a connection and open a transaction
-    let mut conn = storage::conn(&pool)?;
+    let mut conn = storage::conn(pool)?;
     let tx = storage::tx(&mut conn)?;
     // Delete the message if it's present
     let stmt = format!("DELETE FROM {} WHERE rowid = (?1)", storage::MESSAGES_TABLE);
@@ -86,9 +86,9 @@ pub async fn delete_message(row_id: i64, pool: storage::DatabaseConnectionPool) 
 }
 
 /// Returns either the last `limit` deleted messages or all deleted messages since `from_server_id, limited to `limit`.
-pub async fn get_deleted_messages(options: routes::QueryOptions, pool: storage::DatabaseConnectionPool) -> Result<impl warp::Reply, Rejection> {
+pub async fn get_deleted_messages(options: rpc::QueryOptions, pool: &storage::DatabaseConnectionPool) -> Result<warp::reply::Json, Rejection> {
     // Get a database connection
-    let conn = storage::conn(&pool)?;
+    let conn = storage::conn(pool)?;
     // Unwrap parameters
     let from_server_id = options.from_server_id.unwrap_or(0);
     let limit = options.limit.unwrap_or(256); // Never return more than 256 deleted messages at once
@@ -115,13 +115,13 @@ pub async fn get_deleted_messages(options: routes::QueryOptions, pool: storage::
 }
 
 /// Returns the full list of moderators.
-pub async fn get_moderators(pool: storage::DatabaseConnectionPool) -> Result<impl warp::Reply, Rejection> {
-    let public_keys = get_moderators_vector(&pool)?;
+pub async fn get_moderators(pool: &storage::DatabaseConnectionPool) -> Result<warp::reply::Json, Rejection> {
+    let public_keys = get_moderators_vector(pool)?;
     return Ok(warp::reply::json(&public_keys));
 }
 
 /// Bans the given `public_key`, if the requesting user is a moderator.
-pub async fn ban(public_key: String, pool: storage::DatabaseConnectionPool) -> Result<impl warp::Reply, Rejection> {
+pub async fn ban(public_key: String, pool: &storage::DatabaseConnectionPool) -> Result<StatusCode, Rejection> {
     // Validate the public key
     if !is_valid_public_key(&public_key) { 
         println!("Ignoring ban request for invalid public key.");
@@ -131,9 +131,9 @@ pub async fn ban(public_key: String, pool: storage::DatabaseConnectionPool) -> R
     // TODO: Check that the requesting user is a moderator
 
     // Don't double ban public keys
-    if is_banned(&public_key, &pool)? { return Ok(warp::reply::reply()); }
+    if is_banned(&public_key, pool)? { return Ok(StatusCode::OK); }
     // Get a connection and open a transaction
-    let mut conn = storage::conn(&pool)?;
+    let mut conn = storage::conn(pool)?;
     let tx = storage::tx(&mut conn)?;
     // Insert the message
     let stmt = format!("INSERT INTO {} (public_key) VALUES (?1)", storage::BLOCK_LIST_TABLE);
@@ -141,11 +141,11 @@ pub async fn ban(public_key: String, pool: storage::DatabaseConnectionPool) -> R
     // Commit
     tx.commit(); // TODO: Unwrap
     // Return
-    return Ok(warp::reply::reply());
+    return Ok(StatusCode::OK);
 }
 
 /// Unbans the given `public_key`, if the requesting user is a moderator.
-pub async fn unban(public_key: String, pool: storage::DatabaseConnectionPool) -> Result<impl warp::Reply, Rejection> {
+pub async fn unban(public_key: String, pool: &storage::DatabaseConnectionPool) -> Result<StatusCode, Rejection> {
     // Validate the public key
     if !is_valid_public_key(&public_key) { 
         println!("Ignoring unban request for invalid public key.");
@@ -154,8 +154,10 @@ pub async fn unban(public_key: String, pool: storage::DatabaseConnectionPool) ->
 
     // TODO: Check that the requesting user is a moderator
 
+    // Don't double unban public keys
+    if !is_banned(&public_key, pool)? { return Ok(StatusCode::OK); }
     // Get a connection and open a transaction
-    let mut conn = storage::conn(&pool)?;
+    let mut conn = storage::conn(pool)?;
     let tx = storage::tx(&mut conn)?;
     // Insert the message
     let stmt = format!("DELETE FROM {} WHERE public_key = (?1)", storage::BLOCK_LIST_TABLE);
@@ -163,19 +165,19 @@ pub async fn unban(public_key: String, pool: storage::DatabaseConnectionPool) ->
     // Commit
     tx.commit(); // TODO: Unwrap
     // Return
-    return Ok(warp::reply::reply());
+    return Ok(StatusCode::OK);
 }
 
 /// Returns the full list of banned public keys.
-pub async fn get_banned_public_keys(pool: storage::DatabaseConnectionPool) -> Result<impl warp::Reply, Rejection> {
+pub async fn get_banned_public_keys(pool: &storage::DatabaseConnectionPool) -> Result<warp::reply::Json, Rejection> {
 
     // TODO: Check that the requesting user is a moderator
 
-    let public_keys = get_banned_public_keys_vector(&pool)?;
+    let public_keys = get_banned_public_keys_vector(pool)?;
     return Ok(warp::reply::json(&public_keys));
 }
 
-pub async fn get_member_count(pool: storage::DatabaseConnectionPool) -> Result<impl warp::Reply, Rejection> {
+pub async fn get_member_count(pool: &storage::DatabaseConnectionPool) -> Result<warp::reply::Json, Rejection> {
     let member_count = 5; // TODO: Implement
     return Ok(warp::reply::json(&member_count));
 }
