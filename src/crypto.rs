@@ -2,8 +2,8 @@ use std::convert::TryInto;
 
 use aes_gcm::Aes256Gcm;
 use aes_gcm::aead::{Aead, NewAead, generic_array::GenericArray};
-use sha2::Sha256;
 use hmac::{Hmac, Mac, NewMac};
+use sha2::Sha256;
 
 use super::errors::Error;
 
@@ -41,7 +41,7 @@ pub async fn decrypt_aes_gcm(iv_and_ciphertext: Vec<u8>, symmetric_key: Vec<u8>)
     match cipher.decrypt(GenericArray::from_slice(&iv), &*ciphertext) {
         Ok(plaintext) => return Ok(plaintext),
         Err(e) => {
-            println!("Couldn't decrypt ciphertext due to error: {:?}.", e);
+            println!("Couldn't decrypt ciphertext due to error: {}.", e);
             return Err(warp::reject::custom(Error::DecryptionFailed));
         }
     }

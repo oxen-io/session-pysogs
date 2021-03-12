@@ -51,7 +51,7 @@ pub async fn get_messages(options: rpc::QueryOptions, pool: &storage::DatabaseCo
     }) {
         Ok(rows) => rows,
         Err(e) => {
-            println!("Couldn't query database due to error: {:?}.", e);
+            println!("Couldn't query database due to error: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
@@ -102,7 +102,7 @@ pub async fn get_deleted_messages(options: rpc::QueryOptions, pool: &storage::Da
     }) {
         Ok(rows) => rows,
         Err(e) => {
-            println!("Couldn't query database due to error: {:?}.", e);
+            println!("Couldn't query database due to error: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
@@ -192,7 +192,7 @@ pub async fn get_moderators_vector(pool: &storage::DatabaseConnectionPool) -> Re
     }) {
         Ok(rows) => rows,
         Err(e) => {
-            println!("Couldn't query database due to error: {:?}.", e);
+            println!("Couldn't query database due to error: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
@@ -216,7 +216,7 @@ pub async fn get_banned_public_keys_vector(pool: &storage::DatabaseConnectionPoo
     }) {
         Ok(rows) => rows,
         Err(e) => {
-            println!("Couldn't query database due to error: {:?}.", e);
+            println!("Couldn't query database due to error: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };

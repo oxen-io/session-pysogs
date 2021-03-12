@@ -1,15 +1,15 @@
 mod crypto;
 mod errors;
 mod handlers;
-mod lsrpc;
 mod models;
+mod onion_requests;
 mod routes;
 mod rpc;
 mod storage;
 
 #[tokio::main]
 async fn main() {
-    let public_key = hex::encode(lsrpc::get_public_key().as_bytes());
+    let public_key = hex::encode(onion_requests::get_public_key().as_bytes());
     println!("The public key of this server is: {}", public_key);
     let pool = storage::pool();
     let conn = storage::conn(&pool).unwrap();

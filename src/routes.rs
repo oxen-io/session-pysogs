@@ -1,7 +1,7 @@
 use warp::{Filter, http::StatusCode, Rejection};
 
 use super::errors::Error;
-use super::lsrpc;
+use super::onion_requests;
 use super::storage;
 
 /// POST /loki/v3/lsrpc
@@ -13,14 +13,14 @@ pub fn lsrpc(
         .and(warp::body::content_length_limit(10 * 1024 * 1024)) // Match storage server
         .and(warp::body::bytes()) // Expect bytes
         .and(warp::any().map(move || db_pool.clone()))
-        .and_then(lsrpc::handle_lsrpc_request)
+        .and_then(onion_requests::handle_onion_request)
         .recover(handle_error);
 }
 
 async fn handle_error(e: Rejection) -> Result<StatusCode, Rejection> {
     if let Some(error) = e.find::<Error>() {
         match error {
-            Error::DecryptionFailed | Error::InvalidRequest | Error::ParsingFailed 
+            Error::DecryptionFailed | Error::InvalidOnionRequest | Error::InvalidRpcCall
                 | Error::ValidationFailed => return Ok(StatusCode::BAD_REQUEST),
             Error::Unauthorized => return Ok(StatusCode::FORBIDDEN),
             Error::DatabaseFailedInternally => return Ok(StatusCode::INTERNAL_SERVER_ERROR)

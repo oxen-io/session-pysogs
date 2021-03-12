@@ -53,7 +53,7 @@ pub fn conn(pool: &DatabaseConnectionPool) -> Result<DatabaseConnection, Rejecti
     match pool.get() {
         Ok(conn) => return Ok(conn),
         Err(e) => { 
-            println!("Couldn't get database connection due to error: {:?}.", e);
+            println!("Couldn't get database connection due to error: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     }
@@ -63,7 +63,7 @@ pub fn tx(conn: &mut DatabaseConnection) -> Result<rusqlite::Transaction, Reject
     match conn.transaction() {
         Ok(tx) => return Ok(tx),
         Err(e) => { 
-            println!("Couldn't open database transaction due to error: {:?}.", e);
+            println!("Couldn't open database transaction due to error: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     }
@@ -74,7 +74,7 @@ pub fn exec(stmt: &str, params: &[&dyn rusqlite::ToSql], tx: &rusqlite::Transact
     match tx.execute(stmt, params) {
         Ok(count) => return Ok(count),
         Err(e) => {
-            println!("Couldn't execute SQL statement due to error: {:?}.", e);
+            println!("Couldn't execute SQL statement due to error: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally)); 
         }
     }
@@ -84,7 +84,7 @@ pub fn query<'a>(raw_query: &str, conn: &'a DatabaseConnection) -> Result<rusqli
     match conn.prepare(raw_query) {
         Ok(query) => return Ok(query),
         Err(e) => { 
-            println!("Couldn't create database query due to error: {:?}.", e);
+            println!("Couldn't create database query due to error: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
