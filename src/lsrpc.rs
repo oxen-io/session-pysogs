@@ -36,6 +36,7 @@ fn parse_lsrpc_request(blob: warp::hyper::body::Bytes) -> Result<LSRPCPayload, R
         return Err(warp::reject::custom(ParsingError)); 
     }
     // Extract the different components
+    // This is safe because we know blob has a length of at least 4 bytes
     let size = as_le_u32(&blob[0..4].try_into().unwrap()) as usize;
     let ciphertext: Vec<u8> = blob[4..(4 + size)].try_into().unwrap();
     let utf8_json: Vec<u8> = blob[(4 + size)..].try_into().unwrap();
@@ -56,7 +57,7 @@ fn parse_lsrpc_request(blob: warp::hyper::body::Bytes) -> Result<LSRPCPayload, R
         }
     };
     // Check that the ephemeral public key is valid hex
-    let re = Regex::new(r"^[0-9a-fA-F]+$").unwrap(); // Force
+    let re = Regex::new(r"^[0-9a-fA-F]+$").unwrap();
     if !re.is_match(&metadata.ephemeral_key) { 
         println!("Ignoring non hex encoded LSRPC request ephemeral key.");
         return Err(warp::reject::custom(ParsingError)); 
@@ -78,13 +79,12 @@ fn decrypt_lsrpc_request(payload: LSRPCPayload) -> Result<Vec<u8>, Rejection> {
 
 fn get_private_key() -> x25519_dalek::StaticSecret {
     let bytes = include_bytes!("../x25519_private_key.pem");
-    return curve25519_parser::parse_openssl_25519_privkey(bytes).unwrap(); // Force
+    return curve25519_parser::parse_openssl_25519_privkey(bytes).unwrap();
 }
 
 pub fn get_public_key() -> x25519_dalek::PublicKey {
     let bytes = include_bytes!("../x25519_public_key.pem");
-    return curve25519_parser::parse_openssl_25519_pubkey(bytes).unwrap(); // Force
-    
+    return curve25519_parser::parse_openssl_25519_pubkey(bytes).unwrap();
 }
 
 fn as_le_u32(array: &[u8; 4]) -> u32 {
