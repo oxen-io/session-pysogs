@@ -2,20 +2,17 @@ use regex::Regex;
 use rusqlite::params;
 use warp::{Rejection, http::StatusCode, reply::Reply, reply::Response};
 
+use super::errors::Error;
 use super::models;
 use super::rpc;
 use super::storage;
-
-#[derive(Debug)]
-pub struct UnauthorizedError;
-impl warp::reject::Reject for UnauthorizedError { }
 
 /// Inserts the given `message` into the database if it's valid.
 pub async fn insert_message(mut message: models::Message, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
     // Validate the message
     if !message.is_valid() { 
         println!("Ignoring invalid message.");
-        return Err(warp::reject::custom(models::ValidationError)); 
+        return Err(warp::reject::custom(Error::ValidationFailed)); 
     }
 
     // TODO: Check that the requesting user isn't banned
@@ -55,7 +52,7 @@ pub async fn get_messages(options: rpc::QueryOptions, pool: &storage::DatabaseCo
         Ok(rows) => rows,
         Err(e) => {
             println!("Couldn't query database due to error: {:?}.", e);
-            return Err(warp::reject::custom(storage::DatabaseError));
+            return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
     let messages: Vec<models::Message> = rows.filter_map(|result| result.ok()).collect();
@@ -106,7 +103,7 @@ pub async fn get_deleted_messages(options: rpc::QueryOptions, pool: &storage::Da
         Ok(rows) => rows,
         Err(e) => {
             println!("Couldn't query database due to error: {:?}.", e);
-            return Err(warp::reject::custom(storage::DatabaseError));
+            return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
     let ids: Vec<i64> = rows.filter_map(|result| result.ok()).collect();
@@ -125,7 +122,7 @@ pub async fn ban(public_key: String, pool: &storage::DatabaseConnectionPool) -> 
     // Validate the public key
     if !is_valid_public_key(&public_key) { 
         println!("Ignoring ban request for invalid public key.");
-        return Err(warp::reject::custom(models::ValidationError)); 
+        return Err(warp::reject::custom(Error::ValidationFailed)); 
     }
 
     // TODO: Check that the requesting user is a moderator
@@ -149,7 +146,7 @@ pub async fn unban(public_key: String, pool: &storage::DatabaseConnectionPool) -
     // Validate the public key
     if !is_valid_public_key(&public_key) { 
         println!("Ignoring unban request for invalid public key.");
-        return Err(warp::reject::custom(models::ValidationError)); 
+        return Err(warp::reject::custom(Error::ValidationFailed)); 
     }
 
     // TODO: Check that the requesting user is a moderator
@@ -196,7 +193,7 @@ pub async fn get_moderators_vector(pool: &storage::DatabaseConnectionPool) -> Re
         Ok(rows) => rows,
         Err(e) => {
             println!("Couldn't query database due to error: {:?}.", e);
-            return Err(warp::reject::custom(storage::DatabaseError));
+            return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
     // Return
@@ -220,7 +217,7 @@ pub async fn get_banned_public_keys_vector(pool: &storage::DatabaseConnectionPoo
         Ok(rows) => rows,
         Err(e) => {
             println!("Couldn't query database due to error: {:?}.", e);
-            return Err(warp::reject::custom(storage::DatabaseError));
+            return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
     // Return

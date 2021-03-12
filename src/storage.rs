@@ -2,12 +2,10 @@ use rusqlite::params;
 use r2d2_sqlite::SqliteConnectionManager;
 use warp::Rejection;
 
+use super::errors::Error;
+
 pub type DatabaseConnection = r2d2::PooledConnection<SqliteConnectionManager>;
 pub type DatabaseConnectionPool = r2d2::Pool<SqliteConnectionManager>;
-
-#[derive(Debug)]
-pub struct DatabaseError;
-impl warp::reject::Reject for DatabaseError { }
 
 pub const MESSAGES_TABLE: &str = "messages";
 pub const DELETED_MESSAGES_TABLE: &str = "deleted_messages";
@@ -48,7 +46,7 @@ pub fn create_tables_if_needed(conn: &DatabaseConnection) {
 
 pub fn pool() -> DatabaseConnectionPool {
     let db_manager = SqliteConnectionManager::file("database.db");
-    return r2d2::Pool::new(db_manager).unwrap(); // Force
+    return r2d2::Pool::new(db_manager).unwrap();
 }
 
 pub fn conn(pool: &DatabaseConnectionPool) -> Result<DatabaseConnection, Rejection> {
@@ -56,7 +54,7 @@ pub fn conn(pool: &DatabaseConnectionPool) -> Result<DatabaseConnection, Rejecti
         Ok(conn) => return Ok(conn),
         Err(e) => { 
             println!("Couldn't get database connection due to error: {:?}.", e);
-            return Err(warp::reject::custom(DatabaseError));
+            return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     }
 }
@@ -66,7 +64,7 @@ pub fn tx(conn: &mut DatabaseConnection) -> Result<rusqlite::Transaction, Reject
         Ok(tx) => return Ok(tx),
         Err(e) => { 
             println!("Couldn't open database transaction due to error: {:?}.", e);
-            return Err(warp::reject::custom(DatabaseError));
+            return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     }
 }
@@ -77,7 +75,7 @@ pub fn exec(stmt: &str, params: &[&dyn rusqlite::ToSql], tx: &rusqlite::Transact
         Ok(count) => return Ok(count),
         Err(e) => {
             println!("Couldn't execute SQL statement due to error: {:?}.", e);
-            return Err(warp::reject::custom(DatabaseError)); 
+            return Err(warp::reject::custom(Error::DatabaseFailedInternally)); 
         }
     }
 }
@@ -87,7 +85,7 @@ pub fn query<'a>(raw_query: &str, conn: &'a DatabaseConnection) -> Result<rusqli
         Ok(query) => return Ok(query),
         Err(e) => { 
             println!("Couldn't create database query due to error: {:?}.", e);
-            return Err(warp::reject::custom(DatabaseError));
+            return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
 }

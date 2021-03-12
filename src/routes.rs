@@ -1,10 +1,7 @@
 use warp::{Filter, http::StatusCode, Rejection};
 
-use super::crypto;
-use super::handlers;
+use super::errors::Error;
 use super::lsrpc;
-use super::models;
-use super::rpc;
 use super::storage;
 
 /// POST /loki/v3/lsrpc
@@ -20,25 +17,15 @@ pub fn lsrpc(
         .recover(handle_error);
 }
 
-async fn handle_error(e: Rejection) -> Result<impl warp::Reply, Rejection> {
-    let reply = warp::reply::reply();
-    if let Some(models::ValidationError) = e.find() {
-        return Ok(warp::reply::with_status(reply, StatusCode::BAD_REQUEST)); // 400
+async fn handle_error(e: Rejection) -> Result<StatusCode, Rejection> {
+    if let Some(error) = e.find::<Error>() {
+        match error {
+            Error::DecryptionFailed | Error::InvalidRequest | Error::ParsingFailed 
+                | Error::ValidationFailed => return Ok(StatusCode::BAD_REQUEST),
+            Error::Unauthorized => return Ok(StatusCode::FORBIDDEN),
+            Error::DatabaseFailedInternally => return Ok(StatusCode::INTERNAL_SERVER_ERROR)
+        };
+    } else {
+        return Err(e);
     }
-    if let Some(crypto::DecryptionError) = e.find() {
-        return Ok(warp::reply::with_status(reply, StatusCode::BAD_REQUEST)); // 400
-    }
-    if let Some(lsrpc::ParsingError) = e.find() {
-        return Ok(warp::reply::with_status(reply, StatusCode::BAD_REQUEST)); // 400
-    }
-    if let Some(rpc::InvalidRequestError) = e.find() {
-        return Ok(warp::reply::with_status(reply, StatusCode::BAD_REQUEST)); // 400
-    }
-    if let Some(handlers::UnauthorizedError) = e.find() {
-        return Ok(warp::reply::with_status(reply, StatusCode::FORBIDDEN)); // 403
-    }
-    if let Some(storage::DatabaseError) = e.find() {
-        return Ok(warp::reply::with_status(reply, StatusCode::INTERNAL_SERVER_ERROR)); // 500
-    }
-    return Err(e);
 }

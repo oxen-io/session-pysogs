@@ -1,9 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug)]
-pub struct ValidationError;
-impl warp::reject::Reject for ValidationError { }
-
 #[derive(Deserialize, Serialize, Debug)]
 pub struct Message {
     pub server_id: Option<i64>,

@@ -1,6 +1,7 @@
 use serde::Deserialize;
 use warp::{Rejection, reply::Response};
 
+use super::errors::Error;
 use super::handlers;
 use super::lsrpc;
 use super::storage;
@@ -11,17 +12,13 @@ pub struct QueryOptions {
     pub from_server_id: Option<i64>
 }
 
-#[derive(Debug)]
-pub struct InvalidRequestError;
-impl warp::reject::Reject for InvalidRequestError { }
-
 pub async fn handle_rpc_call(rpc_call: lsrpc::RpcCall, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
     // Check that the endpoint is a valid URI
     let uri = match rpc_call.endpoint.parse::<http::Uri>() {
         Ok(uri) => uri,
         Err(e) => {
             println!("Couldn't parse URI from: {:?} due to error: {:?}.", rpc_call.endpoint, e);
-            return Err(warp::reject::custom(InvalidRequestError));
+            return Err(warp::reject::custom(Error::InvalidRequest));
         }
     };
     // Switch on the HTTP method
@@ -31,7 +28,7 @@ pub async fn handle_rpc_call(rpc_call: lsrpc::RpcCall, pool: &storage::DatabaseC
         "DELETE" => return handle_delete_request(rpc_call, uri, pool).await,
         _ => {
             println!("Ignoring RPC call with invalid or unused HTTP method: {:?}.", rpc_call.method);
-            return Err(warp::reject::custom(InvalidRequestError));
+            return Err(warp::reject::custom(Error::InvalidRequest));
         }
     }
 }
@@ -44,7 +41,7 @@ async fn handle_get_request(rpc_call: lsrpc::RpcCall, uri: http::Uri, pool: &sto
             Ok(query_options) => query_options,
             Err(e) => {
                 println!("Couldn't parse query options from: {:?} due to error: {:?}.", query, e);
-                return Err(warp::reject::custom(InvalidRequestError));
+                return Err(warp::reject::custom(Error::InvalidRequest));
             }
         };
     }
@@ -57,7 +54,7 @@ async fn handle_get_request(rpc_call: lsrpc::RpcCall, uri: http::Uri, pool: &sto
         "/member_count" => return handlers::get_member_count(pool).await,
         _ => {
             println!("Ignoring RPC call with invalid or unused endpoint: {:?}.", rpc_call.endpoint);
-            return Err(warp::reject::custom(InvalidRequestError));        
+            return Err(warp::reject::custom(Error::InvalidRequest));        
         }
     }
 }
@@ -69,7 +66,7 @@ async fn handle_post_request(rpc_call: lsrpc::RpcCall, uri: http::Uri, pool: &st
                 Ok(query_options) => query_options,
                 Err(e) => {
                     println!("Couldn't parse message from: {:?} due to error: {:?}.", rpc_call.body, e);
-                    return Err(warp::reject::custom(InvalidRequestError));
+                    return Err(warp::reject::custom(Error::InvalidRequest));
                 }
             };
             return handlers::insert_message(message, pool).await; 
@@ -80,7 +77,7 @@ async fn handle_post_request(rpc_call: lsrpc::RpcCall, uri: http::Uri, pool: &st
         },
         _ => {
             println!("Ignoring RPC call with invalid or unused endpoint: {:?}.", rpc_call.endpoint);
-            return Err(warp::reject::custom(InvalidRequestError));        
+            return Err(warp::reject::custom(Error::InvalidRequest));        
         }
     }
 }
@@ -91,13 +88,13 @@ async fn handle_delete_request(rpc_call: lsrpc::RpcCall, uri: http::Uri, pool: &
         let components: Vec<&str> = uri.path()[1..].split("/").collect(); // Drop the leading slash and split on subsequent slashes
         if components.len() != 2 {
             println!("Invalid endpoint: {:?}.", rpc_call.endpoint);
-            return Err(warp::reject::custom(InvalidRequestError));
+            return Err(warp::reject::custom(Error::InvalidRequest));
         }
         let server_id: i64 = match components[1].parse() {
             Ok(server_id) => server_id,
             Err(_) => {
                 println!("Invalid endpoint: {:?}.", rpc_call.endpoint);
-                return Err(warp::reject::custom(InvalidRequestError));
+                return Err(warp::reject::custom(Error::InvalidRequest));
             }
         };
         return handlers::delete_message(server_id, pool).await;
@@ -107,12 +104,12 @@ async fn handle_delete_request(rpc_call: lsrpc::RpcCall, uri: http::Uri, pool: &
         let components: Vec<&str> = uri.path()[1..].split("/").collect(); // Drop the leading slash and split on subsequent slashes
         if components.len() != 2 {
             println!("Invalid endpoint: {:?}.", rpc_call.endpoint);
-            return Err(warp::reject::custom(InvalidRequestError));
+            return Err(warp::reject::custom(Error::InvalidRequest));
         }
         let public_key = components[1].to_string();
         return handlers::unban(public_key, pool).await;
     }
     // Unrecognized endpoint
     println!("Ignoring RPC call with invalid or unused endpoint: {:?}.", rpc_call.endpoint);
-    return Err(warp::reject::custom(InvalidRequestError));
+    return Err(warp::reject::custom(Error::InvalidRequest));
 }

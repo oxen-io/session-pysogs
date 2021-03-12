@@ -1,4 +1,5 @@
 mod crypto;
+mod errors;
 mod handlers;
 mod lsrpc;
 mod models;
