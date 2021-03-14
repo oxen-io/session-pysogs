@@ -95,7 +95,7 @@ pub async fn delete_message(row_id: i64, pool: &storage::DatabaseConnectionPool)
         };
     }
     // Commit
-    tx.commit(); // TODO: Unwrap
+    tx.commit().map_err(|_| Error::DatabaseFailedInternally)?;
     // Return
     return Ok(StatusCode::OK.into_response());
 }
@@ -160,7 +160,7 @@ pub async fn ban(public_key: String, pool: &storage::DatabaseConnectionPool) -> 
         }
     };
     // Commit
-    tx.commit(); // TODO: Unwrap
+    tx.commit().map_err(|_| Error::DatabaseFailedInternally)?;
     // Return
     return Ok(StatusCode::OK.into_response());
 }
@@ -190,7 +190,7 @@ pub async fn unban(public_key: String, pool: &storage::DatabaseConnectionPool) -
         }
     };
     // Commit
-    tx.commit(); // TODO: Unwrap
+    tx.commit().map_err(|_| Error::DatabaseFailedInternally)?;
     // Return
     return Ok(StatusCode::OK.into_response());
 }
