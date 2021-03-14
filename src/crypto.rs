@@ -17,7 +17,7 @@ type HmacSha256 = Hmac<Sha256>;
 
 const IV_SIZE: usize = 12;
 
-pub async fn get_x25519_symmetric_key(public_key: Vec<u8>, private_key: x25519_dalek::StaticSecret) -> Result<Vec<u8>, warp::reject::Rejection> {
+pub async fn get_x25519_symmetric_key(public_key: Vec<u8>, private_key: &x25519_dalek::StaticSecret) -> Result<Vec<u8>, warp::reject::Rejection> {
     if public_key.len() != 32 {
         println!("Couldn't create symmetric key using public key of invalid length: {}.", hex::encode(public_key));
         return Err(warp::reject::custom(Error::DecryptionFailed)); 

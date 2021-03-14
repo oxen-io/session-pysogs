@@ -20,6 +20,19 @@ struct OnionRequestPayloadMetadata {
     pub ephemeral_key: String
 }
 
+lazy_static::lazy_static! {
+
+    pub static ref PRIVATE_KEY: x25519_dalek::StaticSecret = {
+        let bytes = include_bytes!("../x25519_private_key.pem");
+        return curve25519_parser::parse_openssl_25519_privkey(bytes).unwrap();
+    };
+
+    pub static ref PUBLIC_KEY: x25519_dalek::PublicKey = {
+        let bytes = include_bytes!("../x25519_public_key.pem");
+        return curve25519_parser::parse_openssl_25519_pubkey(bytes).unwrap();
+    };
+}
+
 pub async fn handle_onion_request(blob: warp::hyper::body::Bytes, pool: storage::DatabaseConnectionPool) -> Result<impl warp::Reply, Rejection> {
     let payload = parse_onion_request_payload(blob).await?;
     let plaintext = decrypt_onion_request_payload(payload).await?;
@@ -79,24 +92,12 @@ async fn parse_onion_request_payload(blob: warp::hyper::body::Bytes) -> Result<O
 
 async fn decrypt_onion_request_payload(payload: OnionRequestPayload) -> Result<Vec<u8>, Rejection> {
     let ephemeral_key = hex::decode(payload.metadata.ephemeral_key).unwrap(); // Safe because it was validated in the parsing step
-    let symmetric_key = crypto::get_x25519_symmetric_key(ephemeral_key, get_private_key()).await?;
+    let symmetric_key = crypto::get_x25519_symmetric_key(ephemeral_key, &PRIVATE_KEY).await?;
     let plaintext = crypto::decrypt_aes_gcm(payload.ciphertext, symmetric_key).await?;
     return Ok(plaintext);
 }
 
 // Utilities
-
-// FIXME: get_private_key() and get_public_key() should be lazy static variables
-
-fn get_private_key() -> x25519_dalek::StaticSecret {
-    let bytes = include_bytes!("../x25519_private_key.pem");
-    return curve25519_parser::parse_openssl_25519_privkey(bytes).unwrap();
-}
-
-pub fn get_public_key() -> x25519_dalek::PublicKey {
-    let bytes = include_bytes!("../x25519_public_key.pem");
-    return curve25519_parser::parse_openssl_25519_pubkey(bytes).unwrap();
-}
 
 fn as_le_u32(array: &[u8; 4]) -> u32 {
     ((array[0] as u32) << 00) +
