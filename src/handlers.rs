@@ -18,15 +18,21 @@ pub async fn insert_message(mut message: models::Message, pool: &storage::Databa
     // TODO: Check that the requesting user isn't banned
 
     // Get a connection and open a transaction
-    let mut conn = storage::conn(pool)?;
-    let tx = storage::tx(&mut conn)?;
+    let mut conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
+    let tx = conn.transaction().map_err(|_| Error::DatabaseFailedInternally)?;
     // Insert the message
     let stmt = format!("INSERT INTO {} (text) VALUES (?1)", storage::MESSAGES_TABLE);
-    storage::exec(&stmt, params![ message.text ], &tx)?;
+    match tx.execute(&stmt, params![ message.text ]) {
+        Ok(_) => (),
+        Err(e) => {
+            println!("Couldn't insert message due to error: {}.", e);
+            return Err(warp::reject::custom(Error::DatabaseFailedInternally));
+        }
+    }
     let id = tx.last_insert_rowid();
     message.server_id = Some(id);
     // Commit
-    tx.commit(); // TODO: Unwrap
+    tx.commit().map_err(|_| Error::DatabaseFailedInternally)?;
     // Return
     return Ok(warp::reply::json(&message).into_response());
 }
@@ -34,7 +40,7 @@ pub async fn insert_message(mut message: models::Message, pool: &storage::Databa
 /// Returns either the last `limit` messages or all messages since `from_server_id, limited to `limit`.
 pub async fn get_messages(options: rpc::QueryOptions, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
     // Get a database connection
-    let conn = storage::conn(pool)?;
+    let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     // Unwrap parameters
     let from_server_id = options.from_server_id.unwrap_or(0);
     let limit = options.limit.unwrap_or(256); // Never return more than 256 messages at once
@@ -45,13 +51,13 @@ pub async fn get_messages(options: rpc::QueryOptions, pool: &storage::DatabaseCo
     } else {
         raw_query = format!("SELECT id, text FROM {} ORDER BY rowid DESC LIMIT (?2)", storage::MESSAGES_TABLE);
     }
-    let mut query = storage::query(&raw_query, &conn)?;
+    let mut query = conn.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
     let rows = match query.query_map(params![ from_server_id, limit ], |row| {
         Ok(models::Message { server_id : row.get(0)?, text : row.get(1)? })
     }) {
         Ok(rows) => rows,
         Err(e) => {
-            println!("Couldn't query database due to error: {}.", e);
+            println!("Couldn't get messages due to error: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
@@ -66,15 +72,27 @@ pub async fn delete_message(row_id: i64, pool: &storage::DatabaseConnectionPool)
     // TODO: Check that the requesting user has permission (either it's their own message or they're a moderator)
 
     // Get a connection and open a transaction
-    let mut conn = storage::conn(pool)?;
-    let tx = storage::tx(&mut conn)?;
+    let mut conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
+    let tx = conn.transaction().map_err(|_| Error::DatabaseFailedInternally)?;
     // Delete the message if it's present
     let stmt = format!("DELETE FROM {} WHERE rowid = (?1)", storage::MESSAGES_TABLE);
-    let count = storage::exec(&stmt, params![ row_id ], &tx)?;
+    let count = match tx.execute(&stmt, params![ row_id ]) {
+        Ok(count) => count,
+        Err(e) => {
+            println!("Couldn't delete message due to error: {}.", e);
+            return Err(warp::reject::custom(Error::DatabaseFailedInternally));
+        }
+    };
     // Update the deletions table if needed
     if count > 0 {
         let stmt = format!("INSERT INTO {} (id) VALUES (?1)", storage::DELETED_MESSAGES_TABLE);
-        storage::exec(&stmt, params![ row_id ], &tx)?;
+        match tx.execute(&stmt, params![ row_id ]) {
+            Ok(_) => (),
+            Err(e) => {
+                println!("Couldn't delete message due to error: {}.", e);
+                return Err(warp::reject::custom(Error::DatabaseFailedInternally));
+            }
+        };
     }
     // Commit
     tx.commit(); // TODO: Unwrap
@@ -85,7 +103,7 @@ pub async fn delete_message(row_id: i64, pool: &storage::DatabaseConnectionPool)
 /// Returns either the last `limit` deleted messages or all deleted messages since `from_server_id, limited to `limit`.
 pub async fn get_deleted_messages(options: rpc::QueryOptions, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
     // Get a database connection
-    let conn = storage::conn(pool)?;
+    let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     // Unwrap parameters
     let from_server_id = options.from_server_id.unwrap_or(0);
     let limit = options.limit.unwrap_or(256); // Never return more than 256 deleted messages at once
@@ -96,7 +114,7 @@ pub async fn get_deleted_messages(options: rpc::QueryOptions, pool: &storage::Da
     } else {
         raw_query = format!("SELECT id FROM {} ORDER BY rowid DESC LIMIT (?2)", storage::DELETED_MESSAGES_TABLE);
     }
-    let mut query = storage::query(&raw_query, &conn)?;
+    let mut query = conn.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
     let rows = match query.query_map(params![ from_server_id, limit ], |row| {
         Ok(row.get(0)?)
     }) {
@@ -130,11 +148,17 @@ pub async fn ban(public_key: String, pool: &storage::DatabaseConnectionPool) -> 
     // Don't double ban public keys
     if is_banned(&public_key, pool).await? { return Ok(StatusCode::OK.into_response()); }
     // Get a connection and open a transaction
-    let mut conn = storage::conn(pool)?;
-    let tx = storage::tx(&mut conn)?;
+    let mut conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
+    let tx = conn.transaction().map_err(|_| Error::DatabaseFailedInternally)?;
     // Insert the message
     let stmt = format!("INSERT INTO {} (public_key) VALUES (?1)", storage::BLOCK_LIST_TABLE);
-    storage::exec(&stmt, params![ public_key ], &tx)?;
+    match tx.execute(&stmt, params![ public_key ]) {
+        Ok(_) => (),
+        Err(e) => {
+            println!("Couldn't ban public key due to error: {}.", e);
+            return Err(warp::reject::custom(Error::DatabaseFailedInternally));
+        }
+    };
     // Commit
     tx.commit(); // TODO: Unwrap
     // Return
@@ -154,11 +178,17 @@ pub async fn unban(public_key: String, pool: &storage::DatabaseConnectionPool) -
     // Don't double unban public keys
     if !is_banned(&public_key, pool).await? { return Ok(StatusCode::OK.into_response()); }
     // Get a connection and open a transaction
-    let mut conn = storage::conn(pool)?;
-    let tx = storage::tx(&mut conn)?;
+    let mut conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
+    let tx = conn.transaction().map_err(|_| Error::DatabaseFailedInternally)?;
     // Insert the message
     let stmt = format!("DELETE FROM {} WHERE public_key = (?1)", storage::BLOCK_LIST_TABLE);
-    storage::exec(&stmt, params![ public_key ], &tx)?;
+    match tx.execute(&stmt, params![ public_key ]) {
+        Ok(_) => (),
+        Err(e) => {
+            println!("Couldn't unban public key due to error: {}.", e);
+            return Err(warp::reject::custom(Error::DatabaseFailedInternally));
+        }
+    };
     // Commit
     tx.commit(); // TODO: Unwrap
     // Return
@@ -183,10 +213,10 @@ pub async fn get_member_count(pool: &storage::DatabaseConnectionPool) -> Result<
 
 pub async fn get_moderators_vector(pool: &storage::DatabaseConnectionPool) -> Result<Vec<String>, Rejection> {
     // Get a database connection
-    let conn = storage::conn(&pool)?;
+    let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     // Query the database
     let raw_query = format!("SELECT public_key FROM {}", storage::MODERATORS_TABLE);
-    let mut query = storage::query(&raw_query, &conn)?;
+    let mut query = conn.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
     let rows = match query.query_map(params![], |row| {
         Ok(row.get(0)?)
     }) {
@@ -207,10 +237,10 @@ pub async fn is_moderator(public_key: &str, pool: &storage::DatabaseConnectionPo
 
 pub async fn get_banned_public_keys_vector(pool: &storage::DatabaseConnectionPool) -> Result<Vec<String>, Rejection> {
     // Get a database connection
-    let conn = storage::conn(&pool)?;
+    let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     // Query the database
     let raw_query = format!("SELECT public_key FROM {}", storage::BLOCK_LIST_TABLE);
-    let mut query = storage::query(&raw_query, &conn)?;
+    let mut query = conn.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
     let rows = match query.query_map(params![], |row| {
         Ok(row.get(0)?)
     }) {

@@ -1,8 +1,6 @@
 use rusqlite::params;
-use r2d2_sqlite::SqliteConnectionManager;
-use warp::Rejection;
 
-use super::errors::Error;
+use r2d2_sqlite::SqliteConnectionManager;
 
 pub type DatabaseConnection = r2d2::PooledConnection<SqliteConnectionManager>;
 pub type DatabaseConnectionPool = r2d2::Pool<SqliteConnectionManager>;
@@ -40,52 +38,4 @@ pub fn create_tables_if_needed(conn: &DatabaseConnection) {
         public_key TEXT
     )", BLOCK_LIST_TABLE);
     conn.execute(&block_list_table_cmd, params![]).expect("Couldn't create block list table.");
-}
-
-// Utilities
-
-pub fn pool() -> DatabaseConnectionPool {
-    let db_manager = SqliteConnectionManager::file("database.db");
-    return r2d2::Pool::new(db_manager).unwrap();
-}
-
-pub fn conn(pool: &DatabaseConnectionPool) -> Result<DatabaseConnection, Rejection> {
-    match pool.get() {
-        Ok(conn) => return Ok(conn),
-        Err(e) => { 
-            println!("Couldn't get database connection due to error: {}.", e);
-            return Err(warp::reject::custom(Error::DatabaseFailedInternally));
-        }
-    }
-}
-
-pub fn tx(conn: &mut DatabaseConnection) -> Result<rusqlite::Transaction, Rejection> {
-    match conn.transaction() {
-        Ok(tx) => return Ok(tx),
-        Err(e) => { 
-            println!("Couldn't open database transaction due to error: {}.", e);
-            return Err(warp::reject::custom(Error::DatabaseFailedInternally));
-        }
-    }
-}
-
-/// Returns the number of rows that changed as a result of executing the given `stmt`.
-pub fn exec(stmt: &str, params: &[&dyn rusqlite::ToSql], tx: &rusqlite::Transaction) -> Result<usize, Rejection> {
-    match tx.execute(stmt, params) {
-        Ok(count) => return Ok(count),
-        Err(e) => {
-            println!("Couldn't execute SQL statement due to error: {}.", e);
-            return Err(warp::reject::custom(Error::DatabaseFailedInternally)); 
-        }
-    }
-}
-
-pub fn query<'a>(raw_query: &str, conn: &'a DatabaseConnection) -> Result<rusqlite::Statement<'a>, Rejection> {
-    match conn.prepare(raw_query) {
-        Ok(query) => return Ok(query),
-        Err(e) => { 
-            println!("Couldn't create database query due to error: {}.", e);
-            return Err(warp::reject::custom(Error::DatabaseFailedInternally));
-        }
-    };
 }

@@ -11,8 +11,9 @@ mod storage;
 async fn main() {
     let public_key = hex::encode(onion_requests::PUBLIC_KEY.as_bytes());
     println!("The public key of this server is: {}", public_key);
-    let pool = storage::pool();
-    let conn = storage::conn(&pool).unwrap();
+    let db_manager = r2d2_sqlite::SqliteConnectionManager::file("database.db");
+    let pool = r2d2::Pool::new(db_manager).unwrap();
+    let conn = pool.get().unwrap();
     storage::create_tables_if_needed(&conn);
-    warp::serve(routes::lsrpc(pool.clone())).run(([127, 0, 0, 1], 3030)).await;
+    warp::serve(routes::lsrpc(pool)).run(([127, 0, 0, 1], 3030)).await;
 }
