@@ -23,7 +23,7 @@ Make sure you're pointing to the right openssl installation (e.g. macOS provides
 cargo build
 ```
 
-The Linux Rust installer assumes that you already have a C linker installed. If this is not the case you'll see `error: linker `cc` not found`. To fix this, run:
+The Linux Rust installer assumes that you already have a C linker installed. If this is not the case you'll see `error: linker 'cc' not found`. To fix this, run:
 
 ```
 apt update
