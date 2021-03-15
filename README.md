@@ -24,7 +24,7 @@ apt install certbot // Only if you don't have certbot installed already
 certbot certonly
 ```
 
-Follow the instructions on-screen and then move the generated certificate and private key to the session-open-group folder (you'll need to rename them to tls_private_key.pem and tls_certificate respectively as well).
+Follow the instructions on-screen and then **copy** (don't move) the generated certificate and private key to the session-open-group folder (you'll need to rename them to tls_private_key.pem and tls_certificate respectively as well).
 
 ### Step 3: Build the project
 
