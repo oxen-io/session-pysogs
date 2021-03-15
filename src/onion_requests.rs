@@ -67,7 +67,7 @@ async fn handle_decrypted_onion_request(plaintext: Vec<u8>, symmetric_key: Vec<u
     // Perform the RPC call
     let result = rpc::handle_rpc_call(rpc_call, &pool).await
         // Turn any error that occurred into an HTTP response
-        .or_else(super::errors::response_from_error)?; // Safe because at this point any error should be caught and turned into an HTTP response (i.e. an OK result)
+        .or_else(super::errors::into_response)?; // Safe because at this point any error should be caught and turned into an HTTP response (i.e. an OK result)
     // Encrypt the HTTP response so that it's propagated back to the client that made
     // the onion request
     return encrypt_response(result, symmetric_key).await;
@@ -127,7 +127,9 @@ async fn encrypt_response(response: Response, symmetric_key: Vec<u8>) -> Result<
         let error = models::Error { status_code : response.status().as_u16() };
         bytes = serde_json::to_vec(&error).unwrap();
     }
-    return Ok(http::StatusCode::OK.into_response());
+    let ciphertext = crypto::encrypt_aes_gcm(bytes, &symmetric_key).await.unwrap();
+    let json = base64::encode(&ciphertext);
+    return Ok(warp::reply::json(&json).into_response());
 }
 
 // Utilities

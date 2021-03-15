@@ -1117,6 +1117,7 @@ name = "session-open-group-server"
 version = "1.0.0"
 dependencies = [
  "aes-gcm",
+ "base64",
  "curve25519-parser",
  "hex",
  "hmac",
@@ -1124,6 +1125,7 @@ dependencies = [
  "lazy_static",
  "r2d2",
  "r2d2_sqlite",
+ "rand 0.8.3",
  "regex",
  "rusqlite",
  "serde",

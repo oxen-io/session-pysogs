@@ -3,6 +3,7 @@ use std::convert::TryInto;
 use aes_gcm::Aes256Gcm;
 use aes_gcm::aead::{Aead, NewAead, generic_array::GenericArray};
 use hmac::{Hmac, Mac, NewMac};
+use rand::{thread_rng, Rng};
 use sha2::Sha256;
 
 use super::errors::Error;
@@ -30,6 +31,19 @@ pub async fn get_x25519_symmetric_key(public_key: Vec<u8>, private_key: &x25519_
     return Ok(mac.finalize().into_bytes().to_vec());
 }
 
+pub async fn encrypt_aes_gcm(plaintext: Vec<u8>, symmetric_key: &Vec<u8>) -> Result<Vec<u8>, warp::reject::Rejection> {
+    let mut iv = [0u8; IV_SIZE];
+    thread_rng().fill(&mut iv[..]);
+    let cipher = Aes256Gcm::new(&GenericArray::from_slice(symmetric_key));
+    match cipher.encrypt(GenericArray::from_slice(&iv), &*plaintext) {
+        Ok(ciphertext) => return Ok(ciphertext),
+        Err(e) => {
+            println!("Couldn't decrypt ciphertext due to error: {}.", e);
+            return Err(warp::reject::custom(Error::DecryptionFailed));
+        }
+    };
+}
+
 pub async fn decrypt_aes_gcm(iv_and_ciphertext: Vec<u8>, symmetric_key: &Vec<u8>) -> Result<Vec<u8>, warp::reject::Rejection> {
     if iv_and_ciphertext.len() < IV_SIZE { 
         println!("Ignoring ciphertext of invalid size: {}.", iv_and_ciphertext.len());
@@ -44,5 +58,5 @@ pub async fn decrypt_aes_gcm(iv_and_ciphertext: Vec<u8>, symmetric_key: &Vec<u8>
             println!("Couldn't decrypt ciphertext due to error: {}.", e);
             return Err(warp::reject::custom(Error::DecryptionFailed));
         }
-    }
+    };
 }

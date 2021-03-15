@@ -12,7 +12,7 @@ pub enum Error {
 }
 impl warp::reject::Reject for Error { }
 
-pub fn response_from_error(e: Rejection) -> Result<Response, Rejection> {
+pub fn into_response(e: Rejection) -> Result<Response, Rejection> {
     if let Some(error) = e.find::<Error>() {
         match error {
             Error::DecryptionFailed | Error::InvalidOnionRequest | Error::InvalidRpcCall

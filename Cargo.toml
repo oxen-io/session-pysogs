@@ -6,11 +6,13 @@ edition = "2018"
 
 [dependencies]
 aes-gcm = "0.8"
+base64 = "0.13"
 curve25519-parser = "0.2"
 hex = "0.4"
 hmac = "0.10"
 http = "0.2"
 lazy_static = "1.4"
+rand = "0.8"
 regex = "1.4"
 rusqlite = "0.24"
 r2d2_sqlite = "0.17"
