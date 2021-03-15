@@ -12,3 +12,8 @@ impl Message {
         return !self.text.is_empty();
     }
 }
+
+#[derive(Deserialize, Serialize, Debug)]
+pub struct Error {
+    pub status_code: u16
+}

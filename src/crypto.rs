@@ -30,14 +30,14 @@ pub async fn get_x25519_symmetric_key(public_key: Vec<u8>, private_key: &x25519_
     return Ok(mac.finalize().into_bytes().to_vec());
 }
 
-pub async fn decrypt_aes_gcm(iv_and_ciphertext: Vec<u8>, symmetric_key: Vec<u8>) -> Result<Vec<u8>, warp::reject::Rejection> {
+pub async fn decrypt_aes_gcm(iv_and_ciphertext: Vec<u8>, symmetric_key: &Vec<u8>) -> Result<Vec<u8>, warp::reject::Rejection> {
     if iv_and_ciphertext.len() < IV_SIZE { 
         println!("Ignoring ciphertext of invalid size: {}.", iv_and_ciphertext.len());
         return Err(warp::reject::custom(Error::DecryptionFailed)); 
     }
     let iv: Vec<u8> = iv_and_ciphertext[0..IV_SIZE].try_into().unwrap(); // Safe because we know iv_and_ciphertext has a length of at least IV_SIZE bytes
     let ciphertext: Vec<u8> = iv_and_ciphertext[IV_SIZE..].try_into().unwrap(); // Safe because we know iv_and_ciphertext has a length of at least IV_SIZE bytes
-    let cipher = Aes256Gcm::new(&GenericArray::from_slice(&symmetric_key));
+    let cipher = Aes256Gcm::new(&GenericArray::from_slice(symmetric_key));
     match cipher.decrypt(GenericArray::from_slice(&iv), &*ciphertext) {
         Ok(plaintext) => return Ok(plaintext),
         Err(e) => {

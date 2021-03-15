@@ -1,6 +1,6 @@
-use warp::{Filter, http::StatusCode, Rejection};
+use warp::{Filter, Rejection, reply::Response};
 
-use super::errors::Error;
+use super::errors;
 use super::onion_requests;
 use super::storage;
 
@@ -14,18 +14,12 @@ pub fn lsrpc(
         .and(warp::body::bytes()) // Expect bytes
         .and(warp::any().map(move || db_pool.clone()))
         .and_then(onion_requests::handle_onion_request)
-        .recover(handle_error);
+        // It's possible for an error to occur before we have the symmetric key needed
+        // to encrypt the response. In this scenario we still want to return a useful
+        // status code to the receiving Service Node.
+        .recover(into_response);
 }
 
-async fn handle_error(e: Rejection) -> Result<StatusCode, Rejection> {
-    if let Some(error) = e.find::<Error>() {
-        match error {
-            Error::DecryptionFailed | Error::InvalidOnionRequest | Error::InvalidRpcCall
-                | Error::ValidationFailed => return Ok(StatusCode::BAD_REQUEST),
-            Error::Unauthorized => return Ok(StatusCode::FORBIDDEN),
-            Error::DatabaseFailedInternally => return Ok(StatusCode::INTERNAL_SERVER_ERROR)
-        };
-    } else {
-        return Err(e);
-    }
+pub async fn into_response(e: Rejection) -> Result<Response, Rejection> {
+    return errors::into_response(e);
 }
