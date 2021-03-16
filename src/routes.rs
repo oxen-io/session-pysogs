@@ -1,8 +1,15 @@
-use warp::{Filter, Rejection, reply::Response};
+use warp::{Filter, Rejection, reply::Reply, reply::Response};
 
 use super::errors;
 use super::onion_requests;
 use super::storage;
+
+/// GET /
+pub fn root() -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+    return warp::get()
+        .and(warp::path::end())
+        .and_then(root_html);
+}
 
 /// POST /loki/v3/lsrpc
 pub fn lsrpc(
@@ -18,6 +25,20 @@ pub fn lsrpc(
         // to encrypt the response. In this scenario we still want to return a useful
         // status code to the receiving Service Node.
         .recover(into_response);
+}
+
+pub async fn root_html() -> Result<Response, Rejection> {
+    let body = r#"
+    <html>
+        <head>
+            <title>Root</title>
+        </head>
+        <body>
+            This is a Session open group server.</h1>
+        </body>
+    </html>
+    "#;
+    return Ok(warp::reply::html(body).into_response());
 }
 
 pub async fn into_response(e: Rejection) -> Result<Response, Rejection> {

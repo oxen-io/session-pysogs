@@ -1,3 +1,5 @@
+use warp::Filter;
+
 mod crypto;
 mod errors;
 mod handlers;
@@ -15,10 +17,11 @@ async fn main() {
     let pool = r2d2::Pool::new(db_manager).unwrap();
     let conn = pool.get().unwrap();
     storage::create_tables_if_needed(&conn);
-    warp::serve(routes::lsrpc(pool))
-        .tls()
-        .cert_path("tls_certificate.pem")
-        .key_path("tls_private_key.pem")
-        .run(([0, 0, 0, 0], 443))
+    let routes = routes::root().or(routes::lsrpc(pool));
+    warp::serve(routes)
+        // .tls()
+        // .cert_path("tls_certificate.pem")
+        // .key_path("tls_private_key.pem")
+        .run(([127, 0, 0, 1], 8080))
         .await;
 }
