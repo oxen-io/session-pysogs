@@ -18,12 +18,12 @@ type HmacSha256 = Hmac<Sha256>;
 
 const IV_SIZE: usize = 12;
 
-pub async fn get_x25519_symmetric_key(public_key: Vec<u8>, private_key: &x25519_dalek::StaticSecret) -> Result<Vec<u8>, warp::reject::Rejection> {
+pub async fn get_x25519_symmetric_key(public_key: &[u8], private_key: &x25519_dalek::StaticSecret) -> Result<Vec<u8>, warp::reject::Rejection> {
     if public_key.len() != 32 {
         println!("Couldn't create symmetric key using public key of invalid length: {}.", hex::encode(public_key));
         return Err(warp::reject::custom(Error::DecryptionFailed)); 
     }
-    let public_key: [u8; 32] = public_key.try_into().unwrap(); // Safe because we know it's a Vec<u8> of length 32
+    let public_key: [u8; 32] = public_key.try_into().unwrap(); // Safe because we know it has a length of 32 at this point
     let dalek_public_key = x25519_dalek::PublicKey::from(public_key);
     let shared_secret = private_key.diffie_hellman(&dalek_public_key).to_bytes();
     let mut mac = HmacSha256::new_varkey(b"LOKI").unwrap();
@@ -31,11 +31,11 @@ pub async fn get_x25519_symmetric_key(public_key: Vec<u8>, private_key: &x25519_
     return Ok(mac.finalize().into_bytes().to_vec());
 }
 
-pub async fn encrypt_aes_gcm(plaintext: Vec<u8>, symmetric_key: &Vec<u8>) -> Result<Vec<u8>, warp::reject::Rejection> {
+pub async fn encrypt_aes_gcm(plaintext: &[u8], symmetric_key: &[u8]) -> Result<Vec<u8>, warp::reject::Rejection> {
     let mut iv = [0u8; IV_SIZE];
     thread_rng().fill(&mut iv[..]);
     let cipher = Aes256Gcm::new(&GenericArray::from_slice(symmetric_key));
-    match cipher.encrypt(GenericArray::from_slice(&iv), &*plaintext) {
+    match cipher.encrypt(GenericArray::from_slice(&iv), plaintext) {
         Ok(ciphertext) => return Ok(ciphertext),
         Err(e) => {
             println!("Couldn't decrypt ciphertext due to error: {}.", e);
@@ -44,7 +44,7 @@ pub async fn encrypt_aes_gcm(plaintext: Vec<u8>, symmetric_key: &Vec<u8>) -> Res
     };
 }
 
-pub async fn decrypt_aes_gcm(iv_and_ciphertext: Vec<u8>, symmetric_key: &Vec<u8>) -> Result<Vec<u8>, warp::reject::Rejection> {
+pub async fn decrypt_aes_gcm(iv_and_ciphertext: &[u8], symmetric_key: &[u8]) -> Result<Vec<u8>, warp::reject::Rejection> {
     if iv_and_ciphertext.len() < IV_SIZE { 
         println!("Ignoring ciphertext of invalid size: {}.", iv_and_ciphertext.len());
         return Err(warp::reject::custom(Error::DecryptionFailed)); 

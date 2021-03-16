@@ -79,7 +79,7 @@ async fn handle_post_request(rpc_call: RpcCall, uri: http::Uri, pool: &storage::
         },
         "/block_list" => {
             let public_key = rpc_call.body;
-            return handlers::ban(public_key, pool).await;
+            return handlers::ban(&public_key, pool).await;
         },
         _ => {
             println!("Ignoring RPC call with invalid or unused endpoint: {}.", rpc_call.endpoint);
@@ -113,7 +113,7 @@ async fn handle_delete_request(rpc_call: RpcCall, uri: http::Uri, pool: &storage
             return Err(warp::reject::custom(Error::InvalidRpcCall));
         }
         let public_key = components[1].to_string();
-        return handlers::unban(public_key, pool).await;
+        return handlers::unban(&public_key, pool).await;
     }
     // Unrecognized endpoint
     println!("Ignoring RPC call with invalid or unused endpoint: {}.", rpc_call.endpoint);

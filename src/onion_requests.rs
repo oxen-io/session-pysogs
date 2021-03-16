@@ -46,11 +46,11 @@ pub async fn handle_onion_request(blob: warp::hyper::body::Bytes, pool: storage:
     // as a "Loki server error" (i.e. the actual error is hidden from the client that
     // made the onion request). This is unfortunate but cannot be solved without
     // fundamentally changing how onion requests work.
-    return handle_decrypted_onion_request(plaintext, symmetric_key, pool).await;
+    return handle_decrypted_onion_request(&plaintext, &symmetric_key, pool).await;
 }
 
-async fn handle_decrypted_onion_request(plaintext: Vec<u8>, symmetric_key: Vec<u8>, pool: storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
-    let json = match String::from_utf8(plaintext) {
+async fn handle_decrypted_onion_request(plaintext: &[u8], symmetric_key: &[u8], pool: storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
+    let json = match String::from_utf8(plaintext.to_vec()) {
         Ok(json) => json,
         Err(e) => {
             println!("Couldn't parse RPC call from JSON due to error: {}.", e);
@@ -113,12 +113,12 @@ async fn parse_onion_request_payload(blob: warp::hyper::body::Bytes) -> Result<O
 /// Returns the decrypted `payload.ciphertext` plus the `symmetric_key` that was used for decryption if successful.
 async fn decrypt_onion_request_payload(payload: OnionRequestPayload) -> Result<(Vec<u8>, Vec<u8>), Rejection> {
     let ephemeral_key = hex::decode(payload.metadata.ephemeral_key).unwrap(); // Safe because it was validated in the parsing step
-    let symmetric_key = crypto::get_x25519_symmetric_key(ephemeral_key, &PRIVATE_KEY).await?;
-    let plaintext = crypto::decrypt_aes_gcm(payload.ciphertext, &symmetric_key).await?;
+    let symmetric_key = crypto::get_x25519_symmetric_key(&ephemeral_key, &PRIVATE_KEY).await?;
+    let plaintext = crypto::decrypt_aes_gcm(&payload.ciphertext, &symmetric_key).await?;
     return Ok((plaintext, symmetric_key));
 }
 
-async fn encrypt_response(response: Response, symmetric_key: Vec<u8>) -> Result<Response, Rejection> {
+async fn encrypt_response(response: Response, symmetric_key: &[u8]) -> Result<Response, Rejection> {
     let bytes: Vec<u8>;
     if response.status().is_success() {
         let (_, body) = response.into_parts();
@@ -127,7 +127,7 @@ async fn encrypt_response(response: Response, symmetric_key: Vec<u8>) -> Result<
         let error = models::Error { status_code : response.status().as_u16() };
         bytes = serde_json::to_vec(&error).unwrap();
     }
-    let ciphertext = crypto::encrypt_aes_gcm(bytes, &symmetric_key).await.unwrap();
+    let ciphertext = crypto::encrypt_aes_gcm(&bytes, symmetric_key).await.unwrap();
     let json = base64::encode(&ciphertext);
     return Ok(warp::reply::json(&json).into_response());
 }

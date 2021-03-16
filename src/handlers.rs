@@ -136,7 +136,7 @@ pub async fn get_moderators(pool: &storage::DatabaseConnectionPool) -> Result<Re
 }
 
 /// Bans the given `public_key`, if the requesting user is a moderator.
-pub async fn ban(public_key: String, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
+pub async fn ban(public_key: &str, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
     // Validate the public key
     if !is_valid_public_key(&public_key) { 
         println!("Ignoring ban request for invalid public key.");
@@ -166,7 +166,7 @@ pub async fn ban(public_key: String, pool: &storage::DatabaseConnectionPool) -> 
 }
 
 /// Unbans the given `public_key`, if the requesting user is a moderator.
-pub async fn unban(public_key: String, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
+pub async fn unban(public_key: &str, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
     // Validate the public key
     if !is_valid_public_key(&public_key) { 
         println!("Ignoring unban request for invalid public key.");
