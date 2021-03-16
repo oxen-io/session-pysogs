@@ -19,9 +19,9 @@ async fn main() {
     storage::create_tables_if_needed(&conn);
     let routes = routes::root().or(routes::lsrpc(pool));
     warp::serve(routes)
-        // .tls()
-        // .cert_path("tls_certificate.pem")
-        // .key_path("tls_private_key.pem")
-        .run(([127, 0, 0, 1], 8080))
+        .tls()
+        .cert_path("tls_certificate.pem")
+        .key_path("tls_private_key.pem")
+        .run(([0, 0, 0, 0], 443))
         .await;
 }
