@@ -26,6 +26,27 @@ certbot certonly
 
 Follow the instructions on-screen and then **copy** (don't move) the generated certificate and private key to the session-open-group folder (you'll need to rename them to tls_private_key.pem and tls_certificate respectively as well).
 
+**Just want to run locally?**
+
+Open src/main.rs and replace the following lines:
+
+```
+warp::serve(routes)
+    .tls()
+    .cert_path("tls_certificate.pem")
+    .key_path("tls_private_key.pem")
+    .run(([0, 0, 0, 0], 443))
+    .await;
+```
+
+by:
+
+```
+warp::serve(routes)
+    .run(([127, 0, 0, 1], 8080))
+    .await;
+```
+
 ### Step 3: Build the project
 
 ```
