@@ -1,3 +1,4 @@
+use chrono;
 use rusqlite::params;
 use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
@@ -9,14 +10,16 @@ use super::models;
 use super::rpc;
 use super::storage;
 
-pub async fn get_challenge(public_key: String, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
+// TODO: Expire tokens after 10 minutes
+
+pub async fn get_challenge(hex_public_key: String, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
     // Validate the public key
-    if !is_valid_public_key(&public_key) { 
+    if !is_valid_public_key(&hex_public_key) { 
         println!("Ignoring challenge request for invalid public key.");
         return Err(warp::reject::custom(Error::ValidationFailed)); 
     }
     // Convert the public key to bytes and cut off the version byte
-    let public_key: Vec<u8> = hex::decode(public_key).unwrap()[1..].to_vec();
+    let public_key: Vec<u8> = hex::decode(hex_public_key).unwrap()[1..].to_vec();
     // Generate an ephemeral key pair
     let (ephemeral_private_key, ephemeral_public_key) = crypto::generate_ephemeral_x25519_key_pair().await;
     // Generate a symmetric key from the requesting user's public key and the ephemeral private key
@@ -24,23 +27,82 @@ pub async fn get_challenge(public_key: String, pool: &storage::DatabaseConnectio
     // Generate a random token
     let mut token = [0u8; 48];
     thread_rng().fill(&mut token[..]);
-    // TODO: Store the token (in memory?)
+    // Store the token
+    let now = chrono::Utc::now().timestamp();
+    let mut conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
+    let tx = conn.transaction().map_err(|_| Error::DatabaseFailedInternally)?;
+    let stmt = format!("INSERT INTO {} (public_key, timestamp, token) VALUES (?1, ?2, ?3)", storage::PENDING_TOKENS_TABLE);
+    match tx.execute(&stmt, params![ hex_public_key, now, token ]) {
+        Ok(_) => (),
+        Err(e) => {
+            println!("Couldn't insert pending token due to error: {}.", e);
+            return Err(warp::reject::custom(Error::DatabaseFailedInternally));
+        }
+    }
+    tx.commit().map_err(|_| Error::DatabaseFailedInternally)?;
     // Encrypt the token with the symmetric key
     let ciphertext = crypto::encrypt_aes_gcm(&token, &symmetric_key).await?;
     // Return
     #[derive(Deserialize, Serialize, Debug)]
-    pub struct JSON {
-        pub ciphertext: String,
-        pub ephemeral_public_key: String
+    struct JSON {
+        ciphertext: String,
+        ephemeral_public_key: String
     }
     let json = JSON { ciphertext : base64::encode(ciphertext), ephemeral_public_key : base64::encode(ephemeral_public_key.to_bytes()) };
     return Ok(warp::reply::json(&json).into_response());
 }
 
-pub async fn foo(public_key: String, token: String) -> Result<Response, Rejection> {
-    // TODO: Check that the token isn't older than 10 minutes
-    // TODO: If we have the token in memory for the given public key then the user was able to decrypt it and has therefore verified their public key
-    // TODO: Put token in permanent storage and delete it from in-memory storage
+pub async fn claim_token(public_key: String, token: String, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
+    // Validate the public key
+    if !is_valid_public_key(&public_key) { 
+        println!("Ignoring claim token request for invalid public key.");
+        return Err(warp::reject::custom(Error::ValidationFailed)); 
+    }
+    // Validate the token
+    if !is_valid_public_key(&token) { 
+        println!("Ignoring claim token request for invalid token.");
+        return Err(warp::reject::custom(Error::ValidationFailed)); 
+    }
+    // Get a database connection and open a transaction
+    let mut conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
+    let tx = conn.transaction().map_err(|_| Error::DatabaseFailedInternally)?;
+    // Get the pending tokens for the given public key
+    let raw_query = format!("SELECT timestamp, token FROM {} WHERE public_key = (?1) AND timestamp > (?2)", storage::PENDING_TOKENS_TABLE);
+    let mut query = tx.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
+    let now = chrono::Utc::now().timestamp();
+    let expiration = now - 10 * 60; // Pending tokens expire after 10 minutes
+    let rows = match query.query_map(params![ public_key, expiration ], |row| {
+        Ok((row.get(0)?, row.get(1)?))
+    }) {
+        Ok(rows) => rows,
+        Err(e) => {
+            println!("Couldn't get pending tokens due to error: {}.", e);
+            return Err(warp::reject::custom(Error::DatabaseFailedInternally));
+        }
+    };
+    let tokens: Vec<(i64, Vec<u8>)> = rows.filter_map(|result| result.ok()).collect();
+    // Check that the token being claimed is in fact one of the pending tokens
+    let claim = hex::decode(token).unwrap(); // Safe because we validated it above
+    let index = tokens.iter().position(|(_, token)| *token == claim).ok_or_else(|| Error::Unauthorized)?;
+    let token = &tokens[index];
+    // Delete all pending tokens for the given public key
+    let stmt = format!("DELETE FROM {} WHERE public_key = (?1)", storage::PENDING_TOKENS_TABLE);
+    match tx.execute(&stmt, params![ public_key ]) {
+        Ok(_) => (),
+        Err(e) => println!("Couldn't delete pending tokens due to error: {}.", e) // It's not catastrophic if this fails
+    };
+    // Store the claimed token
+    let stmt = format!("INSERT OR REPLACE INTO {} (public_key, token) VALUES (?1, ?2)", storage::TOKENS_TABLE);
+    match tx.execute(&stmt, params![ public_key, token ]) {
+        Ok(_) => (),
+        Err(e) => {
+            println!("Couldn't insert token due to error: {}.", e);
+            return Err(warp::reject::custom(Error::DatabaseFailedInternally));
+        }
+    }
+    // Commit
+    tx.commit().map_err(|_| Error::DatabaseFailedInternally)?;
+    // Return
     return Ok(StatusCode::OK.into_response());
 }
 
