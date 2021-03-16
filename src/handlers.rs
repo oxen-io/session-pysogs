@@ -1,4 +1,3 @@
-use regex::Regex;
 use rusqlite::params;
 use warp::{Rejection, http::StatusCode, reply::Reply, reply::Response};
 
@@ -261,8 +260,7 @@ pub async fn is_banned(public_key: &str, pool: &storage::DatabaseConnectionPool)
 
 pub fn is_valid_public_key(public_key: &str) -> bool {
     // Check that it's a valid hex encoding
-    let re = Regex::new(r"^[0-9a-fA-F]+$").unwrap(); // Force
-    if !re.is_match(public_key) { return false; };
+    if hex::decode(public_key).is_err() { return false; }
     // Check that it's the right length
     if public_key.len() != 66 { return false } // The version byte + 32 bytes of random data
     // It appears to be a valid public key

@@ -1,6 +1,5 @@
 use std::convert::TryInto;
 
-use regex::Regex;
 use serde::{Deserialize, Serialize};
 use warp::{Rejection, reply::Reply, reply::Response};
 
@@ -101,13 +100,12 @@ async fn parse_onion_request_payload(blob: warp::hyper::body::Bytes) -> Result<O
         }
     };
     // Check that the ephemeral public key is valid hex
-    let re = Regex::new(r"^[0-9a-fA-F]+$").unwrap();
-    if !re.is_match(&metadata.ephemeral_key) { 
+    if hex::decode(&metadata.ephemeral_key).is_err() { 
         println!("Ignoring non hex encoded onion request payload ephemeral key.");
         return Err(warp::reject::custom(Error::InvalidOnionRequest)); 
     };
     // Return
-    return Ok(OnionRequestPayload { ciphertext : ciphertext, metadata : metadata });
+    return Ok(OnionRequestPayload { ciphertext, metadata });
 }
 
 /// Returns the decrypted `payload.ciphertext` plus the `symmetric_key` that was used for decryption if successful.
