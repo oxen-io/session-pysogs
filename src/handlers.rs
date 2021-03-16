@@ -19,7 +19,7 @@ pub async fn get_challenge(public_key: String, pool: &storage::DatabaseConnectio
     let public_key: Vec<u8> = hex::decode(public_key).unwrap()[1..].to_vec();
     // Generate an ephemeral key pair
     let (ephemeral_private_key, ephemeral_public_key) = crypto::generate_ephemeral_x25519_key_pair().await;
-    // Generate a symmetric key from the requesting user's public key and the server's private key
+    // Generate a symmetric key from the requesting user's public key and the ephemeral private key
     let symmetric_key = crypto::get_x25519_symmetric_key(&public_key, &ephemeral_private_key).await?;
     // Generate a random token
     let mut token = [0u8; 48];
