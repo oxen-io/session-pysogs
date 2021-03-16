@@ -10,6 +10,9 @@ use super::models;
 use super::rpc;
 use super::storage;
 
+/// The period after which a pending token is expired.
+const TOKEN_EXPIRATION: i64 = 10 * 60;
+
 // TODO: Expire tokens after 10 minutes
 
 pub async fn get_challenge(hex_public_key: String, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
@@ -19,7 +22,7 @@ pub async fn get_challenge(hex_public_key: String, pool: &storage::DatabaseConne
         return Err(warp::reject::custom(Error::ValidationFailed)); 
     }
     // Convert the public key to bytes and cut off the version byte
-    let public_key: Vec<u8> = hex::decode(hex_public_key).unwrap()[1..].to_vec();
+    let public_key: Vec<u8> = hex::decode(&hex_public_key).unwrap()[1..].to_vec();
     // Generate an ephemeral key pair
     let (ephemeral_private_key, ephemeral_public_key) = crypto::generate_ephemeral_x25519_key_pair().await;
     // Generate a symmetric key from the requesting user's public key and the ephemeral private key
@@ -27,12 +30,13 @@ pub async fn get_challenge(hex_public_key: String, pool: &storage::DatabaseConne
     // Generate a random token
     let mut token = [0u8; 48];
     thread_rng().fill(&mut token[..]);
-    // Store the token
+    // Store the (pending) token
+    // A given public key can have multiple pending tokens
     let now = chrono::Utc::now().timestamp();
     let mut conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     let tx = conn.transaction().map_err(|_| Error::DatabaseFailedInternally)?;
     let stmt = format!("INSERT INTO {} (public_key, timestamp, token) VALUES (?1, ?2, ?3)", storage::PENDING_TOKENS_TABLE);
-    match tx.execute(&stmt, params![ hex_public_key, now, token ]) {
+    match tx.execute(&stmt, params![ hex_public_key, now, token.to_vec() ]) {
         Ok(_) => (),
         Err(e) => {
             println!("Couldn't insert pending token due to error: {}.", e);
@@ -67,24 +71,26 @@ pub async fn claim_token(public_key: String, token: String, pool: &storage::Data
     let mut conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     let tx = conn.transaction().map_err(|_| Error::DatabaseFailedInternally)?;
     // Get the pending tokens for the given public key
-    let raw_query = format!("SELECT timestamp, token FROM {} WHERE public_key = (?1) AND timestamp > (?2)", storage::PENDING_TOKENS_TABLE);
-    let mut query = tx.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
-    let now = chrono::Utc::now().timestamp();
-    let expiration = now - 10 * 60; // Pending tokens expire after 10 minutes
-    let rows = match query.query_map(params![ public_key, expiration ], |row| {
-        Ok((row.get(0)?, row.get(1)?))
-    }) {
-        Ok(rows) => rows,
-        Err(e) => {
-            println!("Couldn't get pending tokens due to error: {}.", e);
-            return Err(warp::reject::custom(Error::DatabaseFailedInternally));
-        }
+    let pending_tokens: Vec<(i64, Vec<u8>)> = {
+        let raw_query = format!("SELECT timestamp, token FROM {} WHERE public_key = (?1) AND timestamp > (?2)", storage::PENDING_TOKENS_TABLE);
+        let mut query = tx.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
+        let now = chrono::Utc::now().timestamp();
+        let expiration = now - TOKEN_EXPIRATION;
+        let rows = match query.query_map(params![ public_key, expiration ], |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        }) {
+            Ok(rows) => rows,
+            Err(e) => {
+                println!("Couldn't get pending tokens due to error: {}.", e);
+                return Err(warp::reject::custom(Error::DatabaseFailedInternally));
+            }
+        };
+        rows.filter_map(|result| result.ok()).collect()
     };
-    let tokens: Vec<(i64, Vec<u8>)> = rows.filter_map(|result| result.ok()).collect();
     // Check that the token being claimed is in fact one of the pending tokens
     let claim = hex::decode(token).unwrap(); // Safe because we validated it above
-    let index = tokens.iter().position(|(_, token)| *token == claim).ok_or_else(|| Error::Unauthorized)?;
-    let token = &tokens[index];
+    let index = pending_tokens.iter().position(|(_, pending_token)| *pending_token == claim).ok_or_else(|| Error::Unauthorized)?;
+    let token = &pending_tokens[index].1;
     // Delete all pending tokens for the given public key
     let stmt = format!("DELETE FROM {} WHERE public_key = (?1)", storage::PENDING_TOKENS_TABLE);
     match tx.execute(&stmt, params![ public_key ]) {
