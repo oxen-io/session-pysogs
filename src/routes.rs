@@ -34,7 +34,7 @@ pub async fn root_html() -> Result<Response, Rejection> {
             <title>Root</title>
         </head>
         <body>
-            This is a Session open group server.</h1>
+            This is a Session open group server.
         </body>
     </html>
     "#;

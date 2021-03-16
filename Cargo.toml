@@ -13,7 +13,6 @@ hmac = "0.10"
 http = "0.2"
 lazy_static = "1.4"
 rand = "0.8"
-regex = "1.4"
 rusqlite = { version = "0.24", features = ["bundled"] }
 r2d2_sqlite = "0.17"
 r2d2 = "0.8"
