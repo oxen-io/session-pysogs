@@ -13,7 +13,7 @@ mod tests;
 
 #[tokio::main]
 async fn main() {
-    let public_key = hex::encode(onion_requests::PUBLIC_KEY.as_bytes());
+    let public_key = hex::encode(crypto::PUBLIC_KEY.as_bytes());
     println!("The public key of this server is: {}", public_key);
     let db_manager = r2d2_sqlite::SqliteConnectionManager::file("database.db");
     let pool = r2d2::Pool::new(db_manager).unwrap();

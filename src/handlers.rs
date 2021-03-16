@@ -1,10 +1,41 @@
 use rusqlite::params;
+use rand::{thread_rng, Rng};
+use serde::{Deserialize, Serialize};
 use warp::{Rejection, http::StatusCode, reply::Reply, reply::Response};
 
+use super::crypto;
 use super::errors::Error;
 use super::models;
 use super::rpc;
 use super::storage;
+
+pub async fn get_challenge(public_key: String, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
+    // Validate the public key
+    if !is_valid_public_key(&public_key) { 
+        println!("Ignoring challenge request for invalid public key.");
+        return Err(warp::reject::custom(Error::ValidationFailed)); 
+    }
+    // Convert the public key to bytes and cut off the version byte
+    let public_key: Vec<u8> = hex::decode(public_key).unwrap()[1..].to_vec();
+    // Generate an ephemeral key pair
+    let (ephemeral_private_key, ephemeral_public_key) = crypto::generate_ephemeral_x25519_key_pair().await;
+    // Generate a symmetric key from the requesting user's public key and the server's private key
+    let symmetric_key = crypto::get_x25519_symmetric_key(&public_key, &ephemeral_private_key).await?;
+    // Generate a random token
+    let mut token = [0u8; 48];
+    thread_rng().fill(&mut token[..]);
+    // TODO: Store the token (in memory?)
+    // Encrypt the token with the symmetric key
+    let ciphertext = crypto::encrypt_aes_gcm(&token, &symmetric_key).await?;
+    // Return
+    #[derive(Deserialize, Serialize, Debug)]
+    pub struct JSON {
+        pub ciphertext: String,
+        pub ephemeral_public_key: String
+    }
+    let json = JSON { ciphertext : base64::encode(ciphertext), ephemeral_public_key : base64::encode(ephemeral_public_key.to_bytes()) };
+    return Ok(warp::reply::json(&json).into_response());
+}
 
 /// Inserts the given `message` into the database if it's valid.
 pub async fn insert_message(mut message: models::Message, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {

@@ -1195,6 +1195,7 @@ dependencies = [
  "r2d2",
  "r2d2_sqlite",
  "rand 0.8.3",
+ "rand_core 0.5.1",
  "rusqlite",
  "serde",
  "serde_json",

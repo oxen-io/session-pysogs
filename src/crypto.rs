@@ -4,6 +4,7 @@ use aes_gcm::Aes256Gcm;
 use aes_gcm::aead::{Aead, NewAead, generic_array::GenericArray};
 use hmac::{Hmac, Mac, NewMac};
 use rand::{thread_rng, Rng};
+use rand_core::OsRng;
 use sha2::Sha256;
 
 use super::errors::Error;
@@ -17,6 +18,19 @@ type HmacSha256 = Hmac<Sha256>;
 // RUSTFLAGS="-Ctarget-cpu=sandybridge -Ctarget-feature=+aes,+sse2,+sse4.1,+ssse3"
 
 const IV_SIZE: usize = 12;
+
+lazy_static::lazy_static! {
+
+    pub static ref PRIVATE_KEY: x25519_dalek::StaticSecret = {
+        let bytes = include_bytes!("../x25519_private_key.pem");
+        return curve25519_parser::parse_openssl_25519_privkey(bytes).unwrap();
+    };
+
+    pub static ref PUBLIC_KEY: x25519_dalek::PublicKey = {
+        let bytes = include_bytes!("../x25519_public_key.pem");
+        return curve25519_parser::parse_openssl_25519_pubkey(bytes).unwrap();
+    };
+}
 
 pub async fn get_x25519_symmetric_key(public_key: &[u8], private_key: &x25519_dalek::StaticSecret) -> Result<Vec<u8>, warp::reject::Rejection> {
     if public_key.len() != 32 {
@@ -59,4 +73,10 @@ pub async fn decrypt_aes_gcm(iv_and_ciphertext: &[u8], symmetric_key: &[u8]) -> 
             return Err(warp::reject::custom(Error::DecryptionFailed));
         }
     };
+}
+
+pub async fn generate_ephemeral_x25519_key_pair() -> (x25519_dalek::StaticSecret, x25519_dalek::PublicKey) {
+    let private_key = x25519_dalek::StaticSecret::new(OsRng);
+    let public_key = x25519_dalek::PublicKey::from(&private_key);
+    return (private_key, public_key);
 }
