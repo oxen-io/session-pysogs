@@ -37,6 +37,13 @@ pub async fn get_challenge(public_key: String, pool: &storage::DatabaseConnectio
     return Ok(warp::reply::json(&json).into_response());
 }
 
+pub async fn foo(public_key: String, token: String) -> Result<Response, Rejection> {
+    // TODO: Check that the token isn't older than 10 minutes
+    // TODO: If we have the token in memory for the given public key then the user was able to decrypt it and has therefore verified their public key
+    // TODO: Put token in permanent storage and delete it from in-memory storage
+    return Ok(StatusCode::OK.into_response());
+}
+
 /// Inserts the given `message` into the database if it's valid.
 pub async fn insert_message(mut message: models::Message, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
     // Validate the message
