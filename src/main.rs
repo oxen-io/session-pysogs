@@ -8,6 +8,8 @@ mod onion_requests;
 mod routes;
 mod rpc;
 mod storage;
+#[cfg(test)]
+mod tests;
 
 #[tokio::main]
 async fn main() {
