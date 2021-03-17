@@ -50,7 +50,11 @@ pub async fn encrypt_aes_gcm(plaintext: &[u8], symmetric_key: &[u8]) -> Result<V
     thread_rng().fill(&mut iv[..]);
     let cipher = Aes256Gcm::new(&GenericArray::from_slice(symmetric_key));
     match cipher.encrypt(GenericArray::from_slice(&iv), plaintext) {
-        Ok(ciphertext) => return Ok(ciphertext),
+        Ok(mut ciphertext) => {
+            let mut iv_and_ciphertext = iv.to_vec();
+            iv_and_ciphertext.append(&mut ciphertext);
+            return Ok(iv_and_ciphertext);
+        },
         Err(e) => {
             println!("Couldn't decrypt ciphertext due to error: {}.", e);
             return Err(warp::reject::custom(Error::DecryptionFailed));
