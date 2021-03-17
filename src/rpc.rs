@@ -58,6 +58,14 @@ async fn handle_get_request(rpc_call: RpcCall, uri: http::Uri, pool: &storage::D
         "/moderators" => return handlers::get_moderators(pool).await,
         "/block_list" => return handlers::get_banned_public_keys(pool).await,
         "/member_count" => return handlers::get_member_count(pool).await,
+        "/challenge" => {
+            let public_key = uri.query();
+            if public_key == None {
+                println!("Ignoring RPC call with invalid or unused endpoint: {}.", rpc_call.endpoint);
+                return Err(warp::reject::custom(Error::InvalidRpcCall));        
+            }
+            return handlers::get_challenge(uri.query().unwrap(), pool).await;
+        },
         _ => {
             println!("Ignoring RPC call with invalid or unused endpoint: {}.", rpc_call.endpoint);
             return Err(warp::reject::custom(Error::InvalidRpcCall));        
@@ -69,7 +77,7 @@ async fn handle_post_request(rpc_call: RpcCall, uri: http::Uri, pool: &storage::
     match uri.path() {
         "/messages" => {
             let message = match serde_json::from_str(&rpc_call.body) {
-                Ok(query_options) => query_options,
+                Ok(message) => message,
                 Err(e) => {
                     println!("Couldn't parse message from: {} due to error: {}.", rpc_call.body, e);
                     return Err(warp::reject::custom(Error::InvalidRpcCall));

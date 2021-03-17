@@ -10,14 +10,14 @@ use super::models;
 use super::rpc;
 use super::storage;
 
-pub async fn get_challenge(hex_public_key: String, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
+pub async fn get_challenge(hex_public_key: &str, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
     // Validate the public key
-    if !is_valid_public_key(&hex_public_key) { 
+    if !is_valid_public_key(hex_public_key) { 
         println!("Ignoring challenge request for invalid public key.");
         return Err(warp::reject::custom(Error::ValidationFailed)); 
     }
     // Convert the public key to bytes and cut off the version byte
-    let public_key: Vec<u8> = hex::decode(&hex_public_key).unwrap()[1..].to_vec();
+    let public_key: Vec<u8> = hex::decode(hex_public_key).unwrap()[1..].to_vec();
     // Generate an ephemeral key pair
     let (ephemeral_private_key, ephemeral_public_key) = crypto::generate_ephemeral_x25519_key_pair().await;
     // Generate a symmetric key from the requesting user's public key and the ephemeral private key
@@ -27,18 +27,20 @@ pub async fn get_challenge(hex_public_key: String, pool: &storage::DatabaseConne
     thread_rng().fill(&mut token[..]);
     // Store the (pending) token
     // A given public key can have multiple pending tokens
-    let now = chrono::Utc::now().timestamp();
-    let mut conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
-    let tx = conn.transaction().map_err(|_| Error::DatabaseFailedInternally)?;
-    let stmt = format!("INSERT INTO {} (public_key, timestamp, token) VALUES (?1, ?2, ?3)", storage::PENDING_TOKENS_TABLE);
-    match tx.execute(&stmt, params![ hex_public_key, now, token.to_vec() ]) {
-        Ok(_) => (),
-        Err(e) => {
-            println!("Couldn't insert pending token due to error: {}.", e);
-            return Err(warp::reject::custom(Error::DatabaseFailedInternally));
-        }
-    }
-    tx.commit().map_err(|_| Error::DatabaseFailedInternally)?;
+    {
+        let now = chrono::Utc::now().timestamp();
+        let mut conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
+        let tx = conn.transaction().map_err(|_| Error::DatabaseFailedInternally)?;
+        let stmt = format!("INSERT INTO {} (public_key, timestamp, token) VALUES (?1, ?2, ?3)", storage::PENDING_TOKENS_TABLE);
+        let _ = match tx.execute(&stmt, params![ hex_public_key, now, token.to_vec() ]) {
+            Ok(rows) => rows,
+            Err(e) => {
+                println!("Couldn't insert pending token due to error: {}.", e);
+                return Err(warp::reject::custom(Error::DatabaseFailedInternally));
+            }
+        };
+        tx.commit().map_err(|_| Error::DatabaseFailedInternally)?;
+    };
     // Encrypt the token with the symmetric key
     let ciphertext = crypto::encrypt_aes_gcm(&token, &symmetric_key).await?;
     // Return
