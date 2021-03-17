@@ -10,8 +10,6 @@ use super::models;
 use super::rpc;
 use super::storage;
 
-// TODO: Expire tokens after 10 minutes
-
 pub async fn get_challenge(hex_public_key: String, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
     // Validate the public key
     if !is_valid_public_key(&hex_public_key) { 

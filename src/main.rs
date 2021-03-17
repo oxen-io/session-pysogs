@@ -24,9 +24,9 @@ async fn main() {
     let f_0 = storage::prune_pending_tokens_periodically(pool.clone());
     let routes = routes::root().or(routes::lsrpc(pool.clone()));
     let f_1 = warp::serve(routes)
-        // .tls()
-        // .cert_path("tls_certificate.pem")
-        // .key_path("tls_private_key.pem")
-        .run(([127, 0, 0, 1], 8080));
+        .tls()
+        .cert_path("tls_certificate.pem")
+        .key_path("tls_private_key.pem")
+        .run(([0, 0, 0, 0], 443));
     join!(f_0, f_1);
 }
