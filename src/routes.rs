@@ -13,13 +13,13 @@ pub fn root() -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Cl
 
 /// POST /loki/v3/lsrpc
 pub fn lsrpc(
-    db_pool: storage::DatabaseConnectionPool
+    pool: storage::DatabaseConnectionPool
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     return warp::post()
         .and(warp::path("loki")).and(warp::path("v3")).and(warp::path("lsrpc"))
         .and(warp::body::content_length_limit(10 * 1024 * 1024)) // Match storage server
         .and(warp::body::bytes()) // Expect bytes
-        .and(warp::any().map(move || db_pool.clone()))
+        .and(warp::any().map(move || pool.clone()))
         .and_then(onion_requests::handle_onion_request)
         // It's possible for an error to occur before we have the symmetric key needed
         // to encrypt the response. In this scenario we still want to return a useful
