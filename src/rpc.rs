@@ -30,11 +30,13 @@ pub async fn handle_rpc_call(rpc_call: RpcCall, pool: &storage::DatabaseConnecti
             return Err(warp::reject::custom(Error::InvalidRpcCall));
         }
     };
+    // Get the auth token if possible
+    let auth_token = get_auth_token(&rpc_call);
     // Switch on the HTTP method
     match rpc_call.method.as_ref() {
-        "GET" => return handle_get_request(rpc_call, uri, pool).await,
-        "POST" => return handle_post_request(rpc_call, uri, pool).await,
-        "DELETE" => return handle_delete_request(rpc_call, uri, pool).await,
+        "GET" => return handle_get_request(rpc_call, uri, auth_token, pool).await,
+        "POST" => return handle_post_request(rpc_call, uri, auth_token, pool).await,
+        "DELETE" => return handle_delete_request(rpc_call, uri, auth_token, pool).await,
         _ => {
             println!("Ignoring RPC call with invalid or unused HTTP method: {}.", rpc_call.method);
             return Err(warp::reject::custom(Error::InvalidRpcCall));
@@ -42,7 +44,7 @@ pub async fn handle_rpc_call(rpc_call: RpcCall, pool: &storage::DatabaseConnecti
     }
 }
 
-async fn handle_get_request(rpc_call: RpcCall, uri: http::Uri, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
+async fn handle_get_request(rpc_call: RpcCall, uri: http::Uri, auth_token: Option<String>, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
     // Parse query options if needed
     let mut query_options = QueryOptions { limit : None, from_server_id : None };
     if let Some(query) = uri.query() {
@@ -88,7 +90,7 @@ async fn handle_get_request(rpc_call: RpcCall, uri: http::Uri, pool: &storage::D
     }
 }
 
-async fn handle_post_request(rpc_call: RpcCall, uri: http::Uri, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
+async fn handle_post_request(rpc_call: RpcCall, uri: http::Uri, auth_token: Option<String>, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
     match uri.path() {
         "/messages" => {
             let message = match serde_json::from_str(&rpc_call.body) {
@@ -98,11 +100,11 @@ async fn handle_post_request(rpc_call: RpcCall, uri: http::Uri, pool: &storage::
                     return Err(warp::reject::custom(Error::InvalidRpcCall));
                 }
             };
-            return handlers::insert_message(message, pool).await; 
+            return handlers::insert_message(message, auth_token, pool).await; 
         },
         "/block_list" => {
             let public_key = rpc_call.body;
-            return handlers::ban(&public_key, pool).await;
+            return handlers::ban(&public_key, auth_token, pool).await;
         },
         _ => {
             println!("Ignoring RPC call with invalid or unused endpoint: {}.", rpc_call.endpoint);
@@ -111,7 +113,7 @@ async fn handle_post_request(rpc_call: RpcCall, uri: http::Uri, pool: &storage::
     }
 }
 
-async fn handle_delete_request(rpc_call: RpcCall, uri: http::Uri, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
+async fn handle_delete_request(rpc_call: RpcCall, uri: http::Uri, auth_token: Option<String>, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
     // DELETE /messages/:server_id
     if uri.path().starts_with("/messages") {
         let components: Vec<&str> = uri.path()[1..].split("/").collect(); // Drop the leading slash and split on subsequent slashes
@@ -126,7 +128,7 @@ async fn handle_delete_request(rpc_call: RpcCall, uri: http::Uri, pool: &storage
                 return Err(warp::reject::custom(Error::InvalidRpcCall));
             }
         };
-        return handlers::delete_message(server_id, pool).await;
+        return handlers::delete_message(server_id, auth_token, pool).await;
     }
     // DELETE /block_list/:public_key
     if uri.path().starts_with("/block_list") {
@@ -136,7 +138,7 @@ async fn handle_delete_request(rpc_call: RpcCall, uri: http::Uri, pool: &storage
             return Err(warp::reject::custom(Error::InvalidRpcCall));
         }
         let public_key = components[1].to_string();
-        return handlers::unban(&public_key, pool).await;
+        return handlers::unban(&public_key, auth_token, pool).await;
     }
     // Unrecognized endpoint
     println!("Ignoring RPC call with invalid or unused endpoint: {}.", rpc_call.endpoint);
@@ -144,11 +146,11 @@ async fn handle_delete_request(rpc_call: RpcCall, uri: http::Uri, pool: &storage
 }
 
 // Utilities
-fn get_auth_token(rpc_call: RpcCall) -> Option<String> {
+fn get_auth_token(rpc_call: &RpcCall) -> Option<String> {
     if rpc_call.headers.is_empty() { return None; }
     let headers: HashMap<String, String> = match serde_json::from_str(&rpc_call.headers) {
         Ok(headers) => headers,
-        Err(e) => return None
+        Err(_) => return None
     };
     let header = headers.get("Authorization");
     if header == None { return None; }

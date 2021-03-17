@@ -21,6 +21,7 @@ pub fn create_tables_if_needed(conn: &DatabaseConnection) {
     let messages_table_cmd = format!(
     "CREATE TABLE IF NOT EXISTS {} (
         id INTEGER PRIMARY KEY,
+        public_key TEXT,
         text TEXT
     )", MESSAGES_TABLE);
     conn.execute(&messages_table_cmd, params![]).expect("Couldn't create messages table.");
@@ -55,7 +56,7 @@ pub fn create_tables_if_needed(conn: &DatabaseConnection) {
     let tokens_table_cmd = format!(
     "CREATE TABLE IF NOT EXISTS {} (
         public_key STRING PRIMARY KEY,
-        token BLOB
+        token TEXT
     )", TOKENS_TABLE);
     conn.execute(&tokens_table_cmd, params![]).expect("Couldn't create tokens table.");
 }
