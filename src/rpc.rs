@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde::{Serialize, Deserialize};
 use warp::{Rejection, reply::Response};
 
@@ -9,7 +11,8 @@ use super::storage;
 pub struct RpcCall {
     pub endpoint: String,
     pub body: String,
-    pub method: String
+    pub method: String,
+    pub headers: String
 }
 
 #[derive(Debug, Deserialize)]
@@ -138,4 +141,16 @@ async fn handle_delete_request(rpc_call: RpcCall, uri: http::Uri, pool: &storage
     // Unrecognized endpoint
     println!("Ignoring RPC call with invalid or unused endpoint: {}.", rpc_call.endpoint);
     return Err(warp::reject::custom(Error::InvalidRpcCall));
+}
+
+// Utilities
+fn get_auth_token(rpc_call: RpcCall) -> Option<String> {
+    if rpc_call.headers.is_empty() { return None; }
+    let headers: HashMap<String, String> = match serde_json::from_str(&rpc_call.headers) {
+        Ok(headers) => headers,
+        Err(e) => return None
+    };
+    let header = headers.get("Authorization");
+    if header == None { return None; }
+    return header.unwrap().strip_prefix("Bearer").map(|s| s.to_string()).or(None);
 }
