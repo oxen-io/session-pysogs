@@ -10,6 +10,11 @@ use super::models;
 use super::rpc;
 use super::storage;
 
+enum AuthorizationLevel {
+    Basic, 
+    Moderator
+}
+
 pub async fn get_challenge(hex_public_key: &str, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
     // Validate the public key
     if !is_valid_public_key(hex_public_key) { 
@@ -116,19 +121,15 @@ pub async fn insert_message(mut message: models::Message, auth_token: Option<Str
         println!("Ignoring invalid message.");
         return Err(warp::reject::custom(Error::ValidationFailed)); 
     }
-    // Check permissions
-    if auth_token == None { return Err(warp::reject::custom(Error::Unauthorized)); }
-    let auth_token = auth_token.unwrap();
-    let public_key = get_public_key_for_token(&auth_token, pool).await?;
-    if public_key == None { return Err(warp::reject::custom(Error::Unauthorized)); }
-    let public_key = public_key.unwrap();
-    if is_banned(&public_key, pool).await? { return Err(warp::reject::custom(Error::Unauthorized)); }
+    // Check authorization level
+    let (has_authorization_level, requesting_public_key) = has_authorization_level(auth_token, AuthorizationLevel::Basic, pool).await?;
+    if !has_authorization_level { return Err(warp::reject::custom(Error::Unauthorized)); }
     // Get a connection and open a transaction
     let mut conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     let tx = conn.transaction().map_err(|_| Error::DatabaseFailedInternally)?;
     // Insert the message
     let stmt = format!("INSERT INTO {} (public_key, text) VALUES (?1, ?2)", storage::MESSAGES_TABLE);
-    match tx.execute(&stmt, params![ &public_key, message.text ]) {
+    match tx.execute(&stmt, params![ &requesting_public_key, message.text ]) {
         Ok(_) => (),
         Err(e) => {
             println!("Couldn't insert message due to error: {}.", e);
@@ -177,14 +178,10 @@ pub async fn delete_message(row_id: i64, auth_token: Option<String>, pool: &stor
     // Get a connection and open a transaction
     let mut conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     let tx = conn.transaction().map_err(|_| Error::DatabaseFailedInternally)?;
-    // Check permissions
-    if auth_token == None { return Err(warp::reject::custom(Error::Unauthorized)); }
-    let auth_token = auth_token.unwrap();
-    let public_key = get_public_key_for_token(&auth_token, pool).await?;
-    if public_key == None { return Err(warp::reject::custom(Error::Unauthorized)); }
-    let public_key = public_key.unwrap();
-    if is_banned(&public_key, pool).await? { return Err(warp::reject::custom(Error::Unauthorized)); }
-    let sender: Option<String> = {
+    // Check authorization level
+    let (has_authorization_level, requesting_public_key) = has_authorization_level(auth_token, AuthorizationLevel::Basic, pool).await?;
+    if !has_authorization_level { return Err(warp::reject::custom(Error::Unauthorized)); }
+    let sender_option: Option<String> = {
         let raw_query = format!("SELECT public_key FROM {} WHERE rowid = (?1)", storage::MESSAGES_TABLE);
         let mut query = tx.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
         let rows = match query.query_map(params![ row_id ], |row| {
@@ -199,8 +196,8 @@ pub async fn delete_message(row_id: i64, auth_token: Option<String>, pool: &stor
         let public_keys: Vec<String> = rows.filter_map(|result| result.ok()).collect();
         public_keys.get(0).map(|s| s.to_string())
     };
-    if sender == None { return Err(warp::reject::custom(Error::Unauthorized)); }
-    if !is_moderator(&public_key, pool).await? && public_key != sender.unwrap() { return Err(warp::reject::custom(Error::Unauthorized)); }
+    let sender = sender_option.ok_or(warp::reject::custom(Error::DatabaseFailedInternally))?;
+    if !is_moderator(&requesting_public_key, pool).await? && requesting_public_key != sender { return Err(warp::reject::custom(Error::Unauthorized)); }
     // Delete the message if it's present
     let stmt = format!("DELETE FROM {} WHERE rowid = (?1)", storage::MESSAGES_TABLE);
     let count = match tx.execute(&stmt, params![ row_id ]) {
@@ -269,14 +266,9 @@ pub async fn ban(public_key: &str, auth_token: Option<String>, pool: &storage::D
         println!("Ignoring ban request for invalid public key.");
         return Err(warp::reject::custom(Error::ValidationFailed)); 
     }
-    // Check permissions
-    if auth_token == None { return Err(warp::reject::custom(Error::Unauthorized)); }
-    let auth_token = auth_token.unwrap();
-    let public_key = get_public_key_for_token(&auth_token, pool).await?;
-    if public_key == None { return Err(warp::reject::custom(Error::Unauthorized)); }
-    let public_key = public_key.unwrap();
-    if is_banned(&public_key, pool).await? { return Err(warp::reject::custom(Error::Unauthorized)); }
-    if !is_moderator(&public_key, pool).await? { return Err(warp::reject::custom(Error::Unauthorized)); }
+    // Check authorization level
+    let (has_authorization_level, _) = has_authorization_level(auth_token, AuthorizationLevel::Moderator, pool).await?;
+    if !has_authorization_level { return Err(warp::reject::custom(Error::Unauthorized)); }
     // Don't double ban public keys
     if is_banned(&public_key, pool).await? { return Ok(StatusCode::OK.into_response()); }
     // Get a connection and open a transaction
@@ -304,14 +296,9 @@ pub async fn unban(public_key: &str, auth_token: Option<String>, pool: &storage:
         println!("Ignoring unban request for invalid public key.");
         return Err(warp::reject::custom(Error::ValidationFailed)); 
     }
-    // Check permissions
-    if auth_token == None { return Err(warp::reject::custom(Error::Unauthorized)); }
-    let auth_token = auth_token.unwrap();
-    let public_key = get_public_key_for_token(&auth_token, pool).await?;
-    if public_key == None { return Err(warp::reject::custom(Error::Unauthorized)); }
-    let public_key = public_key.unwrap();
-    if is_banned(&public_key, pool).await? { return Err(warp::reject::custom(Error::Unauthorized)); }
-    if !is_moderator(&public_key, pool).await? { return Err(warp::reject::custom(Error::Unauthorized)); }
+    // Check authorization level
+    let (has_authorization_level, _) = has_authorization_level(auth_token, AuthorizationLevel::Moderator, pool).await?;
+    if !has_authorization_level { return Err(warp::reject::custom(Error::Unauthorized)); }
     // Don't double unban public keys
     if !is_banned(&public_key, pool).await? { return Ok(StatusCode::OK.into_response()); }
     // Get a connection and open a transaction
@@ -402,13 +389,13 @@ fn is_valid_public_key(public_key: &str) -> bool {
     return true
 }
 
-async fn get_public_key_for_token(token: &str, pool: &storage::DatabaseConnectionPool) -> Result<Option<String>, Rejection> {
+async fn get_public_key_for_auth_token(auth_token: &str, pool: &storage::DatabaseConnectionPool) -> Result<Option<String>, Rejection> {
     // Get a database connection
     let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     // Query the database
     let raw_query = format!("SELECT public_key FROM {} WHERE token = (?1)", storage::TOKENS_TABLE);
     let mut query = conn.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
-    let rows = match query.query_map(params![ token ], |row| {
+    let rows = match query.query_map(params![ auth_token ], |row| {
         Ok(row.get(0)?)
     }) {
         Ok(rows) => rows,
@@ -420,4 +407,22 @@ async fn get_public_key_for_token(token: &str, pool: &storage::DatabaseConnectio
     let public_keys: Vec<String> = rows.filter_map(|result| result.ok()).collect();
     // Return
     return Ok(public_keys.get(0).map(|s| s.to_string()));
+}
+
+async fn has_authorization_level(auth_token: Option<String>, level: AuthorizationLevel, pool: &storage::DatabaseConnectionPool) -> Result<(bool, String), Rejection> {
+    // Check that the auth token is present
+    let auth_token = auth_token.ok_or(warp::reject::custom(Error::Unauthorized))?;
+    // Check that we have a public key associated with the given auth token
+    let public_key_option = get_public_key_for_auth_token(&auth_token, pool).await?;
+    let public_key = public_key_option.ok_or(warp::reject::custom(Error::Unauthorized))?;
+    // Check that the given public key isn't banned
+    if is_banned(&public_key, pool).await? { return Err(warp::reject::custom(Error::Unauthorized)); }
+    // If needed, check that the given public key is a moderator
+    match level {
+        Basic => return Ok((true, public_key)),
+        Moderator => {
+            if !is_moderator(&public_key, pool).await? { return Err(warp::reject::custom(Error::Unauthorized)); }
+            return Ok((true, public_key));
+        }
+    };
 }
