@@ -115,12 +115,12 @@ pub async fn claim_auth_token(public_key: String, token: String, pool: &storage:
 }
 
 pub async fn delete_auth_token(auth_token: Option<String>, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
-    // Get a connection and open a transaction
-    let mut conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
-    let tx = conn.transaction().map_err(|_| Error::DatabaseFailedInternally)?;
     // Check authorization level
     let (has_authorization_level, requesting_public_key) = has_authorization_level(auth_token, AuthorizationLevel::Basic, pool).await?;
     if !has_authorization_level { return Err(warp::reject::custom(Error::Unauthorized)); }
+    // Get a connection and open a transaction
+    let mut conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
+    let tx = conn.transaction().map_err(|_| Error::DatabaseFailedInternally)?;
     // Delete the token
     let stmt = format!("DELETE FROM {} WHERE public_key = (?1)", storage::TOKENS_TABLE);
     let count = match tx.execute(&stmt, params![ requesting_public_key ]) {
@@ -197,15 +197,13 @@ pub async fn get_messages(options: rpc::QueryOptions, pool: &storage::DatabaseCo
 
 /// Deletes the message with the given `row_id` from the database, if it's present.
 pub async fn delete_message(row_id: i64, auth_token: Option<String>, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
-    // Get a connection and open a transaction
-    let mut conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
-    let tx = conn.transaction().map_err(|_| Error::DatabaseFailedInternally)?;
     // Check authorization level
     let (has_authorization_level, requesting_public_key) = has_authorization_level(auth_token, AuthorizationLevel::Basic, pool).await?;
     if !has_authorization_level { return Err(warp::reject::custom(Error::Unauthorized)); }
     let sender_option: Option<String> = {
+        let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
         let raw_query = format!("SELECT public_key FROM {} WHERE rowid = (?1)", storage::MESSAGES_TABLE);
-        let mut query = tx.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
+        let mut query = conn.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
         let rows = match query.query_map(params![ row_id ], |row| {
             Ok(row.get(0)?)
         }) {
@@ -220,6 +218,9 @@ pub async fn delete_message(row_id: i64, auth_token: Option<String>, pool: &stor
     };
     let sender = sender_option.ok_or(warp::reject::custom(Error::DatabaseFailedInternally))?;
     if !is_moderator(&requesting_public_key, pool).await? && requesting_public_key != sender { return Err(warp::reject::custom(Error::Unauthorized)); }
+    // Get a connection and open a transaction
+    let mut conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
+    let tx = conn.transaction().map_err(|_| Error::DatabaseFailedInternally)?;
     // Delete the message if it's present
     let stmt = format!("DELETE FROM {} WHERE rowid = (?1)", storage::MESSAGES_TABLE);
     let count = match tx.execute(&stmt, params![ row_id ]) {
