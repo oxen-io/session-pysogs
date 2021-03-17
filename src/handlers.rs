@@ -10,9 +10,6 @@ use super::models;
 use super::rpc;
 use super::storage;
 
-/// The period after which a pending token is expired.
-const TOKEN_EXPIRATION: i64 = 10 * 60;
-
 // TODO: Expire tokens after 10 minutes
 
 pub async fn get_challenge(hex_public_key: String, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
@@ -75,7 +72,7 @@ pub async fn claim_token(public_key: String, token: String, pool: &storage::Data
         let raw_query = format!("SELECT timestamp, token FROM {} WHERE public_key = (?1) AND timestamp > (?2)", storage::PENDING_TOKENS_TABLE);
         let mut query = tx.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
         let now = chrono::Utc::now().timestamp();
-        let expiration = now - TOKEN_EXPIRATION;
+        let expiration = now - storage::PENDING_TOKEN_EXPIRATION;
         let rows = match query.query_map(params![ public_key, expiration ], |row| {
             Ok((row.get(0)?, row.get(1)?))
         }) {

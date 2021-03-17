@@ -1,3 +1,5 @@
+use futures::join;
+use tokio;
 use warp::Filter;
 
 mod crypto;
@@ -19,11 +21,12 @@ async fn main() {
     let pool = r2d2::Pool::new(db_manager).unwrap();
     let conn = pool.get().unwrap();
     storage::create_tables_if_needed(&conn);
-    let routes = routes::root().or(routes::lsrpc(pool));
-    warp::serve(routes)
-        .tls()
-        .cert_path("tls_certificate.pem")
-        .key_path("tls_private_key.pem")
-        .run(([0, 0, 0, 0], 443))
-        .await;
+    let f_0 = storage::prune_pending_tokens_periodically(pool.clone());
+    let routes = routes::root().or(routes::lsrpc(pool.clone()));
+    let f_1 = warp::serve(routes)
+        // .tls()
+        // .cert_path("tls_certificate.pem")
+        // .key_path("tls_private_key.pem")
+        .run(([127, 0, 0, 1], 8080));
+    join!(f_0, f_1);
 }
