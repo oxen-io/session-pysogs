@@ -114,6 +114,28 @@ pub async fn claim_token(public_key: String, token: String, pool: &storage::Data
     return Ok(StatusCode::OK.into_response());
 }
 
+pub async fn delete_token(auth_token: Option<String>, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
+    // Get a connection and open a transaction
+    let mut conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
+    let tx = conn.transaction().map_err(|_| Error::DatabaseFailedInternally)?;
+    // Check authorization level
+    let (has_authorization_level, requesting_public_key) = has_authorization_level(auth_token, AuthorizationLevel::Basic, pool).await?;
+    if !has_authorization_level { return Err(warp::reject::custom(Error::Unauthorized)); }
+    // Delete the token
+    let stmt = format!("DELETE FROM {} WHERE public_key = (?1)", storage::TOKENS_TABLE);
+    let count = match tx.execute(&stmt, params![ requesting_public_key ]) {
+        Ok(count) => count,
+        Err(e) => {
+            println!("Couldn't delete token due to error: {}.", e);
+            return Err(warp::reject::custom(Error::DatabaseFailedInternally));
+        }
+    };
+    // Commit
+    tx.commit().map_err(|_| Error::DatabaseFailedInternally)?;
+    // Return
+    return Ok(StatusCode::OK.into_response());
+}
+
 /// Inserts the given `message` into the database if it's valid.
 pub async fn insert_message(mut message: models::Message, auth_token: Option<String>, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
     // Validate the message
@@ -326,8 +348,23 @@ pub async fn get_banned_public_keys(pool: &storage::DatabaseConnectionPool) -> R
 }
 
 pub async fn get_member_count(pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
-    let member_count = 5; // TODO: Implement
-    return Ok(warp::reply::json(&member_count).into_response());
+    // Get a database connection
+    let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
+    // Query the database
+    let raw_query = format!("SELECT public_key FROM {}", storage::TOKENS_TABLE);
+    let mut query = conn.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
+    let rows = match query.query_map(params![], |row| {
+        Ok(row.get(0)?)
+    }) {
+        Ok(rows) => rows,
+        Err(e) => {
+            println!("Couldn't query database due to error: {}.", e);
+            return Err(warp::reject::custom(Error::DatabaseFailedInternally));
+        }
+    };
+    let public_keys: Vec<String> = rows.filter_map(|result| result.ok()).collect();
+    let public_key_count = public_keys.len();
+    return Ok(warp::reply::json(&public_key_count).into_response());
 }
 
 // Utilities
