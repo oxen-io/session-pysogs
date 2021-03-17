@@ -60,7 +60,7 @@ pub async fn claim_token(public_key: String, token: String, pool: &storage::Data
         return Err(warp::reject::custom(Error::ValidationFailed)); 
     }
     // Validate the token
-    if !is_valid_public_key(&token) { 
+    if hex::decode(&token).is_err() { 
         println!("Ignoring claim token request for invalid token.");
         return Err(warp::reject::custom(Error::ValidationFailed)); 
     }

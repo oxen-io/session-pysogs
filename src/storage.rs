@@ -82,7 +82,6 @@ async fn prune_pending_tokens(pool: DatabaseConnectionPool) {
     let stmt = format!("DELETE FROM {} WHERE timestamp < (?1)", PENDING_TOKENS_TABLE);
     let now = chrono::Utc::now().timestamp();
     let expiration = now - PENDING_TOKEN_EXPIRATION;
-    println!("{}", expiration);
     match tx.execute(&stmt, params![ expiration ]) {
         Ok(_) => (),
         Err(e) => return println!("Couldn't prune pending tokens due to error: {}.", e)
