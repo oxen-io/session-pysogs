@@ -59,12 +59,24 @@ async fn handle_get_request(rpc_call: RpcCall, uri: http::Uri, pool: &storage::D
         "/block_list" => return handlers::get_banned_public_keys(pool).await,
         "/member_count" => return handlers::get_member_count(pool).await,
         "/challenge" => {
-            let public_key = uri.query();
-            if public_key == None {
-                println!("Ignoring RPC call with invalid or unused endpoint: {}.", rpc_call.endpoint);
-                return Err(warp::reject::custom(Error::InvalidRpcCall));        
+            #[derive(Debug, Deserialize)]
+            pub struct QueryOptions {
+                pub public_key: String
             }
-            return handlers::get_challenge(uri.query().unwrap(), pool).await;
+            let query_options: QueryOptions;
+            if let Some(query) = uri.query() {
+                query_options = match serde_json::from_str(&query) {
+                    Ok(query_options) => query_options,
+                    Err(e) => {
+                        println!("Couldn't parse query options from: {} due to error: {}.", query, e);
+                        return Err(warp::reject::custom(Error::InvalidRpcCall));
+                    }
+                };
+            } else {
+                println!("Missing query options.");
+                return Err(warp::reject::custom(Error::InvalidRpcCall));
+            }
+            return handlers::get_challenge(&query_options.public_key, pool).await;
         },
         _ => {
             println!("Ignoring RPC call with invalid or unused endpoint: {}.", rpc_call.endpoint);
