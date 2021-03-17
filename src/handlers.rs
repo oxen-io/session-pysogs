@@ -31,7 +31,7 @@ pub async fn get_challenge(hex_public_key: &str, pool: &storage::DatabaseConnect
     let mut token = [0u8; 48];
     thread_rng().fill(&mut token[..]);
     // Store the (pending) token
-    // A given public key can have multiple pending tokens
+    // Note that a given public key can have multiple pending tokens
     {
         let now = chrono::Utc::now().timestamp();
         let mut conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;

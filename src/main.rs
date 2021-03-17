@@ -21,12 +21,13 @@ async fn main() {
     let pool = r2d2::Pool::new(db_manager).unwrap();
     let conn = pool.get().unwrap();
     storage::create_tables_if_needed(&conn);
-    let f_0 = storage::prune_pending_tokens_periodically(pool.clone());
+    let prune_pending_tokens_future = storage::prune_pending_tokens_periodically(pool.clone());
+    let prune_tokens_future = storage::prune_tokens_periodically(pool.clone());
     let routes = routes::root().or(routes::lsrpc(pool.clone()));
-    let f_1 = warp::serve(routes)
+    let serve_routes_future = warp::serve(routes)
         .tls()
         .cert_path("tls_certificate.pem")
         .key_path("tls_private_key.pem")
         .run(([0, 0, 0, 0], 443));
-    join!(f_0, f_1);
+    join!(prune_pending_tokens_future, prune_tokens_future, serve_routes_future);
 }
