@@ -63,7 +63,7 @@ async fn handle_get_request(rpc_call: RpcCall, uri: http::Uri, auth_token: Optio
         "/moderators" => return handlers::get_moderators(pool).await,
         "/block_list" => return handlers::get_banned_public_keys(pool).await,
         "/member_count" => return handlers::get_member_count(pool).await,
-        "/challenge" => {
+        "/auth_token_challenge" => {
             #[derive(Debug, Deserialize)]
             pub struct QueryOptions {
                 pub public_key: String
@@ -81,7 +81,7 @@ async fn handle_get_request(rpc_call: RpcCall, uri: http::Uri, auth_token: Optio
                 println!("Missing query options.");
                 return Err(warp::reject::custom(Error::InvalidRpcCall));
             }
-            return handlers::get_challenge(&query_options.public_key, pool).await;
+            return handlers::get_auth_token_challenge(&query_options.public_key, pool).await;
         },
         _ => {
             println!("Ignoring RPC call with invalid or unused endpoint: {}.", rpc_call.endpoint);
@@ -106,6 +106,10 @@ async fn handle_post_request(rpc_call: RpcCall, uri: http::Uri, auth_token: Opti
             let public_key = rpc_call.body;
             return handlers::ban(&public_key, auth_token, pool).await;
         },
+        "/claim_auth_token" => {
+            let public_key = rpc_call.body;
+            return handlers::ban(&public_key, auth_token, pool).await;
+        }
         _ => {
             println!("Ignoring RPC call with invalid or unused endpoint: {}.", rpc_call.endpoint);
             return Err(warp::reject::custom(Error::InvalidRpcCall));        
@@ -139,6 +143,10 @@ async fn handle_delete_request(rpc_call: RpcCall, uri: http::Uri, auth_token: Op
         }
         let public_key = components[1].to_string();
         return handlers::unban(&public_key, auth_token, pool).await;
+    }
+    // DELETE /auth_token
+    if uri.path().starts_with("/auth_token") {
+        return handlers::delete_auth_token(auth_token, pool).await;
     }
     // Unrecognized endpoint
     println!("Ignoring RPC call with invalid or unused endpoint: {}.", rpc_call.endpoint);

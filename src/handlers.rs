@@ -15,7 +15,7 @@ enum AuthorizationLevel {
     Moderator
 }
 
-pub async fn get_challenge(hex_public_key: &str, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
+pub async fn get_auth_token_challenge(hex_public_key: &str, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
     // Validate the public key
     if !is_valid_public_key(hex_public_key) { 
         println!("Ignoring challenge request for invalid public key.");
@@ -58,7 +58,7 @@ pub async fn get_challenge(hex_public_key: &str, pool: &storage::DatabaseConnect
     return Ok(warp::reply::json(&json).into_response());
 }
 
-pub async fn claim_token(public_key: String, token: String, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
+pub async fn claim_auth_token(public_key: String, token: String, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
     // Validate the public key
     if !is_valid_public_key(&public_key) { 
         println!("Ignoring claim token request for invalid public key.");
@@ -114,7 +114,7 @@ pub async fn claim_token(public_key: String, token: String, pool: &storage::Data
     return Ok(StatusCode::OK.into_response());
 }
 
-pub async fn delete_token(auth_token: Option<String>, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
+pub async fn delete_auth_token(auth_token: Option<String>, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
     // Get a connection and open a transaction
     let mut conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     let tx = conn.transaction().map_err(|_| Error::DatabaseFailedInternally)?;
