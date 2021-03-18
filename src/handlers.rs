@@ -367,6 +367,7 @@ pub async fn get_member_count(pool: &storage::DatabaseConnectionPool) -> Result<
     };
     let public_keys: Vec<String> = rows.filter_map(|result| result.ok()).collect();
     let public_key_count = public_keys.len();
+    // Return
     return Ok(warp::reply::json(&public_key_count).into_response());
 }
 
