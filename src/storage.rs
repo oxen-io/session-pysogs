@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+use std::sync::Mutex;
+
 use rusqlite::params;
 
 use r2d2_sqlite::SqliteConnectionManager;
@@ -15,7 +18,31 @@ pub const BLOCK_LIST_TABLE: &str = "block_list";
 pub const PENDING_TOKENS_TABLE: &str = "pending_tokens";
 pub const TOKENS_TABLE: &str = "tokens";
 
-pub fn create_tables_if_needed(conn: &DatabaseConnection) {
+lazy_static::lazy_static! {
+
+    static ref POOLS: Mutex<HashMap<String, DatabaseConnectionPool>> = Mutex::new(HashMap::new());
+}
+
+pub fn pool(room: &str) -> DatabaseConnectionPool {
+    let mut pools = POOLS.lock().unwrap();
+    if let Some(pool) = pools.get(room) {
+        return pool.clone();
+    } else {
+        let file_name = format!("{}.db", room);
+        let db_manager = r2d2_sqlite::SqliteConnectionManager::file(file_name);
+        let pool = r2d2::Pool::new(db_manager).unwrap();
+        pools.insert(room.to_string(), pool);
+        return pools[room].clone();
+    }
+}
+
+pub fn create_database_if_needed(room: &str) {
+    let pool = pool(room);
+    let conn = pool.get().unwrap();
+    create_tables_if_needed(&conn);
+}
+
+fn create_tables_if_needed(conn: &DatabaseConnection) {
     // Messages
     // The `id` field is needed to make `rowid` stable, which is important because otherwise
     // the `id`s in this table won't correspond to those in the deleted messages table
@@ -64,26 +91,25 @@ pub fn create_tables_if_needed(conn: &DatabaseConnection) {
     conn.execute(&tokens_table_cmd, params![]).expect("Couldn't create tokens table.");
 }
 
-pub async fn prune_tokens_periodically(pool: DatabaseConnectionPool) {
+pub async fn prune_tokens_periodically() {
     let mut timer = tokio::time::interval(chrono::Duration::minutes(10).to_std().unwrap());
     loop {
-        let pool = pool.clone();
         timer.tick().await;
-        tokio::spawn(async { prune_tokens(pool).await; });
+        tokio::spawn(async { prune_tokens().await; });
     }
 }
 
-pub async fn prune_pending_tokens_periodically(pool: DatabaseConnectionPool) {
+pub async fn prune_pending_tokens_periodically() {
     let mut timer = tokio::time::interval(chrono::Duration::minutes(10).to_std().unwrap());
     loop {
-        let pool = pool.clone();
         timer.tick().await;
-        tokio::spawn(async { prune_pending_tokens(pool).await; });
+        tokio::spawn(async { prune_pending_tokens().await; });
     }
 }
 
-async fn prune_tokens(pool: DatabaseConnectionPool) {
-    // It's not catastrophic if we fail to prune the database
+async fn prune_tokens() {
+    let pool = pool("main");
+    // It's not catastrophic if we fail to prune the database for a given room
     let mut conn = match pool.get() {
         Ok(conn) => conn,
         Err(e) => return println!("Couldn't prune tokens due to error: {}.", e)
@@ -106,8 +132,9 @@ async fn prune_tokens(pool: DatabaseConnectionPool) {
     println!("Pruned tokens.");
 }
 
-async fn prune_pending_tokens(pool: DatabaseConnectionPool) {
-    // It's not catastrophic if we fail to prune the database
+async fn prune_pending_tokens() {
+    let pool = pool("main");
+    // It's not catastrophic if we fail to prune the database for a given room
     let mut conn = match pool.get() {
         Ok(conn) => conn,
         Err(e) => return println!("Couldn't prune pending tokens due to error: {}.", e)

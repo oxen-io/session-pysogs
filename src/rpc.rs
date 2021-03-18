@@ -21,7 +21,10 @@ pub struct QueryOptions {
     pub from_server_id: Option<i64>
 }
 
-pub async fn handle_rpc_call(rpc_call: RpcCall, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
+pub async fn handle_rpc_call(rpc_call: RpcCall) -> Result<Response, Rejection> {
+    // Get a connection pool for the given room
+    let room = "main";
+    let pool = storage::pool(room);
     // Check that the endpoint is a valid URI
     let uri = match rpc_call.endpoint.parse::<http::Uri>() {
         Ok(uri) => uri,
@@ -34,9 +37,9 @@ pub async fn handle_rpc_call(rpc_call: RpcCall, pool: &storage::DatabaseConnecti
     let auth_token = get_auth_token(&rpc_call);
     // Switch on the HTTP method
     match rpc_call.method.as_ref() {
-        "GET" => return handle_get_request(rpc_call, uri, pool).await,
-        "POST" => return handle_post_request(rpc_call, uri, auth_token, pool).await,
-        "DELETE" => return handle_delete_request(rpc_call, uri, auth_token, pool).await,
+        "GET" => return handle_get_request(rpc_call, uri, &pool).await,
+        "POST" => return handle_post_request(rpc_call, uri, auth_token, &pool).await,
+        "DELETE" => return handle_delete_request(rpc_call, uri, auth_token, &pool).await,
         _ => {
             println!("Ignoring RPC call with invalid or unused HTTP method: {}.", rpc_call.method);
             return Err(warp::reject::custom(Error::InvalidRpcCall));

@@ -7,7 +7,6 @@ use super::crypto;
 use super::errors::Error;
 use super::models;
 use super::rpc;
-use super::storage;
 
 #[derive(Deserialize, Serialize, Debug)]
 struct OnionRequestPayload {
@@ -20,7 +19,7 @@ struct OnionRequestPayloadMetadata {
     pub ephemeral_key: String
 }
 
-pub async fn handle_onion_request(blob: warp::hyper::body::Bytes, pool: storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
+pub async fn handle_onion_request(blob: warp::hyper::body::Bytes) -> Result<Response, Rejection> {
     let payload = parse_onion_request_payload(blob).await?;
     let (plaintext, symmetric_key) = decrypt_onion_request_payload(payload).await?;
     // From this point on we can wrap any error that occurs in a HTTP response that's
@@ -32,10 +31,10 @@ pub async fn handle_onion_request(blob: warp::hyper::body::Bytes, pool: storage:
     // as a "Loki server error" (i.e. the actual error is hidden from the client that
     // made the onion request). This is unfortunate but cannot be solved without
     // fundamentally changing how onion requests work.
-    return handle_decrypted_onion_request(&plaintext, &symmetric_key, pool).await;
+    return handle_decrypted_onion_request(&plaintext, &symmetric_key).await;
 }
 
-async fn handle_decrypted_onion_request(plaintext: &[u8], symmetric_key: &[u8], pool: storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
+async fn handle_decrypted_onion_request(plaintext: &[u8], symmetric_key: &[u8]) -> Result<Response, Rejection> {
     let json = match String::from_utf8(plaintext.to_vec()) {
         Ok(json) => json,
         Err(e) => {
@@ -51,7 +50,7 @@ async fn handle_decrypted_onion_request(plaintext: &[u8], symmetric_key: &[u8], 
         }
     };
     // Perform the RPC call
-    let result = rpc::handle_rpc_call(rpc_call, &pool).await
+    let result = rpc::handle_rpc_call(rpc_call).await
         // Turn any error that occurred into an HTTP response
         .or_else(super::errors::into_response)?; // Safe because at this point any error should be caught and turned into an HTTP response (i.e. an OK result)
     // Encrypt the HTTP response so that it's propagated back to the client that made
