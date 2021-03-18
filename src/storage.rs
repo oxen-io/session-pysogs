@@ -1,9 +1,43 @@
-use rusqlite::params;
+use std::collections::HashMap;
+use std::sync::Mutex;
 
+use rusqlite::params;
 use r2d2_sqlite::SqliteConnectionManager;
+
+use super::errors::Error;
 
 pub type DatabaseConnection = r2d2::PooledConnection<SqliteConnectionManager>;
 pub type DatabaseConnectionPool = r2d2::Pool<SqliteConnectionManager>;
+
+// Main
+
+const MAIN_TABLE: &str = "main";
+
+lazy_static::lazy_static! {
+
+    static ref MAIN_POOL: DatabaseConnectionPool = {
+        let file_name = format!("database.db");
+        let db_manager = r2d2_sqlite::SqliteConnectionManager::file(file_name);
+        return r2d2::Pool::new(db_manager).unwrap();
+    };
+}
+
+pub fn create_main_database_if_needed() {
+    let pool = &MAIN_POOL;
+    let conn = pool.get().unwrap();
+    create_main_tables_if_needed(&conn);
+}
+
+fn create_main_tables_if_needed(conn: &DatabaseConnection) {
+    let main_table_cmd = format!(
+    "CREATE TABLE IF NOT EXISTS {} (
+        id TEXT PRIMARY KEY,
+        name TEXT
+    )", MAIN_TABLE);
+    conn.execute(&main_table_cmd, params![]).expect("Couldn't create main table.");
+}
+
+// Rooms
 
 pub const PENDING_TOKEN_EXPIRATION: i64 = 10 * 60;
 pub const TOKEN_EXPIRATION: i64 = 7 * 24 * 60 * 60;
@@ -15,7 +49,54 @@ pub const BLOCK_LIST_TABLE: &str = "block_list";
 pub const PENDING_TOKENS_TABLE: &str = "pending_tokens";
 pub const TOKENS_TABLE: &str = "tokens";
 
-pub fn create_tables_if_needed(conn: &DatabaseConnection) {
+lazy_static::lazy_static! {
+
+    static ref POOLS: Mutex<HashMap<String, DatabaseConnectionPool>> = Mutex::new(HashMap::new());
+}
+
+pub fn pool_by_room_id(room_id: isize) -> Result<DatabaseConnectionPool, Error> {
+    // Get a database connection
+    let conn = MAIN_POOL.get().map_err(|_| Error::DatabaseFailedInternally)?;
+    // Query the database
+    let raw_query = format!("SELECT name FROM {} WHERE id = (?1)", MAIN_TABLE);
+    let mut query = conn.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
+    let rows = match query.query_map(params![ &room_id ], |row| {
+        Ok(row.get(0)?)
+    }) {
+        Ok(rows) => rows,
+        Err(e) => {
+            println!("Couldn't query database due to error: {}.", e);
+            return Err(Error::DatabaseFailedInternally);
+        }
+    };
+    let names: Vec<String> = rows.filter_map(|result| result.ok()).collect();
+    if let Some(name) = names.first() {
+        return Ok(pool_by_room_name(name));
+    } else {
+        return Err(Error::DatabaseFailedInternally);
+    }
+}
+
+pub fn pool_by_room_name(room: &str) -> DatabaseConnectionPool {
+    let mut pools = POOLS.lock().unwrap();
+    if let Some(pool) = pools.get(room) {
+        return pool.clone();
+    } else {
+        let file_name = format!("{}.db", room);
+        let db_manager = r2d2_sqlite::SqliteConnectionManager::file(format!("rooms/{}", file_name));
+        let pool = r2d2::Pool::new(db_manager).unwrap();
+        pools.insert(room.to_string(), pool);
+        return pools[room].clone();
+    }
+}
+
+pub fn create_database_if_needed(room: &str) {
+    let pool = pool_by_room_name(room);
+    let conn = pool.get().unwrap();
+    create_room_tables_if_needed(&conn);
+}
+
+fn create_room_tables_if_needed(conn: &DatabaseConnection) {
     // Messages
     // The `id` field is needed to make `rowid` stable, which is important because otherwise
     // the `id`s in this table won't correspond to those in the deleted messages table
@@ -64,68 +145,102 @@ pub fn create_tables_if_needed(conn: &DatabaseConnection) {
     conn.execute(&tokens_table_cmd, params![]).expect("Couldn't create tokens table.");
 }
 
-pub async fn prune_tokens_periodically(pool: DatabaseConnectionPool) {
+// Pruning
+
+pub async fn prune_tokens_periodically() {
     let mut timer = tokio::time::interval(chrono::Duration::minutes(10).to_std().unwrap());
     loop {
-        let pool = pool.clone();
         timer.tick().await;
-        tokio::spawn(async { prune_tokens(pool).await; });
+        tokio::spawn(async { prune_tokens().await; });
     }
 }
 
-pub async fn prune_pending_tokens_periodically(pool: DatabaseConnectionPool) {
+pub async fn prune_pending_tokens_periodically() {
     let mut timer = tokio::time::interval(chrono::Duration::minutes(10).to_std().unwrap());
     loop {
-        let pool = pool.clone();
         timer.tick().await;
-        tokio::spawn(async { prune_pending_tokens(pool).await; });
+        tokio::spawn(async { prune_pending_tokens().await; });
     }
 }
 
-async fn prune_tokens(pool: DatabaseConnectionPool) {
-    // It's not catastrophic if we fail to prune the database
-    let mut conn = match pool.get() {
-        Ok(conn) => conn,
-        Err(e) => return println!("Couldn't prune tokens due to error: {}.", e)
+async fn prune_tokens() {
+    let rooms = match get_all_rooms().await {
+        Ok(rooms) => rooms,
+        Err(_) => return
     };
-    let tx = match conn.transaction() {
-        Ok(tx) => tx,
-        Err(e) => return println!("Couldn't prune tokens due to error: {}.", e)
-    };
-    let stmt = format!("DELETE FROM {} WHERE timestamp < (?1)", TOKENS_TABLE);
-    let now = chrono::Utc::now().timestamp();
-    let expiration = now - TOKEN_EXPIRATION;
-    match tx.execute(&stmt, params![ expiration ]) {
-        Ok(_) => (),
-        Err(e) => return println!("Couldn't prune tokens due to error: {}.", e)
-    };
-    match tx.commit() {
-        Ok(_) => (),
-        Err(e) => return println!("Couldn't prune tokens due to error: {}.", e)
-    };
+    for room in rooms {
+        let pool = pool_by_room_name(&room);
+        // It's not catastrophic if we fail to prune the database for a given room
+        let mut conn = match pool.get() {
+            Ok(conn) => conn,
+            Err(e) => return println!("Couldn't prune tokens due to error: {}.", e)
+        };
+        let tx = match conn.transaction() {
+            Ok(tx) => tx,
+            Err(e) => return println!("Couldn't prune tokens due to error: {}.", e)
+        };
+        let stmt = format!("DELETE FROM {} WHERE timestamp < (?1)", TOKENS_TABLE);
+        let now = chrono::Utc::now().timestamp();
+        let expiration = now - TOKEN_EXPIRATION;
+        match tx.execute(&stmt, params![ expiration ]) {
+            Ok(_) => (),
+            Err(e) => return println!("Couldn't prune tokens due to error: {}.", e)
+        };
+        match tx.commit() {
+            Ok(_) => (),
+            Err(e) => return println!("Couldn't prune tokens due to error: {}.", e)
+        };
+    }
     println!("Pruned tokens.");
 }
 
-async fn prune_pending_tokens(pool: DatabaseConnectionPool) {
-    // It's not catastrophic if we fail to prune the database
-    let mut conn = match pool.get() {
-        Ok(conn) => conn,
-        Err(e) => return println!("Couldn't prune pending tokens due to error: {}.", e)
+async fn prune_pending_tokens() {
+    let rooms = match get_all_rooms().await {
+        Ok(rooms) => rooms,
+        Err(_) => return
     };
-    let tx = match conn.transaction() {
-        Ok(tx) => tx,
-        Err(e) => return println!("Couldn't prune pending tokens due to error: {}.", e)
-    };
-    let stmt = format!("DELETE FROM {} WHERE timestamp < (?1)", PENDING_TOKENS_TABLE);
-    let now = chrono::Utc::now().timestamp();
-    let expiration = now - PENDING_TOKEN_EXPIRATION;
-    match tx.execute(&stmt, params![ expiration ]) {
-        Ok(_) => (),
-        Err(e) => return println!("Couldn't prune pending tokens due to error: {}.", e)
-    };
-    match tx.commit() {
-        Ok(_) => (),
-        Err(e) => return println!("Couldn't prune pending tokens due to error: {}.", e)
-    };
+    for room in rooms {
+        let pool = pool_by_room_name(&room);
+        // It's not catastrophic if we fail to prune the database for a given room
+        let mut conn = match pool.get() {
+            Ok(conn) => conn,
+            Err(e) => return println!("Couldn't prune pending tokens due to error: {}.", e)
+        };
+        let tx = match conn.transaction() {
+            Ok(tx) => tx,
+            Err(e) => return println!("Couldn't prune pending tokens due to error: {}.", e)
+        };
+        let stmt = format!("DELETE FROM {} WHERE timestamp < (?1)", PENDING_TOKENS_TABLE);
+        let now = chrono::Utc::now().timestamp();
+        let expiration = now - PENDING_TOKEN_EXPIRATION;
+        match tx.execute(&stmt, params![ expiration ]) {
+            Ok(_) => (),
+            Err(e) => return println!("Couldn't prune pending tokens due to error: {}.", e)
+        };
+        match tx.commit() {
+            Ok(_) => (),
+            Err(e) => return println!("Couldn't prune pending tokens due to error: {}.", e)
+        };
+    }
     println!("Pruned pending tokens.");
+}
+
+async fn get_all_rooms() -> Result<Vec<String>, Error> {
+    // Get a database connection
+    let conn = MAIN_POOL.get().map_err(|_| Error::DatabaseFailedInternally)?;
+    // Query the database
+    let raw_query = format!("SELECT name FROM {}", MAIN_TABLE);
+    let mut query = conn.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
+    let rows = match query.query_map(params![], |row| {
+        Ok(row.get(0)?)
+    }) {
+        Ok(rows) => rows,
+        Err(e) => {
+            println!("Couldn't query database due to error: {}.", e);
+            return Err(Error::DatabaseFailedInternally);
+        }
+    };
+    let names: Vec<String> = rows.filter_map(|result| result.ok()).collect();
+    // Return
+    return Ok(names);
 }
