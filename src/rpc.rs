@@ -108,7 +108,7 @@ async fn handle_post_request(rpc_call: RpcCall, uri: http::Uri, auth_token: Opti
         },
         "/claim_auth_token" => {
             let public_key = rpc_call.body;
-            return handlers::ban(&public_key, auth_token, pool).await;
+            return handlers::claim_auth_token(&public_key, auth_token, pool).await;
         }
         _ => {
             println!("Ignoring RPC call with invalid or unused endpoint: {}.", rpc_call.endpoint);

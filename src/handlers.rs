@@ -58,13 +58,14 @@ pub async fn get_auth_token_challenge(hex_public_key: &str, pool: &storage::Data
     return Ok(warp::reply::json(&json).into_response());
 }
 
-pub async fn claim_auth_token(public_key: String, token: String, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
+pub async fn claim_auth_token(public_key: &str, token: Option<String>, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
     // Validate the public key
     if !is_valid_public_key(&public_key) { 
         println!("Ignoring claim token request for invalid public key.");
         return Err(warp::reject::custom(Error::ValidationFailed)); 
     }
     // Validate the token
+    let token = token.ok_or(warp::reject::custom(Error::ValidationFailed))?;
     if hex::decode(&token).is_err() { 
         println!("Ignoring claim token request for invalid token.");
         return Err(warp::reject::custom(Error::ValidationFailed)); 
