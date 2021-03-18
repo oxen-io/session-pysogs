@@ -54,7 +54,30 @@ lazy_static::lazy_static! {
     static ref POOLS: Mutex<HashMap<String, DatabaseConnectionPool>> = Mutex::new(HashMap::new());
 }
 
-pub fn pool(room: &str) -> DatabaseConnectionPool {
+pub fn pool_by_room_id(room_id: usize) -> Result<DatabaseConnectionPool, Error> {
+    // Get a database connection
+    let conn = MAIN_POOL.get().map_err(|_| Error::DatabaseFailedInternally)?;
+    // Query the database
+    let raw_query = format!("SELECT name FROM {} WHERE id = (?1)", MAIN_TABLE);
+    let mut query = conn.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
+    let rows = match query.query_map(params![ room_id ], |row| {
+        Ok(row.get(0)?)
+    }) {
+        Ok(rows) => rows,
+        Err(e) => {
+            println!("Couldn't query database due to error: {}.", e);
+            return Err(Error::DatabaseFailedInternally);
+        }
+    };
+    let names: Vec<String> = rows.filter_map(|result| result.ok()).collect();
+    if let Some(name) = names.first() {
+        return Ok(pool_by_room_name(name));
+    } else {
+        return Err(Error::DatabaseFailedInternally);
+    }
+}
+
+pub fn pool_by_room_name(room: &str) -> DatabaseConnectionPool {
     let mut pools = POOLS.lock().unwrap();
     if let Some(pool) = pools.get(room) {
         return pool.clone();
@@ -68,7 +91,7 @@ pub fn pool(room: &str) -> DatabaseConnectionPool {
 }
 
 pub fn create_database_if_needed(room: &str) {
-    let pool = pool(room);
+    let pool = pool_by_room_name(room);
     let conn = pool.get().unwrap();
     create_room_tables_if_needed(&conn);
 }
@@ -146,7 +169,7 @@ async fn prune_tokens() {
         Err(_) => return
     };
     for room in rooms {
-        let pool = pool(&room);
+        let pool = pool_by_room_name(&room);
         // It's not catastrophic if we fail to prune the database for a given room
         let mut conn = match pool.get() {
             Ok(conn) => conn,
@@ -177,7 +200,7 @@ async fn prune_pending_tokens() {
         Err(_) => return
     };
     for room in rooms {
-        let pool = pool(&room);
+        let pool = pool_by_room_name(&room);
         // It's not catastrophic if we fail to prune the database for a given room
         let mut conn = match pool.get() {
             Ok(conn) => conn,
@@ -218,5 +241,6 @@ async fn get_all_rooms() -> Result<Vec<String>, Error> {
         }
     };
     let names: Vec<String> = rows.filter_map(|result| result.ok()).collect();
+    // Return
     return Ok(names);
 }

@@ -23,8 +23,11 @@ pub struct QueryOptions {
 
 pub async fn handle_rpc_call(rpc_call: RpcCall) -> Result<Response, Rejection> {
     // Get a connection pool for the given room
-    let room = "main"; // TODO: Get room from RPC call
-    let pool = storage::pool(room);
+    let room_id = match get_room_id(&rpc_call) {
+        Some(room_id) => room_id,
+        None => return Err(warp::reject::custom(Error::InvalidRpcCall))
+    };
+    let pool = storage::pool_by_room_id(room_id)?;
     // Check that the endpoint is a valid URI
     let uri = match rpc_call.endpoint.parse::<http::Uri>() {
         Ok(uri) => uri,
@@ -164,7 +167,19 @@ fn get_auth_token(rpc_call: &RpcCall) -> Option<String> {
         Ok(headers) => headers,
         Err(_) => return None
     };
-    let header = headers.get("Authorization");
-    if header == None { return None; }
-    return header.unwrap().strip_prefix("Bearer").map(|s| s.to_string()).or(None);
+    let header = headers.get("Authorization")?;
+    return header.strip_prefix("Bearer").map(|s| s.to_string()).or(None);
+}
+
+fn get_room_id(rpc_call: &RpcCall) -> Option<usize> {
+    if rpc_call.headers.is_empty() { return None; }
+    let headers: HashMap<String, String> = match serde_json::from_str(&rpc_call.headers) {
+        Ok(headers) => headers,
+        Err(_) => return None
+    };
+    let header = headers.get("Room")?;
+    match header.parse() {
+        Ok(room_id) => return Some(room_id),
+        Err(_) => return None
+    };
 }
