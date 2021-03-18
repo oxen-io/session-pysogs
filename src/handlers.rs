@@ -201,6 +201,7 @@ pub async fn delete_message(row_id: i64, auth_token: Option<String>, pool: &stor
     // Check authorization level
     let (has_authorization_level, requesting_public_key) = has_authorization_level(auth_token, AuthorizationLevel::Basic, pool).await?;
     if !has_authorization_level { return Err(warp::reject::custom(Error::Unauthorized)); }
+    // Check that the requesting user is either the sender of the message or a moderator
     let sender_option: Option<String> = {
         let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
         let raw_query = format!("SELECT public_key FROM {} WHERE rowid = (?1)", storage::MESSAGES_TABLE);
@@ -283,7 +284,7 @@ pub async fn get_moderators(pool: &storage::DatabaseConnectionPool) -> Result<Re
     return Ok(warp::reply::json(&public_keys).into_response());
 }
 
-/// Bans the given `public_key`, if the requesting user is a moderator.
+/// Bans the given `public_key` if the requesting user is a moderator.
 pub async fn ban(public_key: &str, auth_token: Option<String>, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
     // Validate the public key
     if !is_valid_public_key(&public_key) { 
@@ -313,7 +314,7 @@ pub async fn ban(public_key: &str, auth_token: Option<String>, pool: &storage::D
     return Ok(StatusCode::OK.into_response());
 }
 
-/// Unbans the given `public_key`, if the requesting user is a moderator.
+/// Unbans the given `public_key` if the requesting user is a moderator.
 pub async fn unban(public_key: &str, auth_token: Option<String>, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
     // Validate the public key
     if !is_valid_public_key(&public_key) { 

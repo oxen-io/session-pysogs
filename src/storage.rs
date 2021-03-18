@@ -54,6 +54,7 @@ pub fn create_tables_if_needed(conn: &DatabaseConnection) {
     )", PENDING_TOKENS_TABLE);
     conn.execute(&pending_tokens_table_cmd, params![]).expect("Couldn't create pending tokens table.");
     // Tokens
+    // The token is stored as hex here (rather than as bytes) because it's more convenient for lookup
     let tokens_table_cmd = format!(
     "CREATE TABLE IF NOT EXISTS {} (
         public_key STRING PRIMARY KEY,

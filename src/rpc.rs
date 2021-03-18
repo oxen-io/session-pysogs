@@ -154,6 +154,7 @@ async fn handle_delete_request(rpc_call: RpcCall, uri: http::Uri, auth_token: Op
 }
 
 // Utilities
+
 fn get_auth_token(rpc_call: &RpcCall) -> Option<String> {
     if rpc_call.headers.is_empty() { return None; }
     let headers: HashMap<String, String> = match serde_json::from_str(&rpc_call.headers) {
