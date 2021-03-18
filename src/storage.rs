@@ -8,6 +8,36 @@ use r2d2_sqlite::SqliteConnectionManager;
 pub type DatabaseConnection = r2d2::PooledConnection<SqliteConnectionManager>;
 pub type DatabaseConnectionPool = r2d2::Pool<SqliteConnectionManager>;
 
+// Main
+
+pub const MAIN_TABLE: &str = "main";
+
+lazy_static::lazy_static! {
+
+    static ref MAIN_POOL: DatabaseConnectionPool = {
+        let file_name = format!("database.db");
+        let db_manager = r2d2_sqlite::SqliteConnectionManager::file(file_name);
+        return r2d2::Pool::new(db_manager).unwrap();
+    };
+}
+
+pub fn create_main_database_if_needed() {
+    let pool = &MAIN_POOL;
+    let conn = pool.get().unwrap();
+    create_main_tables_if_needed(&conn);
+}
+
+fn create_main_tables_if_needed(conn: &DatabaseConnection) {
+    let main_table_cmd = format!(
+    "CREATE TABLE IF NOT EXISTS {} (
+        id TEXT PRIMARY KEY,
+        name TEXT
+    )", MAIN_TABLE);
+    conn.execute(&main_table_cmd, params![]).expect("Couldn't create main table.");
+}
+
+// Rooms
+
 pub const PENDING_TOKEN_EXPIRATION: i64 = 10 * 60;
 pub const TOKEN_EXPIRATION: i64 = 7 * 24 * 60 * 60;
 
@@ -29,7 +59,7 @@ pub fn pool(room: &str) -> DatabaseConnectionPool {
         return pool.clone();
     } else {
         let file_name = format!("{}.db", room);
-        let db_manager = r2d2_sqlite::SqliteConnectionManager::file(file_name);
+        let db_manager = r2d2_sqlite::SqliteConnectionManager::file(format!("rooms/{}", file_name));
         let pool = r2d2::Pool::new(db_manager).unwrap();
         pools.insert(room.to_string(), pool);
         return pools[room].clone();
@@ -39,10 +69,10 @@ pub fn pool(room: &str) -> DatabaseConnectionPool {
 pub fn create_database_if_needed(room: &str) {
     let pool = pool(room);
     let conn = pool.get().unwrap();
-    create_tables_if_needed(&conn);
+    create_room_tables_if_needed(&conn);
 }
 
-fn create_tables_if_needed(conn: &DatabaseConnection) {
+fn create_room_tables_if_needed(conn: &DatabaseConnection) {
     // Messages
     // The `id` field is needed to make `rowid` stable, which is important because otherwise
     // the `id`s in this table won't correspond to those in the deleted messages table
@@ -90,6 +120,8 @@ fn create_tables_if_needed(conn: &DatabaseConnection) {
     )", TOKENS_TABLE);
     conn.execute(&tokens_table_cmd, params![]).expect("Couldn't create tokens table.");
 }
+
+// Pruning
 
 pub async fn prune_tokens_periodically() {
     let mut timer = tokio::time::interval(chrono::Duration::minutes(10).to_std().unwrap());

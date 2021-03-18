@@ -17,9 +17,9 @@ mod tests;
 async fn main() {
     let public_key = hex::encode(crypto::PUBLIC_KEY.as_bytes());
     println!("The public key of this server is: {}", public_key);
+    storage::create_main_database_if_needed();
     let main_room = "main";
-    storage::create_database_if_needed(main_room);
-
+    storage::create_database_if_needed(main_room);    
     let prune_pending_tokens_future = storage::prune_pending_tokens_periodically();
     let prune_tokens_future = storage::prune_tokens_periodically();
     let routes = routes::root().or(routes::lsrpc());

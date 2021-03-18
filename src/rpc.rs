@@ -23,7 +23,7 @@ pub struct QueryOptions {
 
 pub async fn handle_rpc_call(rpc_call: RpcCall) -> Result<Response, Rejection> {
     // Get a connection pool for the given room
-    let room = "main";
+    let room = "main"; // TODO: Get room from RPC call
     let pool = storage::pool(room);
     // Check that the endpoint is a valid URI
     let uri = match rpc_call.endpoint.parse::<http::Uri>() {
