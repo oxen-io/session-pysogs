@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fs;
 use std::sync::Mutex;
 
 use rusqlite::params;
@@ -41,6 +42,7 @@ fn create_main_tables_if_needed(conn: &DatabaseConnection) {
 
 pub const PENDING_TOKEN_EXPIRATION: i64 = 10 * 60;
 pub const TOKEN_EXPIRATION: i64 = 7 * 24 * 60 * 60;
+pub const FILE_EXPIRATION: i64 = 60 * 24 * 60 * 60;
 
 pub const MESSAGES_TABLE: &str = "messages";
 pub const DELETED_MESSAGES_TABLE: &str = "deleted_messages";
@@ -48,6 +50,7 @@ pub const MODERATORS_TABLE: &str = "moderators";
 pub const BLOCK_LIST_TABLE: &str = "block_list";
 pub const PENDING_TOKENS_TABLE: &str = "pending_tokens";
 pub const TOKENS_TABLE: &str = "tokens";
+pub const FILES_TABLE: &str = "files";
 
 lazy_static::lazy_static! {
 
@@ -143,6 +146,13 @@ fn create_room_tables_if_needed(conn: &DatabaseConnection) {
         token TEXT
     )", TOKENS_TABLE);
     conn.execute(&tokens_table_cmd, params![]).expect("Couldn't create tokens table.");
+    // Files
+    let files_table_cmd = format!(
+    "CREATE TABLE IF NOT EXISTS {} (
+        id STRING PRIMARY KEY,
+        timestamp INTEGER
+    )", FILES_TABLE);
+    conn.execute(&files_table_cmd, params![]).expect("Couldn't create files table.");
 }
 
 // Pruning
@@ -160,6 +170,14 @@ pub async fn prune_pending_tokens_periodically() {
     loop {
         timer.tick().await;
         tokio::spawn(async { prune_pending_tokens().await; });
+    }
+}
+
+pub async fn prune_files_periodically() {
+    let mut timer = tokio::time::interval(chrono::Duration::days(1).to_std().unwrap());
+    loop {
+        timer.tick().await;
+        tokio::spawn(async { prune_files().await; });
     }
 }
 
@@ -223,6 +241,64 @@ async fn prune_pending_tokens() {
         };
     }
     println!("Pruned pending tokens.");
+}
+
+async fn prune_files() {
+    let rooms = match get_all_rooms().await {
+        Ok(rooms) => rooms,
+        Err(_) => return
+    };
+    for room in rooms {
+        // It's not catastrophic if we fail to prune the database for a given room
+        let pool = pool_by_room_name(&room);
+        let now = chrono::Utc::now().timestamp();
+        let expiration = now - FILE_EXPIRATION;
+        // Get a database connection and open a transaction
+        let mut conn = match pool.get() {
+            Ok(conn) => conn,
+            Err(e) => return println!("Couldn't prune files due to error: {}.", e)
+        };
+        let tx = match conn.transaction() {
+            Ok(tx) => tx,
+            Err(e) => return println!("Couldn't prune files due to error: {}.", e)
+        };
+        // Get the IDs of the files to delete
+        let ids: Vec<String> = {
+            let raw_query = format!("SELECT id FROM {} WHERE timestamp < (?1)", FILES_TABLE);
+            let mut query = match tx.prepare(&raw_query) {
+                Ok(query) => query,
+                Err(e) => return println!("Couldn't prune files due to error: {}.", e)
+            };
+            let rows = match query.query_map(params![ expiration ], |row| {
+                Ok(row.get(0)?)
+            }) {
+                Ok(rows) => rows,
+                Err(e) => {
+                    return println!("Couldn't prune files due to error: {}.", e);
+                }
+            };
+            rows.filter_map(|result| result.ok()).collect()
+        };
+        // Delete the files
+        let mut deleted_ids: Vec<String> = vec![];
+        for id in ids {
+            match fs::remove_file(format!("files/{}", id)) {
+                Ok(_) => deleted_ids.push(id),
+                Err(e) => println!("Couldn't delete file due to error: {}.", e)
+            }
+        }
+        // Remove the file records from the database (only for the files that were actually deleted)
+        let stmt = format!("DELETE FROM {} WHERE id IN (?1)", FILES_TABLE);
+        match tx.execute(&stmt, params![ deleted_ids ]) {
+            Ok(_) => (),
+            Err(e) => return println!("Couldn't prune files due to error: {}.", e)
+        };
+        match tx.commit() {
+            Ok(_) => (),
+            Err(e) => return println!("Couldn't prune files due to error: {}.", e)
+        };
+    }
+    println!("Pruned files.");
 }
 
 async fn get_all_rooms() -> Result<Vec<String>, Error> {

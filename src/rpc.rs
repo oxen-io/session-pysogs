@@ -63,6 +63,15 @@ async fn handle_get_request(rpc_call: RpcCall, uri: http::Uri, pool: &storage::D
         };
     }
     // Switch on the path
+    if uri.path().starts_with("/files") {
+        let components: Vec<&str> = uri.path()[1..].split("/").collect(); // Drop the leading slash and split on subsequent slashes
+        if components.len() != 2 {
+            println!("Invalid endpoint: {}.", rpc_call.endpoint);
+            return Err(warp::reject::custom(Error::InvalidRpcCall));
+        }
+        let file_id = components[1];
+        return handlers::get_file(file_id, pool).await;
+    }
     match uri.path() {
         "/messages" => return handlers::get_messages(query_options, pool).await,
         "/deleted_messages" => return handlers::get_deleted_messages(query_options, pool).await,
@@ -115,7 +124,11 @@ async fn handle_post_request(rpc_call: RpcCall, uri: http::Uri, auth_token: Opti
         "/claim_auth_token" => {
             let public_key = rpc_call.body;
             return handlers::claim_auth_token(&public_key, auth_token, pool).await;
-        }
+        },
+        "/files" => {
+            let base64_encoded_bytes = rpc_call.body;
+            return handlers::store_file(&base64_encoded_bytes, pool).await;
+        },
         _ => {
             println!("Ignoring RPC call with invalid or unused endpoint: {}.", rpc_call.endpoint);
             return Err(warp::reject::custom(Error::InvalidRpcCall));        
@@ -151,7 +164,7 @@ async fn handle_delete_request(rpc_call: RpcCall, uri: http::Uri, auth_token: Op
         return handlers::unban(&public_key, auth_token, pool).await;
     }
     // DELETE /auth_token
-    if uri.path().starts_with("/auth_token") {
+    if uri.path() == "/auth_token" {
         return handlers::delete_auth_token(auth_token, pool).await;
     }
     // Unrecognized endpoint
