@@ -1,7 +1,11 @@
+use std::fs;
+use std::io::prelude::*;
+
 use chrono;
 use rusqlite::params;
 use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 use warp::{Rejection, http::StatusCode, reply::Reply, reply::Response};
 
 use super::crypto;
@@ -14,6 +18,84 @@ enum AuthorizationLevel {
     Basic, 
     Moderator
 }
+
+pub async fn store_file(base64_encoded_bytes: &str, pool: &storage:: DatabaseConnectionPool) -> Result<Response, Rejection> {
+    // Parse bytes
+    let bytes = match base64::decode(base64_encoded_bytes) {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            println!("Couldn't parse bytes from invalid base64 encoding due to error: {}.", e);
+            return Err(warp::reject::custom(Error::ValidationFailed));
+        }
+    };
+    // Generate UUID
+    let id = Uuid::new_v4();
+    let mut buffer = Uuid::encode_buffer();
+    let id = id.to_simple().encode_lower(&mut buffer);
+    // Update the database
+    // We do this * before * storing the actual file, so that in case something goes
+    // wrong we're not left with files that'll never be pruned.
+    let now = chrono::Utc::now().timestamp();
+    let mut conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
+    let tx = conn.transaction().map_err(|_| Error::DatabaseFailedInternally)?;
+    let stmt = format!("INSERT INTO {} (id, timestamp) VALUES (?1, ?2)", storage::FILES_TABLE);
+    let _ = match tx.execute(&stmt, params![ &id, now ]) {
+        Ok(rows) => rows,
+        Err(e) => {
+            println!("Couldn't insert file record due to error: {}.", e);
+            return Err(warp::reject::custom(Error::DatabaseFailedInternally));
+        }
+    };
+    tx.commit().map_err(|_| Error::DatabaseFailedInternally)?;
+    // Write to file
+    let mut pos = 0;
+    let mut buffer = match fs::File::create(&id) {
+        Ok(buffer) => buffer,
+        Err(e) => {
+            println!("Couldn't store file due to error: {}.", e);
+            return Err(warp::reject::custom(Error::DatabaseFailedInternally));
+        }
+    };
+    while pos < bytes.len() {
+        let count = match buffer.write(&bytes[pos..]) {
+            Ok(count) => count,
+            Err(e) => {
+                println!("Couldn't store file due to error: {}.", e);
+                return Err(warp::reject::custom(Error::DatabaseFailedInternally));
+            }
+        };
+        pos += count;
+    }
+    // Return
+    return Ok(warp::reply::json(&id).into_response());
+}
+
+pub async fn get_file(id: &str, pool: &storage:: DatabaseConnectionPool) -> Result<Response, Rejection> {
+    // Check that the ID is a valid UUID
+    match Uuid::parse_str(id) {
+        Ok(_) => (),
+        Err(e) => {
+            println!("Couldn't parse UUID from: {} due to error: {}.", id, e);
+            return Err(warp::reject::custom(Error::ValidationFailed));
+        }
+    };
+    // Get a database connection
+    let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
+    // Try to read the file
+    let bytes = match fs::read(format!("files/{}", id)) {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            println!("Couldn't read file due to error: {}.", e);
+            return Err(warp::reject::custom(Error::ValidationFailed));
+        }
+    };
+    // Base64 encode the result
+    let base64_encoded_bytes = base64::encode(bytes);
+    // Return
+    return Ok(warp::reply::json(&base64_encoded_bytes).into_response());
+}
+
+// Authentication
 
 pub async fn get_auth_token_challenge(hex_public_key: &str, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
     // Validate the public key
@@ -137,6 +219,8 @@ pub async fn delete_auth_token(auth_token: Option<String>, pool: &storage::Datab
     return Ok(StatusCode::OK.into_response());
 }
 
+// Message sending & receiving
+
 /// Inserts the given `message` into the database if it's valid.
 pub async fn insert_message(mut message: models::Message, auth_token: Option<String>, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
     // Validate the message
@@ -195,6 +279,8 @@ pub async fn get_messages(options: rpc::QueryOptions, pool: &storage::DatabaseCo
     // Return the messages
     return Ok(warp::reply::json(&messages).into_response());
 }
+
+// Message deletion
 
 /// Deletes the message with the given `row_id` from the database, if it's present.
 pub async fn delete_message(row_id: i64, auth_token: Option<String>, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
@@ -278,6 +364,8 @@ pub async fn get_deleted_messages(options: rpc::QueryOptions, pool: &storage::Da
     return Ok(warp::reply::json(&ids).into_response());
 }
 
+// Moderation
+
 /// Returns the full list of moderators.
 pub async fn get_moderators(pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
     let public_keys = get_moderators_vector(pool).await?;
@@ -349,6 +437,8 @@ pub async fn get_banned_public_keys(pool: &storage::DatabaseConnectionPool) -> R
     let public_keys = get_banned_public_keys_vector(pool).await?;
     return Ok(warp::reply::json(&public_keys).into_response());
 }
+
+// General
 
 pub async fn get_member_count(pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
     // Get a database connection
