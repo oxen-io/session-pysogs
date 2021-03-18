@@ -124,8 +124,8 @@ pub async fn delete_auth_token(auth_token: Option<String>, pool: &storage::Datab
     let tx = conn.transaction().map_err(|_| Error::DatabaseFailedInternally)?;
     // Delete the token
     let stmt = format!("DELETE FROM {} WHERE public_key = (?1)", storage::TOKENS_TABLE);
-    let count = match tx.execute(&stmt, params![ requesting_public_key ]) {
-        Ok(count) => count,
+    match tx.execute(&stmt, params![ requesting_public_key ]) {
+        Ok(_) => (),
         Err(e) => {
             println!("Couldn't delete token due to error: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
@@ -458,8 +458,8 @@ async fn has_authorization_level(auth_token: Option<String>, level: Authorizatio
     if is_banned(&public_key, pool).await? { return Err(warp::reject::custom(Error::Unauthorized)); }
     // If needed, check that the given public key is a moderator
     match level {
-        Basic => return Ok((true, public_key)),
-        Moderator => {
+        AuthorizationLevel::Basic => return Ok((true, public_key)),
+        AuthorizationLevel::Moderator => {
             if !is_moderator(&public_key, pool).await? { return Err(warp::reject::custom(Error::Unauthorized)); }
             return Ok((true, public_key));
         }

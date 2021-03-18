@@ -34,7 +34,7 @@ pub async fn handle_rpc_call(rpc_call: RpcCall, pool: &storage::DatabaseConnecti
     let auth_token = get_auth_token(&rpc_call);
     // Switch on the HTTP method
     match rpc_call.method.as_ref() {
-        "GET" => return handle_get_request(rpc_call, uri, auth_token, pool).await,
+        "GET" => return handle_get_request(rpc_call, uri, pool).await,
         "POST" => return handle_post_request(rpc_call, uri, auth_token, pool).await,
         "DELETE" => return handle_delete_request(rpc_call, uri, auth_token, pool).await,
         _ => {
@@ -44,7 +44,7 @@ pub async fn handle_rpc_call(rpc_call: RpcCall, pool: &storage::DatabaseConnecti
     }
 }
 
-async fn handle_get_request(rpc_call: RpcCall, uri: http::Uri, auth_token: Option<String>, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
+async fn handle_get_request(rpc_call: RpcCall, uri: http::Uri, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
     // Parse query options if needed
     let mut query_options = QueryOptions { limit : None, from_server_id : None };
     if let Some(query) = uri.query() {
