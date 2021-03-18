@@ -19,6 +19,8 @@ enum AuthorizationLevel {
     Moderator
 }
 
+// Files
+
 pub async fn store_file(base64_encoded_bytes: &str, pool: &storage:: DatabaseConnectionPool) -> Result<Response, Rejection> {
     // Parse bytes
     let bytes = match base64::decode(base64_encoded_bytes) {
