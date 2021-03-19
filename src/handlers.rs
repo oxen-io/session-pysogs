@@ -72,7 +72,7 @@ pub async fn store_file(base64_encoded_bytes: &str, pool: &storage:: DatabaseCon
     return Ok(warp::reply::json(&id).into_response());
 }
 
-pub async fn get_file(id: &str) -> Result<String, Rejection> {
+pub async fn get_file(id: &str) -> Result<String, Rejection> { // Doesn't return a response directly for testing purposes
     // Check that the ID is a valid UUID
     match Uuid::parse_str(id) {
         Ok(_) => (),

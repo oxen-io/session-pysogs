@@ -17,7 +17,7 @@ fn perform_main_setup() {
     fs::create_dir_all("files").unwrap();
 }
 
-fn create_test_room() {
+fn set_up_test_room() {
     perform_main_setup();
     match fs::remove_file("rooms/test_room.db") {
         Ok(_) => (),
@@ -26,12 +26,18 @@ fn create_test_room() {
     let test_room = "test_room";
     storage::create_database_if_needed(test_room);
     fs::read("rooms/test_room.db").unwrap(); // Fail if this doesn't exist    
+    let pool: &storage::DatabaseConnectionPool = &storage::MAIN_POOL;
+    let mut conn = pool.get().unwrap();
+    let tx = conn.transaction().unwrap();
+    let stmt = format!("REPLACE INTO {} (id, name) VALUES (?1, ?2)", storage::MAIN_TABLE);
+    tx.execute(&stmt, params![ test_room, "Test Room" ]).unwrap();
+    tx.commit().unwrap();
 }
 
 #[test]
-fn test_file_storage_and_retrieval() {
+fn test_file_handling() {
     // Ensure the test room is set up
-    create_test_room();
+    set_up_test_room();
     // Test file storage
     let pool = storage::pool_by_room_name("test_room");
     aw!(handlers::store_file(TEST_FILE, &pool)).unwrap();
@@ -47,6 +53,20 @@ fn test_file_storage_and_retrieval() {
     // Retrieve the file and check the content
     let base64_encoded_file = aw!(handlers::get_file(id)).unwrap();
     assert_eq!(base64_encoded_file, TEST_FILE);
+    // Prune the file and check that it's gone
+    aw!(storage::prune_files(-60)); // Will evaluate to now + 60
+    match fs::read(format!("files/{}", id)) {
+        Ok(_) => assert!(false), // It should be gone now
+        Err(_) => ()
+    }
+    // Check that the file record is also gone
+    let mut conn = pool.get().unwrap();
+    let tx = conn.transaction().unwrap();
+    let raw_query = format!("SELECT id FROM {}", storage::FILES_TABLE);
+    let mut query = tx.prepare(&raw_query).unwrap();
+    let rows = query.query_map(params![], |row| { Ok(row.get(0)?) }).unwrap();
+    let ids: Vec<String> = rows.filter_map(|result| result.ok()).collect();
+    assert_eq!(ids.len(), 0);
 }
 
 // Data

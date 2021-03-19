@@ -12,11 +12,11 @@ pub type DatabaseConnectionPool = r2d2::Pool<SqliteConnectionManager>;
 
 // Main
 
-const MAIN_TABLE: &str = "main";
+pub const MAIN_TABLE: &str = "main";
 
 lazy_static::lazy_static! {
 
-    static ref MAIN_POOL: DatabaseConnectionPool = {
+    pub static ref MAIN_POOL: DatabaseConnectionPool = {
         let file_name = format!("database.db");
         let db_manager = r2d2_sqlite::SqliteConnectionManager::file(file_name);
         return r2d2::Pool::new(db_manager).unwrap();
@@ -177,7 +177,7 @@ pub async fn prune_files_periodically() {
     let mut timer = tokio::time::interval(chrono::Duration::days(1).to_std().unwrap());
     loop {
         timer.tick().await;
-        tokio::spawn(async { prune_files().await; });
+        tokio::spawn(async { prune_files(FILE_EXPIRATION).await; });
     }
 }
 
@@ -243,16 +243,17 @@ async fn prune_pending_tokens() {
     println!("Pruned pending tokens.");
 }
 
-async fn prune_files() {
+pub async fn prune_files(file_expiration: i64) { // The expiration setting is passed in for testing purposes
     let rooms = match get_all_rooms().await {
         Ok(rooms) => rooms,
         Err(_) => return
     };
     for room in rooms {
         // It's not catastrophic if we fail to prune the database for a given room
+        println!("room name: {}", room);
         let pool = pool_by_room_name(&room);
         let now = chrono::Utc::now().timestamp();
-        let expiration = now - FILE_EXPIRATION;
+        let expiration = now - file_expiration;
         // Get a database connection and open a transaction
         let mut conn = match pool.get() {
             Ok(conn) => conn,
@@ -305,7 +306,7 @@ async fn get_all_rooms() -> Result<Vec<String>, Error> {
     // Get a database connection
     let conn = MAIN_POOL.get().map_err(|_| Error::DatabaseFailedInternally)?;
     // Query the database
-    let raw_query = format!("SELECT name FROM {}", MAIN_TABLE);
+    let raw_query = format!("SELECT id FROM {}", MAIN_TABLE);
     let mut query = conn.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
     let rows = match query.query_map(params![], |row| {
         Ok(row.get(0)?)
