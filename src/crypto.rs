@@ -79,7 +79,7 @@ pub async fn decrypt_aes_gcm(iv_and_ciphertext: &[u8], symmetric_key: &[u8]) -> 
     };
 }
 
-pub async fn generate_ephemeral_x25519_key_pair() -> (x25519_dalek::StaticSecret, x25519_dalek::PublicKey) {
+pub async fn generate_x25519_key_pair() -> (x25519_dalek::StaticSecret, x25519_dalek::PublicKey) {
     let private_key = x25519_dalek::StaticSecret::new(OsRng);
     let public_key = x25519_dalek::PublicKey::from(&private_key);
     return (private_key, public_key);

@@ -96,7 +96,7 @@ async fn handle_get_request(rpc_call: RpcCall, uri: http::Uri, pool: &storage::D
                 println!("Missing query options.");
                 return Err(warp::reject::custom(Error::InvalidRpcCall));
             }
-            return handlers::get_auth_token_challenge(&query_options.public_key, pool).await;
+            return handlers::get_auth_token_challenge(&query_options.public_key, pool).await.map(|json| warp::reply::json(&json).into_response());
         },
         _ => {
             println!("Ignoring RPC call with invalid or unused endpoint: {}.", rpc_call.endpoint);
