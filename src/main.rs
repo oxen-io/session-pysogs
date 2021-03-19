@@ -40,5 +40,5 @@ async fn main() {
         .key_path("tls_private_key.pem")
         .run(([0, 0, 0, 0], 443));
     // Keep futures alive
-    join!(prune_pending_tokens_future, prune_tokens_future, serve_routes_future);
+    join!(prune_pending_tokens_future, prune_tokens_future, prune_files_future, serve_routes_future);
 }

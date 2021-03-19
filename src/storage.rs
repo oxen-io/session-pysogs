@@ -289,7 +289,7 @@ async fn prune_files() {
         }
         // Remove the file records from the database (only for the files that were actually deleted)
         let stmt = format!("DELETE FROM {} WHERE id IN (?1)", FILES_TABLE);
-        match tx.execute(&stmt, params![ deleted_ids ]) {
+        match tx.execute(&stmt, deleted_ids) {
             Ok(_) => (),
             Err(e) => return println!("Couldn't prune files due to error: {}.", e)
         };

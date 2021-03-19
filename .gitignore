@@ -2,3 +2,5 @@
 *.db
 .DS_Store
 *.pem
+/files
+/rooms

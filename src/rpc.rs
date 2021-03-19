@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use serde::{Serialize, Deserialize};
-use warp::{Rejection, reply::Response};
+use warp::{Rejection, reply::Reply, reply::Response};
 
 use super::errors::Error;
 use super::handlers;
@@ -70,7 +70,7 @@ async fn handle_get_request(rpc_call: RpcCall, uri: http::Uri, pool: &storage::D
             return Err(warp::reject::custom(Error::InvalidRpcCall));
         }
         let file_id = components[1];
-        return handlers::get_file(file_id, pool).await;
+        return handlers::get_file(file_id).await.map(|json| warp::reply::json(&json).into_response());
     }
     match uri.path() {
         "/messages" => return handlers::get_messages(query_options, pool).await,

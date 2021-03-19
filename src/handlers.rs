@@ -33,7 +33,7 @@ pub async fn store_file(base64_encoded_bytes: &str, pool: &storage:: DatabaseCon
     // Generate UUID
     let id = Uuid::new_v4();
     let mut buffer = Uuid::encode_buffer();
-    let id = id.to_simple().encode_lower(&mut buffer);
+    let id: String = id.to_simple().encode_lower(&mut buffer).to_string();
     // Update the database
     // We do this * before * storing the actual file, so that in case something goes
     // wrong we're not left with files that'll never be pruned.
@@ -41,7 +41,7 @@ pub async fn store_file(base64_encoded_bytes: &str, pool: &storage:: DatabaseCon
     let mut conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     let tx = conn.transaction().map_err(|_| Error::DatabaseFailedInternally)?;
     let stmt = format!("INSERT INTO {} (id, timestamp) VALUES (?1, ?2)", storage::FILES_TABLE);
-    let _ = match tx.execute(&stmt, params![ &id, now ]) {
+    let _ = match tx.execute(&stmt, params![ id, now ]) {
         Ok(rows) => rows,
         Err(e) => {
             println!("Couldn't insert file record due to error: {}.", e);
@@ -51,7 +51,7 @@ pub async fn store_file(base64_encoded_bytes: &str, pool: &storage:: DatabaseCon
     tx.commit().map_err(|_| Error::DatabaseFailedInternally)?;
     // Write to file
     let mut pos = 0;
-    let mut buffer = match fs::File::create(&id) {
+    let mut buffer = match fs::File::create(format!("files/{}", &id)) {
         Ok(buffer) => buffer,
         Err(e) => {
             println!("Couldn't store file due to error: {}.", e);
@@ -72,7 +72,7 @@ pub async fn store_file(base64_encoded_bytes: &str, pool: &storage:: DatabaseCon
     return Ok(warp::reply::json(&id).into_response());
 }
 
-pub async fn get_file(id: &str, pool: &storage:: DatabaseConnectionPool) -> Result<Response, Rejection> {
+pub async fn get_file(id: &str) -> Result<String, Rejection> {
     // Check that the ID is a valid UUID
     match Uuid::parse_str(id) {
         Ok(_) => (),
@@ -81,8 +81,6 @@ pub async fn get_file(id: &str, pool: &storage:: DatabaseConnectionPool) -> Resu
             return Err(warp::reject::custom(Error::ValidationFailed));
         }
     };
-    // Get a database connection
-    let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     // Try to read the file
     let bytes = match fs::read(format!("files/{}", id)) {
         Ok(bytes) => bytes,
@@ -94,7 +92,7 @@ pub async fn get_file(id: &str, pool: &storage:: DatabaseConnectionPool) -> Resu
     // Base64 encode the result
     let base64_encoded_bytes = base64::encode(bytes);
     // Return
-    return Ok(warp::reply::json(&base64_encoded_bytes).into_response());
+    return Ok(base64_encoded_bytes);
 }
 
 // Authentication
