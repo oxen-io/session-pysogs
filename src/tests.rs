@@ -27,31 +27,24 @@ fn set_up_test_room() {
     storage::create_database_if_needed(test_room);
     fs::read("rooms/test_room.db").unwrap(); // Fail if this doesn't exist    
     let pool: &storage::DatabaseConnectionPool = &storage::MAIN_POOL;
-    let mut conn = pool.get().unwrap();
-    let tx = conn.transaction().unwrap();
+    let conn = pool.get().unwrap();
     let stmt = format!("REPLACE INTO {} (id, name) VALUES (?1, ?2)", storage::MAIN_TABLE);
-    tx.execute(&stmt, params![ test_room, "Test Room" ]).unwrap();
-    tx.commit().unwrap();
+    conn.execute(&stmt, params![ test_room, "Test Room" ]).unwrap();
 }
 
 #[test]
 fn test_file_handling() {
     // Ensure the test room is set up
     set_up_test_room();
-    // Test file storage
+    // Store the test file
     let pool = storage::pool_by_room_name("test_room");
     aw!(handlers::store_file(TEST_FILE, &pool)).unwrap();
     // Check that there's a file record
-    let mut conn = pool.get().unwrap();
-    let tx = conn.transaction().unwrap();
+    let conn = pool.get().unwrap();
     let raw_query = format!("SELECT id FROM {}", storage::FILES_TABLE);
-    let mut query = tx.prepare(&raw_query).unwrap();
-    let rows = query.query_map(params![], |row| { Ok(row.get(0)?) }).unwrap();
-    let ids: Vec<String> = rows.filter_map(|result| result.ok()).collect();
-    assert_eq!(ids.len(), 1);
-    let id = ids.first().unwrap();
+    let id: String = conn.query_row(&raw_query, params![], |row| { Ok(row.get(0)?) }).unwrap();
     // Retrieve the file and check the content
-    let base64_encoded_file = aw!(handlers::get_file(id)).unwrap();
+    let base64_encoded_file = aw!(handlers::get_file(&id)).unwrap();
     assert_eq!(base64_encoded_file, TEST_FILE);
     // Prune the file and check that it's gone
     aw!(storage::prune_files(-60)); // Will evaluate to now + 60
@@ -60,13 +53,13 @@ fn test_file_handling() {
         Err(_) => ()
     }
     // Check that the file record is also gone
-    let mut conn = pool.get().unwrap();
-    let tx = conn.transaction().unwrap();
+    let conn = pool.get().unwrap();
     let raw_query = format!("SELECT id FROM {}", storage::FILES_TABLE);
-    let mut query = tx.prepare(&raw_query).unwrap();
-    let rows = query.query_map(params![], |row| { Ok(row.get(0)?) }).unwrap();
-    let ids: Vec<String> = rows.filter_map(|result| result.ok()).collect();
-    assert_eq!(ids.len(), 0);
+    let result: Result<String, _> = conn.query_row(&raw_query, params![], |row| { Ok(row.get(0)?) });
+    match result {
+        Ok(_) => assert!(false), // It should be gone now
+        Err(_) => ()
+    }
 }
 
 // Data

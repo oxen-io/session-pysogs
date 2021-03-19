@@ -38,17 +38,15 @@ pub async fn store_file(base64_encoded_bytes: &str, pool: &storage:: DatabaseCon
     // We do this * before * storing the actual file, so that in case something goes
     // wrong we're not left with files that'll never be pruned.
     let now = chrono::Utc::now().timestamp();
-    let mut conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
-    let tx = conn.transaction().map_err(|_| Error::DatabaseFailedInternally)?;
+    let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     let stmt = format!("INSERT INTO {} (id, timestamp) VALUES (?1, ?2)", storage::FILES_TABLE);
-    let _ = match tx.execute(&stmt, params![ id, now ]) {
+    let _ = match conn.execute(&stmt, params![ id, now ]) {
         Ok(rows) => rows,
         Err(e) => {
             println!("Couldn't insert file record due to error: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
-    tx.commit().map_err(|_| Error::DatabaseFailedInternally)?;
     // Write to file
     let mut pos = 0;
     let mut buffer = match fs::File::create(format!("files/{}", &id)) {
@@ -114,19 +112,15 @@ pub async fn get_auth_token_challenge(hex_public_key: &str, pool: &storage::Data
     thread_rng().fill(&mut token[..]);
     // Store the (pending) token
     // Note that a given public key can have multiple pending tokens
-    {
-        let now = chrono::Utc::now().timestamp();
-        let mut conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
-        let tx = conn.transaction().map_err(|_| Error::DatabaseFailedInternally)?;
-        let stmt = format!("INSERT INTO {} (public_key, timestamp, token) VALUES (?1, ?2, ?3)", storage::PENDING_TOKENS_TABLE);
-        let _ = match tx.execute(&stmt, params![ hex_public_key, now, token.to_vec() ]) {
-            Ok(rows) => rows,
-            Err(e) => {
-                println!("Couldn't insert pending token due to error: {}.", e);
-                return Err(warp::reject::custom(Error::DatabaseFailedInternally));
-            }
-        };
-        tx.commit().map_err(|_| Error::DatabaseFailedInternally)?;
+    let now = chrono::Utc::now().timestamp();
+    let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
+    let stmt = format!("INSERT INTO {} (public_key, timestamp, token) VALUES (?1, ?2, ?3)", storage::PENDING_TOKENS_TABLE);
+    let _ = match conn.execute(&stmt, params![ hex_public_key, now, token.to_vec() ]) {
+        Ok(rows) => rows,
+        Err(e) => {
+            println!("Couldn't insert pending token due to error: {}.", e);
+            return Err(warp::reject::custom(Error::DatabaseFailedInternally));
+        }
     };
     // Encrypt the token with the symmetric key
     let ciphertext = crypto::encrypt_aes_gcm(&token, &symmetric_key).await?;
@@ -152,47 +146,42 @@ pub async fn claim_auth_token(public_key: &str, token: Option<String>, pool: &st
         println!("Ignoring claim token request for invalid token.");
         return Err(warp::reject::custom(Error::ValidationFailed)); 
     }
-    // Get a database connection and open a transaction
-    let mut conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
-    let tx = conn.transaction().map_err(|_| Error::DatabaseFailedInternally)?;
+    // Get a database connection
+    let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     // Get the pending tokens for the given public key
-    let pending_tokens: Vec<(i64, Vec<u8>)> = {
-        let raw_query = format!("SELECT timestamp, token FROM {} WHERE public_key = (?1) AND timestamp > (?2)", storage::PENDING_TOKENS_TABLE);
-        let mut query = tx.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
-        let now = chrono::Utc::now().timestamp();
-        let expiration = now - storage::PENDING_TOKEN_EXPIRATION;
-        let rows = match query.query_map(params![ public_key, expiration ], |row| {
-            Ok((row.get(0)?, row.get(1)?))
-        }) {
-            Ok(rows) => rows,
-            Err(e) => {
-                println!("Couldn't get pending tokens due to error: {}.", e);
-                return Err(warp::reject::custom(Error::DatabaseFailedInternally));
-            }
-        };
-        rows.filter_map(|result| result.ok()).collect()
+    let raw_query = format!("SELECT timestamp, token FROM {} WHERE public_key = (?1) AND timestamp > (?2)", storage::PENDING_TOKENS_TABLE);
+    let mut query = conn.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
+    let now = chrono::Utc::now().timestamp();
+    let expiration = now - storage::PENDING_TOKEN_EXPIRATION;
+    let rows = match query.query_map(params![ public_key, expiration ], |row| {
+        Ok((row.get(0)?, row.get(1)?))
+    }) {
+        Ok(rows) => rows,
+        Err(e) => {
+            println!("Couldn't get pending tokens due to error: {}.", e);
+            return Err(warp::reject::custom(Error::DatabaseFailedInternally));
+        }
     };
+    let pending_tokens: Vec<(i64, Vec<u8>)> = rows.filter_map(|result| result.ok()).collect();
     // Check that the token being claimed is in fact one of the pending tokens
     let claim = hex::decode(token).unwrap(); // Safe because we validated it above
     let index = pending_tokens.iter().position(|(_, pending_token)| *pending_token == claim).ok_or_else(|| Error::Unauthorized)?;
     let token = &pending_tokens[index].1;
-    // Delete all pending tokens for the given public key
-    let stmt = format!("DELETE FROM {} WHERE public_key = (?1)", storage::PENDING_TOKENS_TABLE);
-    match tx.execute(&stmt, params![ public_key ]) {
-        Ok(_) => (),
-        Err(e) => println!("Couldn't delete pending tokens due to error: {}.", e) // It's not catastrophic if this fails
-    };
     // Store the claimed token
     let stmt = format!("INSERT OR REPLACE INTO {} (public_key, token) VALUES (?1, ?2)", storage::TOKENS_TABLE);
-    match tx.execute(&stmt, params![ public_key, hex::encode(token) ]) {
+    match conn.execute(&stmt, params![ public_key, hex::encode(token) ]) {
         Ok(_) => (),
         Err(e) => {
             println!("Couldn't insert token due to error: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     }
-    // Commit
-    tx.commit().map_err(|_| Error::DatabaseFailedInternally)?;
+    // Delete all pending tokens for the given public key
+    let stmt = format!("DELETE FROM {} WHERE public_key = (?1)", storage::PENDING_TOKENS_TABLE);
+    match conn.execute(&stmt, params![ public_key ]) {
+        Ok(_) => (),
+        Err(e) => println!("Couldn't delete pending tokens due to error: {}.", e) // It's not catastrophic if this fails
+    };
     // Return
     return Ok(StatusCode::OK.into_response());
 }
@@ -201,20 +190,17 @@ pub async fn delete_auth_token(auth_token: Option<String>, pool: &storage::Datab
     // Check authorization level
     let (has_authorization_level, requesting_public_key) = has_authorization_level(auth_token, AuthorizationLevel::Basic, pool).await?;
     if !has_authorization_level { return Err(warp::reject::custom(Error::Unauthorized)); }
-    // Get a connection and open a transaction
-    let mut conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
-    let tx = conn.transaction().map_err(|_| Error::DatabaseFailedInternally)?;
+    // Get a database connection
+    let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     // Delete the token
     let stmt = format!("DELETE FROM {} WHERE public_key = (?1)", storage::TOKENS_TABLE);
-    match tx.execute(&stmt, params![ requesting_public_key ]) {
+    match conn.execute(&stmt, params![ requesting_public_key ]) {
         Ok(_) => (),
         Err(e) => {
             println!("Couldn't delete token due to error: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
-    // Commit
-    tx.commit().map_err(|_| Error::DatabaseFailedInternally)?;
     // Return
     return Ok(StatusCode::OK.into_response());
 }
@@ -384,20 +370,17 @@ pub async fn ban(public_key: &str, auth_token: Option<String>, pool: &storage::D
     if !has_authorization_level { return Err(warp::reject::custom(Error::Unauthorized)); }
     // Don't double ban public keys
     if is_banned(&public_key, pool).await? { return Ok(StatusCode::OK.into_response()); }
-    // Get a connection and open a transaction
-    let mut conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
-    let tx = conn.transaction().map_err(|_| Error::DatabaseFailedInternally)?;
+    // Get a database connection
+    let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     // Insert the message
     let stmt = format!("INSERT INTO {} (public_key) VALUES (?1)", storage::BLOCK_LIST_TABLE);
-    match tx.execute(&stmt, params![ public_key ]) {
+    match conn.execute(&stmt, params![ public_key ]) {
         Ok(_) => (),
         Err(e) => {
             println!("Couldn't ban public key due to error: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
-    // Commit
-    tx.commit().map_err(|_| Error::DatabaseFailedInternally)?;
     // Return
     return Ok(StatusCode::OK.into_response());
 }
@@ -414,20 +397,17 @@ pub async fn unban(public_key: &str, auth_token: Option<String>, pool: &storage:
     if !has_authorization_level { return Err(warp::reject::custom(Error::Unauthorized)); }
     // Don't double unban public keys
     if !is_banned(&public_key, pool).await? { return Ok(StatusCode::OK.into_response()); }
-    // Get a connection and open a transaction
-    let mut conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
-    let tx = conn.transaction().map_err(|_| Error::DatabaseFailedInternally)?;
+    // Get a database connection
+    let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     // Insert the message
     let stmt = format!("DELETE FROM {} WHERE public_key = (?1)", storage::BLOCK_LIST_TABLE);
-    match tx.execute(&stmt, params![ public_key ]) {
+    match conn.execute(&stmt, params![ public_key ]) {
         Ok(_) => (),
         Err(e) => {
             println!("Couldn't unban public key due to error: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
-    // Commit
-    tx.commit().map_err(|_| Error::DatabaseFailedInternally)?;
     // Return
     return Ok(StatusCode::OK.into_response());
 }

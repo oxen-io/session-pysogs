@@ -73,6 +73,7 @@ pub fn pool_by_room_id(room_id: isize) -> Result<DatabaseConnectionPool, Error> 
         }
     };
     let names: Vec<String> = rows.filter_map(|result| result.ok()).collect();
+    // Return
     if let Some(name) = names.first() {
         return Ok(pool_by_room_name(name));
     } else {
@@ -189,22 +190,14 @@ async fn prune_tokens() {
     for room in rooms {
         let pool = pool_by_room_name(&room);
         // It's not catastrophic if we fail to prune the database for a given room
-        let mut conn = match pool.get() {
+        let conn = match pool.get() {
             Ok(conn) => conn,
-            Err(e) => return println!("Couldn't prune tokens due to error: {}.", e)
-        };
-        let tx = match conn.transaction() {
-            Ok(tx) => tx,
             Err(e) => return println!("Couldn't prune tokens due to error: {}.", e)
         };
         let stmt = format!("DELETE FROM {} WHERE timestamp < (?1)", TOKENS_TABLE);
         let now = chrono::Utc::now().timestamp();
         let expiration = now - TOKEN_EXPIRATION;
-        match tx.execute(&stmt, params![ expiration ]) {
-            Ok(_) => (),
-            Err(e) => return println!("Couldn't prune tokens due to error: {}.", e)
-        };
-        match tx.commit() {
+        match conn.execute(&stmt, params![ expiration ]) {
             Ok(_) => (),
             Err(e) => return println!("Couldn't prune tokens due to error: {}.", e)
         };
@@ -220,22 +213,14 @@ async fn prune_pending_tokens() {
     for room in rooms {
         let pool = pool_by_room_name(&room);
         // It's not catastrophic if we fail to prune the database for a given room
-        let mut conn = match pool.get() {
+        let conn = match pool.get() {
             Ok(conn) => conn,
-            Err(e) => return println!("Couldn't prune pending tokens due to error: {}.", e)
-        };
-        let tx = match conn.transaction() {
-            Ok(tx) => tx,
             Err(e) => return println!("Couldn't prune pending tokens due to error: {}.", e)
         };
         let stmt = format!("DELETE FROM {} WHERE timestamp < (?1)", PENDING_TOKENS_TABLE);
         let now = chrono::Utc::now().timestamp();
         let expiration = now - PENDING_TOKEN_EXPIRATION;
-        match tx.execute(&stmt, params![ expiration ]) {
-            Ok(_) => (),
-            Err(e) => return println!("Couldn't prune pending tokens due to error: {}.", e)
-        };
-        match tx.commit() {
+        match conn.execute(&stmt, params![ expiration ]) {
             Ok(_) => (),
             Err(e) => return println!("Couldn't prune pending tokens due to error: {}.", e)
         };
@@ -250,36 +235,29 @@ pub async fn prune_files(file_expiration: i64) { // The expiration setting is pa
     };
     for room in rooms {
         // It's not catastrophic if we fail to prune the database for a given room
-        println!("room name: {}", room);
         let pool = pool_by_room_name(&room);
         let now = chrono::Utc::now().timestamp();
         let expiration = now - file_expiration;
         // Get a database connection and open a transaction
-        let mut conn = match pool.get() {
+        let conn = match pool.get() {
             Ok(conn) => conn,
             Err(e) => return println!("Couldn't prune files due to error: {}.", e)
         };
-        let tx = match conn.transaction() {
-            Ok(tx) => tx,
+        // Get the IDs of the files to delete
+        let raw_query = format!("SELECT id FROM {} WHERE timestamp < (?1)", FILES_TABLE);
+        let mut query = match conn.prepare(&raw_query) {
+            Ok(query) => query,
             Err(e) => return println!("Couldn't prune files due to error: {}.", e)
         };
-        // Get the IDs of the files to delete
-        let ids: Vec<String> = {
-            let raw_query = format!("SELECT id FROM {} WHERE timestamp < (?1)", FILES_TABLE);
-            let mut query = match tx.prepare(&raw_query) {
-                Ok(query) => query,
-                Err(e) => return println!("Couldn't prune files due to error: {}.", e)
-            };
-            let rows = match query.query_map(params![ expiration ], |row| {
-                Ok(row.get(0)?)
-            }) {
-                Ok(rows) => rows,
-                Err(e) => {
-                    return println!("Couldn't prune files due to error: {}.", e);
-                }
-            };
-            rows.filter_map(|result| result.ok()).collect()
+        let rows = match query.query_map(params![ expiration ], |row| {
+            Ok(row.get(0)?)
+        }) {
+            Ok(rows) => rows,
+            Err(e) => {
+                return println!("Couldn't prune files due to error: {}.", e);
+            }
         };
+        let ids: Vec<String> = rows.filter_map(|result| result.ok()).collect();
         // Delete the files
         let mut deleted_ids: Vec<String> = vec![];
         for id in ids {
@@ -288,13 +266,9 @@ pub async fn prune_files(file_expiration: i64) { // The expiration setting is pa
                 Err(e) => println!("Couldn't delete file due to error: {}.", e)
             }
         }
-        // Remove the file records from the database (only for the files that were actually deleted)
+        // Remove the file records from the database (only for the files that were successfully deleted)
         let stmt = format!("DELETE FROM {} WHERE id IN (?1)", FILES_TABLE);
-        match tx.execute(&stmt, deleted_ids) {
-            Ok(_) => (),
-            Err(e) => return println!("Couldn't prune files due to error: {}.", e)
-        };
-        match tx.commit() {
+        match conn.execute(&stmt, deleted_ids) {
             Ok(_) => (),
             Err(e) => return println!("Couldn't prune files due to error: {}.", e)
         };
