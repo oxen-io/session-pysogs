@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Message {
     pub server_id: Option<i64>,
     pub text: String
@@ -13,7 +13,18 @@ impl Message {
     }
 }
 
-#[derive(Deserialize, Serialize, Debug)]
-pub struct Error {
+#[derive(Debug, Deserialize, Serialize)]
+pub struct Challenge {
+    pub ciphertext: String,
+    pub ephemeral_public_key: String
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct GenericResponse { 
+    pub result: String
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct StatusCode {
     pub status_code: u16
 }

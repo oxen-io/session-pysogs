@@ -2,9 +2,9 @@ use std::fs;
 use std::io::prelude::*;
 
 use chrono;
+use serde::{Deserialize, Serialize};
 use rusqlite::params;
 use rand::{thread_rng, Rng};
-use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use warp::{Rejection, http::StatusCode, reply::Reply, reply::Response};
 
@@ -17,12 +17,6 @@ use super::storage;
 enum AuthorizationLevel {
     Basic, 
     Moderator
-}
-
-#[derive(Deserialize, Serialize, Debug)]
-pub struct Challenge {
-    pub ciphertext: String,
-    pub ephemeral_public_key: String
 }
 
 // Files
@@ -73,10 +67,11 @@ pub async fn store_file(base64_encoded_bytes: &str, pool: &storage:: DatabaseCon
         pos += count;
     }
     // Return
-    return Ok(warp::reply::json(&id).into_response());
+    let json = models::GenericResponse { result : id };
+    return Ok(warp::reply::json(&json).into_response());
 }
 
-pub async fn get_file(id: &str) -> Result<String, Rejection> { // Doesn't return a response directly for testing purposes
+pub async fn get_file(id: &str) -> Result<models::GenericResponse, Rejection> { // Doesn't return a response directly for testing purposes
     // Check that the ID is a valid UUID
     match Uuid::parse_str(id) {
         Ok(_) => (),
@@ -96,12 +91,13 @@ pub async fn get_file(id: &str) -> Result<String, Rejection> { // Doesn't return
     // Base64 encode the result
     let base64_encoded_bytes = base64::encode(bytes);
     // Return
-    return Ok(base64_encoded_bytes);
+    let json = models::GenericResponse { result : base64_encoded_bytes };
+    return Ok(json);
 }
 
 // Authentication
 
-pub async fn get_auth_token_challenge(hex_public_key: &str, pool: &storage::DatabaseConnectionPool) -> Result<Challenge, Rejection> { // Doesn't return a response directly for testing purposes
+pub async fn get_auth_token_challenge(hex_public_key: &str, pool: &storage::DatabaseConnectionPool) -> Result<models::Challenge, Rejection> { // Doesn't return a response directly for testing purposes
     // Validate the public key
     if !is_valid_public_key(hex_public_key) { 
         println!("Ignoring challenge request for invalid public key.");
@@ -131,7 +127,7 @@ pub async fn get_auth_token_challenge(hex_public_key: &str, pool: &storage::Data
     // Encrypt the token with the symmetric key
     let ciphertext = crypto::encrypt_aes_gcm(&token, &symmetric_key).await?;
     // Return
-    return Ok(Challenge { ciphertext : base64::encode(ciphertext), ephemeral_public_key : base64::encode(ephemeral_public_key.to_bytes()) });
+    return Ok(models::Challenge { ciphertext : base64::encode(ciphertext), ephemeral_public_key : base64::encode(ephemeral_public_key.to_bytes()) });
 }
 
 pub async fn claim_auth_token(public_key: &str, token: Option<String>, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
@@ -183,7 +179,8 @@ pub async fn claim_auth_token(public_key: &str, token: Option<String>, pool: &st
         Err(e) => println!("Couldn't delete pending tokens due to error: {}.", e) // It's not catastrophic if this fails
     };
     // Return
-    return Ok(StatusCode::OK.into_response());
+    let json = models::StatusCode { status_code : StatusCode::OK.as_u16() };
+    return Ok(warp::reply::json(&json).into_response());
 }
 
 pub async fn delete_auth_token(auth_token: Option<String>, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
@@ -202,7 +199,8 @@ pub async fn delete_auth_token(auth_token: Option<String>, pool: &storage::Datab
         }
     };
     // Return
-    return Ok(StatusCode::OK.into_response());
+    let json = models::StatusCode { status_code : StatusCode::OK.as_u16() };
+    return Ok(warp::reply::json(&json).into_response());
 }
 
 // Message sending & receiving
@@ -263,7 +261,12 @@ pub async fn get_messages(options: rpc::QueryOptions, pool: &storage::DatabaseCo
     };
     let messages: Vec<models::Message> = rows.filter_map(|result| result.ok()).collect();
     // Return the messages
-    return Ok(warp::reply::json(&messages).into_response());
+    #[derive(Debug, Deserialize, Serialize)]
+    pub struct Response { 
+        pub messages: Vec<models::Message>
+    }
+    let response = Response { messages };
+    return Ok(warp::reply::json(&response).into_response());
 }
 
 // Message deletion
@@ -318,7 +321,8 @@ pub async fn delete_message(row_id: i64, auth_token: Option<String>, pool: &stor
     // Commit
     tx.commit().map_err(|_| Error::DatabaseFailedInternally)?;
     // Return
-    return Ok(StatusCode::OK.into_response());
+    let json = models::StatusCode { status_code : StatusCode::OK.as_u16() };
+    return Ok(warp::reply::json(&json).into_response());
 }
 
 /// Returns either the last `limit` deleted messages or all deleted messages since `from_server_id, limited to `limit`.
@@ -347,7 +351,12 @@ pub async fn get_deleted_messages(options: rpc::QueryOptions, pool: &storage::Da
     };
     let ids: Vec<i64> = rows.filter_map(|result| result.ok()).collect();
     // Return the IDs
-    return Ok(warp::reply::json(&ids).into_response());
+    #[derive(Debug, Deserialize, Serialize)]
+    pub struct Response { 
+        pub ids: Vec<i64>
+    }
+    let response = Response { ids };
+    return Ok(warp::reply::json(&response).into_response());
 }
 
 // Moderation
@@ -382,7 +391,8 @@ pub async fn ban(public_key: &str, auth_token: Option<String>, pool: &storage::D
         }
     };
     // Return
-    return Ok(StatusCode::OK.into_response());
+    let json = models::StatusCode { status_code : StatusCode::OK.as_u16() };
+    return Ok(warp::reply::json(&json).into_response());
 }
 
 /// Unbans the given `public_key` if the requesting user is a moderator.
@@ -409,13 +419,19 @@ pub async fn unban(public_key: &str, auth_token: Option<String>, pool: &storage:
         }
     };
     // Return
-    return Ok(StatusCode::OK.into_response());
+    let json = models::StatusCode { status_code : StatusCode::OK.as_u16() };
+    return Ok(warp::reply::json(&json).into_response());
 }
 
 /// Returns the full list of banned public keys.
 pub async fn get_banned_public_keys(pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
     let public_keys = get_banned_public_keys_vector(pool).await?;
-    return Ok(warp::reply::json(&public_keys).into_response());
+    #[derive(Debug, Deserialize, Serialize)]
+    pub struct Response { 
+        pub banned_members: Vec<String>
+    }
+    let response = Response { banned_members : public_keys };
+    return Ok(warp::reply::json(&response).into_response());
 }
 
 // General
@@ -438,7 +454,12 @@ pub async fn get_member_count(pool: &storage::DatabaseConnectionPool) -> Result<
     let public_keys: Vec<String> = rows.filter_map(|result| result.ok()).collect();
     let public_key_count = public_keys.len();
     // Return
-    return Ok(warp::reply::json(&public_key_count).into_response());
+    #[derive(Debug, Deserialize, Serialize)]
+    pub struct Response { 
+        pub member_count: usize
+    }
+    let response = Response { member_count : public_key_count };
+    return Ok(warp::reply::json(&response).into_response());
 }
 
 // Utilities

@@ -118,16 +118,40 @@ async fn handle_post_request(rpc_call: RpcCall, uri: http::Uri, auth_token: Opti
             return handlers::insert_message(message, auth_token, pool).await; 
         },
         "/block_list" => {
-            let public_key = rpc_call.body;
-            return handlers::ban(&public_key, auth_token, pool).await;
+            #[derive(Debug, Deserialize)]
+            struct JSON { public_key: String }
+            let json: JSON = match serde_json::from_str(&rpc_call.body) {
+                Ok(message) => message,
+                Err(e) => {
+                    println!("Couldn't parse JSON from: {} due to error: {}.", rpc_call.body, e);
+                    return Err(warp::reject::custom(Error::InvalidRpcCall));
+                }
+            };
+            return handlers::ban(&json.public_key, auth_token, pool).await;
         },
         "/claim_auth_token" => {
-            let public_key = rpc_call.body;
-            return handlers::claim_auth_token(&public_key, auth_token, pool).await;
+            #[derive(Debug, Deserialize)]
+            struct JSON { public_key: String }
+            let json: JSON = match serde_json::from_str(&rpc_call.body) {
+                Ok(message) => message,
+                Err(e) => {
+                    println!("Couldn't parse JSON from: {} due to error: {}.", rpc_call.body, e);
+                    return Err(warp::reject::custom(Error::InvalidRpcCall));
+                }
+            };
+            return handlers::claim_auth_token(&json.public_key, auth_token, pool).await;
         },
         "/files" => {
-            let base64_encoded_bytes = rpc_call.body;
-            return handlers::store_file(&base64_encoded_bytes, pool).await;
+            #[derive(Debug, Deserialize)]
+            struct JSON { file: String }
+            let json: JSON = match serde_json::from_str(&rpc_call.body) {
+                Ok(message) => message,
+                Err(e) => {
+                    println!("Couldn't parse JSON from: {} due to error: {}.", rpc_call.body, e);
+                    return Err(warp::reject::custom(Error::InvalidRpcCall));
+                }
+            };
+            return handlers::store_file(&json.file, pool).await;
         },
         _ => {
             println!("Ignoring RPC call with invalid or unused endpoint: {}.", rpc_call.endpoint);

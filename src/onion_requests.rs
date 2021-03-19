@@ -108,7 +108,7 @@ async fn encrypt_response(response: Response, symmetric_key: &[u8]) -> Result<Re
         let (_, body) = response.into_parts();
         bytes = warp::hyper::body::to_bytes(body).await.unwrap().to_vec();
     } else {
-        let error = models::Error { status_code : response.status().as_u16() };
+        let error = models::StatusCode { status_code : response.status().as_u16() };
         bytes = serde_json::to_vec(&error).unwrap();
     }
     let ciphertext = crypto::encrypt_aes_gcm(&bytes, symmetric_key).await.unwrap();

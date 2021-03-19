@@ -77,7 +77,7 @@ fn test_file_handling() {
     let raw_query = format!("SELECT id FROM {}", storage::FILES_TABLE);
     let id: String = conn.query_row(&raw_query, params![], |row| { Ok(row.get(0)?) }).unwrap();
     // Retrieve the file and check the content
-    let base64_encoded_file = aw!(handlers::get_file(&id)).unwrap();
+    let base64_encoded_file = aw!(handlers::get_file(&id)).unwrap().result;
     assert_eq!(base64_encoded_file, TEST_FILE);
     // Prune the file and check that it's gone
     aw!(storage::prune_files(-60)); // Will evaluate to now + 60
