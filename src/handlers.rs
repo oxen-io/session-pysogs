@@ -364,7 +364,12 @@ pub async fn get_deleted_messages(options: rpc::QueryOptions, pool: &storage::Da
 /// Returns the full list of moderators.
 pub async fn get_moderators(pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
     let public_keys = get_moderators_vector(pool).await?;
-    return Ok(warp::reply::json(&public_keys).into_response());
+    #[derive(Debug, Deserialize, Serialize)]
+    pub struct Response { 
+        pub moderators: Vec<String>
+    }
+    let response = Response { moderators : public_keys };
+    return Ok(warp::reply::json(&response).into_response());
 }
 
 /// Bans the given `public_key` if the requesting user is a moderator.

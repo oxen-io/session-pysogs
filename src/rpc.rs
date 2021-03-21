@@ -204,8 +204,7 @@ fn get_auth_token(rpc_call: &RpcCall) -> Option<String> {
         Ok(headers) => headers,
         Err(_) => return None
     };
-    let header = headers.get("Authorization")?;
-    return header.strip_prefix("Bearer").map(|s| s.to_string()).or(None);
+    return headers.get("Authorization").map(|s| s.to_string());
 }
 
 fn get_room_id(rpc_call: &RpcCall) -> Option<isize> {
