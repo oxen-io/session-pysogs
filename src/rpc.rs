@@ -51,17 +51,6 @@ pub async fn handle_rpc_call(rpc_call: RpcCall) -> Result<Response, Rejection> {
 }
 
 async fn handle_get_request(rpc_call: RpcCall, uri: http::Uri, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
-    // Parse query options if needed
-    let mut query_options = QueryOptions { limit : None, from_server_id : None };
-    if let Some(query) = uri.query() {
-        query_options = match serde_json::from_str(&query) {
-            Ok(query_options) => query_options,
-            Err(e) => {
-                println!("Couldn't parse query options from: {} due to error: {}.", query, e);
-                return Err(warp::reject::custom(Error::InvalidRpcCall));
-            }
-        };
-    }
     // Switch on the path
     if uri.path().starts_with("/files") {
         let components: Vec<&str> = uri.path()[1..].split("/").collect(); // Drop the leading slash and split on subsequent slashes
@@ -73,16 +62,44 @@ async fn handle_get_request(rpc_call: RpcCall, uri: http::Uri, pool: &storage::D
         return handlers::get_file(file_id).await.map(|json| warp::reply::json(&json).into_response());
     }
     match uri.path() {
-        "/messages" => return handlers::get_messages(query_options, pool).await,
-        "/deleted_messages" => return handlers::get_deleted_messages(query_options, pool).await,
+        "/messages" => {
+            let query_options: QueryOptions;
+            if let Some(query) = uri.query() {
+                query_options = match serde_json::from_str(&query) {
+                    Ok(query_options) => query_options,
+                    Err(e) => {
+                        println!("Couldn't parse query options from: {} due to error: {}.", query, e);
+                        return Err(warp::reject::custom(Error::InvalidRpcCall));
+                    }
+                };
+            } else {
+                println!("Missing query options.");
+                return Err(warp::reject::custom(Error::InvalidRpcCall));
+            }
+            return handlers::get_messages(query_options, pool).await;
+        },
+        "/deleted_messages" => {
+            let query_options: QueryOptions;
+            if let Some(query) = uri.query() {
+                query_options = match serde_json::from_str(&query) {
+                    Ok(query_options) => query_options,
+                    Err(e) => {
+                        println!("Couldn't parse query options from: {} due to error: {}.", query, e);
+                        return Err(warp::reject::custom(Error::InvalidRpcCall));
+                    }
+                };
+            } else {
+                println!("Missing query options.");
+                return Err(warp::reject::custom(Error::InvalidRpcCall));
+            }
+            return handlers::get_deleted_messages(query_options, pool).await
+        },
         "/moderators" => return handlers::get_moderators(pool).await,
         "/block_list" => return handlers::get_banned_public_keys(pool).await,
         "/member_count" => return handlers::get_member_count(pool).await,
         "/auth_token_challenge" => {
             #[derive(Debug, Deserialize)]
-            pub struct QueryOptions {
-                pub public_key: String
-            }
+            struct QueryOptions { public_key: String }
             let query_options: QueryOptions;
             if let Some(query) = uri.query() {
                 query_options = match serde_json::from_str(&query) {

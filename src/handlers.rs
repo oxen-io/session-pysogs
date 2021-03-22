@@ -1,3 +1,4 @@
+use std::convert::TryInto;
 use std::fs;
 use std::io::prelude::*;
 
@@ -17,6 +18,11 @@ use super::storage;
 enum AuthorizationLevel {
     Basic, 
     Moderator
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct GenericStringResponse { 
+    pub result: String
 }
 
 // Files
@@ -67,11 +73,11 @@ pub async fn store_file(base64_encoded_bytes: &str, pool: &storage:: DatabaseCon
         pos += count;
     }
     // Return
-    let json = models::GenericResponse { result : id };
+    let json = GenericStringResponse { result : id };
     return Ok(warp::reply::json(&json).into_response());
 }
 
-pub async fn get_file(id: &str) -> Result<models::GenericResponse, Rejection> { // Doesn't return a response directly for testing purposes
+pub async fn get_file(id: &str) -> Result<GenericStringResponse, Rejection> { // Doesn't return a response directly for testing purposes
     // Check that the ID is a valid UUID
     match Uuid::parse_str(id) {
         Ok(_) => (),
@@ -91,7 +97,7 @@ pub async fn get_file(id: &str) -> Result<models::GenericResponse, Rejection> { 
     // Base64 encode the result
     let base64_encoded_bytes = base64::encode(bytes);
     // Return
-    let json = models::GenericResponse { result : base64_encoded_bytes };
+    let json = GenericStringResponse { result : base64_encoded_bytes };
     return Ok(json);
 }
 
@@ -104,7 +110,7 @@ pub async fn get_auth_token_challenge(hex_public_key: &str, pool: &storage::Data
         return Err(warp::reject::custom(Error::ValidationFailed)); 
     }
     // Convert the public key to bytes and cut off the version byte
-    let public_key: Vec<u8> = hex::decode(hex_public_key).unwrap()[1..].to_vec();
+    let public_key: [u8; 32] = hex::decode(hex_public_key).unwrap()[1..].try_into().unwrap(); // Safe because we know it has a length of 32 at this point
     // Generate an ephemeral key pair
     let (ephemeral_private_key, ephemeral_public_key) = crypto::generate_x25519_key_pair().await;
     // Generate a symmetric key from the requesting user's public key and the ephemeral private key

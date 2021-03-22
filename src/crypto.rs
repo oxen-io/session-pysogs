@@ -56,7 +56,7 @@ pub async fn encrypt_aes_gcm(plaintext: &[u8], symmetric_key: &[u8]) -> Result<V
             return Ok(iv_and_ciphertext);
         },
         Err(e) => {
-            println!("Couldn't decrypt ciphertext due to error: {}.", e);
+            println!("Couldn't encrypt ciphertext due to error: {}.", e);
             return Err(warp::reject::custom(Error::DecryptionFailed));
         }
     };
@@ -67,7 +67,7 @@ pub async fn decrypt_aes_gcm(iv_and_ciphertext: &[u8], symmetric_key: &[u8]) -> 
         println!("Ignoring ciphertext of invalid size: {}.", iv_and_ciphertext.len());
         return Err(warp::reject::custom(Error::DecryptionFailed)); 
     }
-    let iv: Vec<u8> = iv_and_ciphertext[0..IV_SIZE].try_into().unwrap(); // Safe because we know iv_and_ciphertext has a length of at least IV_SIZE bytes
+    let iv: [u8; IV_SIZE] = iv_and_ciphertext[0..IV_SIZE].try_into().unwrap(); // Safe because we know iv_and_ciphertext has a length of at least IV_SIZE bytes
     let ciphertext: Vec<u8> = iv_and_ciphertext[IV_SIZE..].try_into().unwrap(); // Safe because we know iv_and_ciphertext has a length of at least IV_SIZE bytes
     let cipher = Aes256Gcm::new(&GenericArray::from_slice(symmetric_key));
     match cipher.decrypt(GenericArray::from_slice(&iv), &*ciphertext) {
