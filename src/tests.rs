@@ -46,11 +46,11 @@ fn test_authorization() {
     // Get a challenge
     let challenge = aw!(handlers::get_auth_token_challenge(&hex_user_public_key, &pool)).unwrap();
     // Generate a symmetric key
-    let ephemeral_public_key: Vec<u8> = base64::decode(challenge.ephemeral_public_key).unwrap();
-    let symmetric_key: Vec<u8> = aw!(crypto::get_x25519_symmetric_key(&ephemeral_public_key, &user_private_key)).unwrap();
+    let ephemeral_public_key = base64::decode(challenge.ephemeral_public_key).unwrap();
+    let symmetric_key = aw!(crypto::get_x25519_symmetric_key(&ephemeral_public_key, &user_private_key)).unwrap();
     // Decrypt the challenge
-    let ciphertext: Vec<u8> = base64::decode(challenge.ciphertext).unwrap();
-    let plaintext: Vec<u8> = aw!(crypto::decrypt_aes_gcm(&ciphertext, &symmetric_key)).unwrap();
+    let ciphertext = base64::decode(challenge.ciphertext).unwrap();
+    let plaintext = aw!(crypto::decrypt_aes_gcm(&ciphertext, &symmetric_key)).unwrap();
     // Try to claim an incorrect token
     let mut incorrect_token = [0u8; 48];
     thread_rng().fill(&mut incorrect_token[..]);
