@@ -108,7 +108,8 @@ fn create_room_tables_if_needed(conn: &DatabaseConnection) {
     "CREATE TABLE IF NOT EXISTS {} (
         id INTEGER PRIMARY KEY,
         public_key TEXT,
-        text TEXT
+        data TEXT,
+        signature TEXT
     )", MESSAGES_TABLE);
     conn.execute(&messages_table_cmd, params![]).expect("Couldn't create messages table.");
     // Deleted messages

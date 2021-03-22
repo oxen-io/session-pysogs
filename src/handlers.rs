@@ -219,8 +219,8 @@ pub async fn insert_message(mut message: models::Message, auth_token: Option<Str
     let mut conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     let tx = conn.transaction().map_err(|_| Error::DatabaseFailedInternally)?;
     // Insert the message
-    let stmt = format!("INSERT INTO {} (public_key, text) VALUES (?1, ?2)", storage::MESSAGES_TABLE);
-    match tx.execute(&stmt, params![ &requesting_public_key, message.text ]) {
+    let stmt = format!("INSERT INTO {} (public_key, data, signature) VALUES (?1, ?2)", storage::MESSAGES_TABLE);
+    match tx.execute(&stmt, params![ &requesting_public_key, message.data, message.signature ]) {
         Ok(_) => (),
         Err(e) => {
             println!("Couldn't insert message due to error: {}.", e);
@@ -245,13 +245,13 @@ pub async fn get_messages(options: rpc::QueryOptions, pool: &storage::DatabaseCo
     // Query the database
     let raw_query: String;
     if options.from_server_id.is_some() {
-        raw_query = format!("SELECT id, text FROM {} WHERE rowid > (?1) LIMIT (?2)", storage::MESSAGES_TABLE);
+        raw_query = format!("SELECT id, data, signature FROM {} WHERE rowid > (?1) LIMIT (?2)", storage::MESSAGES_TABLE);
     } else {
-        raw_query = format!("SELECT id, text FROM {} ORDER BY rowid DESC LIMIT (?2)", storage::MESSAGES_TABLE);
+        raw_query = format!("SELECT id, data, signature FROM {} ORDER BY rowid DESC LIMIT (?2)", storage::MESSAGES_TABLE);
     }
     let mut query = conn.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
     let rows = match query.query_map(params![ from_server_id, limit ], |row| {
-        Ok(models::Message { server_id : row.get(0)?, text : row.get(1)? })
+        Ok(models::Message { server_id : row.get(0)?, data : row.get(1)?, signature : row.get(2)? })
     }) {
         Ok(rows) => rows,
         Err(e) => {
