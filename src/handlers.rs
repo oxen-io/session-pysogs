@@ -26,9 +26,30 @@ pub struct GenericStringResponse {
     pub result: String
 }
 
+// Rooms
+
+// Currently not exposed
+pub async fn create_room(id: &str, name: &str) -> Result<Response, Rejection> {
+    // Get a connection
+    let pool = &storage::MAIN_POOL;
+    let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
+    // Insert the message
+    let stmt = format!("INSERT INTO {} (id, name) VALUES (?1, ?2)", storage::MAIN_TABLE);
+    match conn.execute(&stmt, params![ id, name ]) {
+        Ok(_) => (),
+        Err(e) => {
+            println!("Couldn't create room due to error: {}.", e);
+            return Err(warp::reject::custom(Error::DatabaseFailedInternally));
+        }
+    }
+    // Return
+    let json = models::StatusCode { status_code : StatusCode::OK.as_u16() };
+    return Ok(warp::reply::json(&json).into_response());
+}
+
 // Files
 
-pub async fn store_file(base64_encoded_bytes: &str, pool: &storage:: DatabaseConnectionPool) -> Result<Response, Rejection> {
+pub async fn store_file(base64_encoded_bytes: &str, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
     // Parse bytes
     let bytes = match base64::decode(base64_encoded_bytes) {
         Ok(bytes) => bytes,
@@ -230,7 +251,7 @@ pub async fn insert_message(mut message: models::Message, auth_token: Option<Str
     let mut conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     let tx = conn.transaction().map_err(|_| Error::DatabaseFailedInternally)?;
     // Insert the message
-    let stmt = format!("INSERT INTO {} (public_key, data, signature) VALUES (?1, ?2)", storage::MESSAGES_TABLE);
+    let stmt = format!("INSERT INTO {} (public_key, data, signature) VALUES (?1, ?2, ?3)", storage::MESSAGES_TABLE);
     match tx.execute(&stmt, params![ &requesting_public_key, message.data, message.signature ]) {
         Ok(_) => (),
         Err(e) => {
