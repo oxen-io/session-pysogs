@@ -43,7 +43,7 @@ pub async fn create_room(id: &str, name: &str) -> Result<Response, Rejection> {
         }
     }
     // Set up the database
-    storage::create_database_if_needed(name);
+    storage::create_database_if_needed(id);
     // Return
     let json = models::StatusCode { status_code : StatusCode::OK.as_u16() };
     return Ok(warp::reply::json(&json).into_response());

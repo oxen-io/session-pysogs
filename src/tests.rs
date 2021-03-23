@@ -23,22 +23,20 @@ fn perform_main_setup() {
 
 fn set_up_test_room() {
     perform_main_setup();
-    let test_room = "test_room";
-    storage::create_database_if_needed(test_room);
-    let raw_path = format!("rooms/{}.db", test_room);
+    let test_room_id = "test_room";
+    let test_room_name = "Test Room";
+    aw!(handlers::create_room(&test_room_id, &test_room_name)).unwrap();
+    let raw_path = format!("rooms/{}.db", test_room_id);
     let path = Path::new(&raw_path);
     fs::read(path).unwrap(); // Fail if this doesn't exist    
-    let pool: &storage::DatabaseConnectionPool = &storage::MAIN_POOL;
-    let conn = pool.get().unwrap();
-    let stmt = format!("REPLACE INTO {} (id, name) VALUES (?1, ?2)", storage::MAIN_TABLE);
-    conn.execute(&stmt, params![ test_room, "Test Room" ]).unwrap();
 }
 
 #[test]
 fn test_authorization() {
     // Ensure the test room is set up and get a database connection pool
     set_up_test_room();
-    let pool = storage::pool_by_room_name("test_room");
+    let test_room_id = "test_room";
+    let pool = storage::pool_by_room_id(&test_room_id);
     // Generate a fake user key pair
     let (user_private_key, user_public_key) = aw!(crypto::generate_x25519_key_pair());
     let hex_user_public_key = format!("05{}", hex::encode(user_public_key.to_bytes()));
@@ -68,7 +66,8 @@ fn test_authorization() {
 fn test_file_handling() {
     // Ensure the test room is set up and get a database connection pool
     set_up_test_room();
-    let pool = storage::pool_by_room_name("test_room");
+    let test_room_id = "test_room";
+    let pool = storage::pool_by_room_id(&test_room_id);
     // Store the test file
     aw!(handlers::store_file(TEST_FILE, &pool)).unwrap();
     // Check that there's a file record

@@ -30,7 +30,7 @@ pub async fn handle_rpc_call(rpc_call: RpcCall) -> Result<Response, Rejection> {
             return Err(warp::reject::custom(Error::InvalidRpcCall))
         }
     };
-    let pool = storage::pool_by_room_id(&room_id)?;
+    let pool = storage::pool_by_room_id(&room_id);
     // Check that the endpoint is a valid URI
     let uri = match rpc_call.endpoint.parse::<http::Uri>() {
         Ok(uri) => uri,
