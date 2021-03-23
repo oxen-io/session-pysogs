@@ -77,8 +77,7 @@ async fn handle_get_request(rpc_call: RpcCall, uri: http::Uri, pool: &storage::D
                     }
                 };
             } else {
-                println!("Missing query options.");
-                return Err(warp::reject::custom(Error::InvalidRpcCall));
+                query_options = QueryOptions { limit : None, from_server_id : None };
             }
             return handlers::get_messages(query_options, pool).await;
         },
@@ -93,8 +92,7 @@ async fn handle_get_request(rpc_call: RpcCall, uri: http::Uri, pool: &storage::D
                     }
                 };
             } else {
-                println!("Missing query options.");
-                return Err(warp::reject::custom(Error::InvalidRpcCall));
+                query_options = QueryOptions { limit : None, from_server_id : None };
             }
             return handlers::get_deleted_messages(query_options, pool).await
         },
