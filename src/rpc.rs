@@ -25,7 +25,10 @@ pub async fn handle_rpc_call(rpc_call: RpcCall) -> Result<Response, Rejection> {
     // Get a connection pool for the given room
     let room_id = match get_room_id(&rpc_call) {
         Some(room_id) => room_id,
-        None => return Err(warp::reject::custom(Error::InvalidRpcCall))
+        None => {
+            println!("Missing room ID.");
+            return Err(warp::reject::custom(Error::InvalidRpcCall))
+        }
     };
     let pool = storage::pool_by_room_id(room_id)?;
     // Check that the endpoint is a valid URI
