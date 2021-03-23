@@ -278,27 +278,15 @@ pub async fn get_messages(query_params: HashMap<String, String>, pool: &storage:
     // Unwrap query parameters
     let from_server_id: i64;
     if let Some(str) = query_params.get("from_server_id") {
-        from_server_id = match str.parse() {
-            Ok(from_server_id) => from_server_id,
-            Err(_) => {
-                println!("Couldn't parse query parameter from: {}.", str);
-                return Err(warp::reject::custom(Error::ValidationFailed));
-            }
-        }
+        from_server_id = str.parse().unwrap_or(0);
     } else {
         from_server_id = 0;
     }
     let limit: u16;
     if let Some(str) = query_params.get("limit") {
-        limit = match str.parse() {
-            Ok(limit) => limit,
-            Err(_) => {
-                println!("Couldn't parse query parameter from: {}.", str);
-                return Err(warp::reject::custom(Error::ValidationFailed));
-            }
-        }
+        limit = str.parse().unwrap_or(256); // Never return more than 256 messages at once
     } else {
-        limit = 256; // Never return more than 256 messages at once
+        limit = 256;
     }
     // Query the database
     let raw_query: String;
@@ -390,27 +378,15 @@ pub async fn get_deleted_messages(query_params: HashMap<String, String>, pool: &
     // Unwrap query parameters
     let from_server_id: i64;
     if let Some(str) = query_params.get("from_server_id") {
-        from_server_id = match str.parse() {
-            Ok(from_server_id) => from_server_id,
-            Err(_) => {
-                println!("Couldn't parse query parameter from: {}.", str);
-                return Err(warp::reject::custom(Error::ValidationFailed));
-            }
-        }
+        from_server_id = str.parse().unwrap_or(0);
     } else {
         from_server_id = 0;
     }
     let limit: u16;
     if let Some(str) = query_params.get("limit") {
-        limit = match str.parse() {
-            Ok(limit) => limit,
-            Err(_) => {
-                println!("Couldn't parse query parameter from: {}.", str);
-                return Err(warp::reject::custom(Error::ValidationFailed));
-            }
-        }
+        limit = str.parse().unwrap_or(256); // Never return more than 256 messages at once
     } else {
-        limit = 256; // Never return more than 256 messages at once
+        limit = 256;
     }
     // Query the database
     let raw_query: String;
