@@ -1,6 +1,7 @@
 use std::convert::TryInto;
 use std::fs;
 use std::io::prelude::*;
+use std::path::Path;
 
 use chrono;
 use serde::{Deserialize, Serialize};
@@ -55,7 +56,9 @@ pub async fn store_file(base64_encoded_bytes: &str, pool: &storage:: DatabaseCon
     };
     // Write to file
     let mut pos = 0;
-    let mut buffer = match fs::File::create(format!("files/{}", &id)) {
+    let raw_path = format!("files/{}", &id);
+    let path = Path::new(&raw_path);
+    let mut buffer = match fs::File::create(path) {
         Ok(buffer) => buffer,
         Err(e) => {
             println!("Couldn't store file due to error: {}.", e);
@@ -87,7 +90,9 @@ pub async fn get_file(id: &str) -> Result<GenericStringResponse, Rejection> { //
         }
     };
     // Try to read the file
-    let bytes = match fs::read(format!("files/{}", id)) {
+    let raw_path = format!("files/{}", id);
+    let path = Path::new(&raw_path);
+    let bytes = match fs::read(path) {
         Ok(bytes) => bytes,
         Err(e) => {
             println!("Couldn't read file due to error: {}.", e);

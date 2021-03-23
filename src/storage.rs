@@ -87,7 +87,7 @@ pub fn pool_by_room_name(room: &str) -> DatabaseConnectionPool {
     if let Some(pool) = pools.get(room) {
         return pool.clone();
     } else {
-        let raw_path = format!("./rooms/{}.db", room);
+        let raw_path = format!("rooms/{}.db", room);
         let path = Path::new(&raw_path);
         let db_manager = r2d2_sqlite::SqliteConnectionManager::file(path);
         let pool = r2d2::Pool::new(db_manager).unwrap();

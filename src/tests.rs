@@ -1,4 +1,5 @@
 use std::fs;
+use std::path::Path;
 
 use rand::{thread_rng, Rng};
 use rusqlite::params;
@@ -28,7 +29,9 @@ fn set_up_test_room() {
     }
     let test_room = "test_room";
     storage::create_database_if_needed(test_room);
-    fs::read("rooms/test_room.db").unwrap(); // Fail if this doesn't exist    
+    let raw_path = format!("rooms/{}.db", test_room);
+    let path = Path::new(&raw_path);
+    fs::read(path).unwrap(); // Fail if this doesn't exist    
     let pool: &storage::DatabaseConnectionPool = &storage::MAIN_POOL;
     let conn = pool.get().unwrap();
     let stmt = format!("REPLACE INTO {} (id, name) VALUES (?1, ?2)", storage::MAIN_TABLE);
