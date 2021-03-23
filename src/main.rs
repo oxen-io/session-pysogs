@@ -55,9 +55,10 @@ async fn main() {
     // Create required folders
     fs::create_dir_all("./rooms").unwrap();
     fs::create_dir_all("./files").unwrap();
-    // Create the main room
-    let main_room = "main";
-    storage::create_database_if_needed(main_room);
+    // Create the main room    
+    let main_room_id = "main";
+    let main_room_name = "Main";
+    handlers::create_room(&main_room_id, &main_room_name).await.unwrap();
     // Set up pruning jobs
     let prune_pending_tokens_future = storage::prune_pending_tokens_periodically();
     let prune_tokens_future = storage::prune_tokens_periodically();

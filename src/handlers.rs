@@ -33,8 +33,8 @@ pub async fn create_room(id: &str, name: &str) -> Result<Response, Rejection> {
     // Get a connection
     let pool = &storage::MAIN_POOL;
     let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
-    // Insert the message
-    let stmt = format!("INSERT INTO {} (id, name) VALUES (?1, ?2)", storage::MAIN_TABLE);
+    // Insert the room
+    let stmt = format!("REPLACE INTO {} (id, name) VALUES (?1, ?2)", storage::MAIN_TABLE);
     match conn.execute(&stmt, params![ id, name ]) {
         Ok(_) => (),
         Err(e) => {
@@ -42,6 +42,8 @@ pub async fn create_room(id: &str, name: &str) -> Result<Response, Rejection> {
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     }
+    // Set up the database
+    storage::create_database_if_needed(name);
     // Return
     let json = models::StatusCode { status_code : StatusCode::OK.as_u16() };
     return Ok(warp::reply::json(&json).into_response());
