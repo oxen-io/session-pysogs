@@ -237,20 +237,22 @@ pub async fn prune_files(file_expiration: i64) { // The expiration setting is pa
             }
         };
         let ids: Vec<String> = rows.filter_map(|result| result.ok()).collect();
+        if !ids.is_empty() {
         // Delete the files
         let mut deleted_ids: Vec<String> = vec![];
-        for id in ids {
-            match fs::remove_file(format!("files/{}", id)) {
-                Ok(_) => deleted_ids.push(id),
-                Err(e) => println!("Couldn't delete file due to error: {}.", e)
+            for id in ids {
+                match fs::remove_file(format!("files/{}", id)) {
+                    Ok(_) => deleted_ids.push(id),
+                    Err(e) => println!("Couldn't delete file due to error: {}.", e)
+                }
             }
+            // Remove the file records from the database (only for the files that were successfully deleted)
+            let stmt = format!("DELETE FROM {} WHERE id IN (?1)", FILES_TABLE);
+            match conn.execute(&stmt, deleted_ids) {
+                Ok(_) => (),
+                Err(e) => return println!("Couldn't prune files due to error: {}.", e)
+            };
         }
-        // Remove the file records from the database (only for the files that were successfully deleted)
-        let stmt = format!("DELETE FROM {} WHERE id IN (?1)", FILES_TABLE);
-        match conn.execute(&stmt, deleted_ids) {
-            Ok(_) => (),
-            Err(e) => return println!("Couldn't prune files due to error: {}.", e)
-        };
     }
     println!("Pruned files.");
 }
