@@ -55,8 +55,9 @@ pub async fn handle_rpc_call(rpc_call: RpcCall) -> Result<Response, Rejection> {
 
 async fn handle_get_request(rpc_call: RpcCall, uri: http::Uri, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
     // Switch on the path
-    if uri.path().starts_with("/files") {
-        let components: Vec<&str> = uri.path()[1..].split("/").collect(); // Drop the leading slash and split on subsequent slashes
+    let path = uri.path().trim_start_matches("/");
+    if path.starts_with("files") {
+        let components: Vec<&str> = path.split("/").collect(); // Split on subsequent slashes
         if components.len() != 2 {
             println!("Invalid endpoint: {}.", rpc_call.endpoint);
             return Err(warp::reject::custom(Error::InvalidRpcCall));
@@ -64,8 +65,8 @@ async fn handle_get_request(rpc_call: RpcCall, uri: http::Uri, pool: &storage::D
         let file_id = components[1];
         return handlers::get_file(file_id).await.map(|json| warp::reply::json(&json).into_response());
     }
-    match uri.path() {
-        "/messages" => {
+    match path {
+        "messages" => {
             let query_options: QueryOptions;
             if let Some(query) = uri.query() {
                 query_options = match serde_json::from_str(&query) {
@@ -81,7 +82,7 @@ async fn handle_get_request(rpc_call: RpcCall, uri: http::Uri, pool: &storage::D
             }
             return handlers::get_messages(query_options, pool).await;
         },
-        "/deleted_messages" => {
+        "deleted_messages" => {
             let query_options: QueryOptions;
             if let Some(query) = uri.query() {
                 query_options = match serde_json::from_str(&query) {
@@ -97,10 +98,10 @@ async fn handle_get_request(rpc_call: RpcCall, uri: http::Uri, pool: &storage::D
             }
             return handlers::get_deleted_messages(query_options, pool).await
         },
-        "/moderators" => return handlers::get_moderators(pool).await,
-        "/block_list" => return handlers::get_banned_public_keys(pool).await,
-        "/member_count" => return handlers::get_member_count(pool).await,
-        "/auth_token_challenge" => {
+        "moderators" => return handlers::get_moderators(pool).await,
+        "block_list" => return handlers::get_banned_public_keys(pool).await,
+        "member_count" => return handlers::get_member_count(pool).await,
+        "auth_token_challenge" => {
             #[derive(Debug, Deserialize)]
             struct QueryOptions { public_key: String }
             let query_options: QueryOptions;
@@ -126,8 +127,9 @@ async fn handle_get_request(rpc_call: RpcCall, uri: http::Uri, pool: &storage::D
 }
 
 async fn handle_post_request(rpc_call: RpcCall, uri: http::Uri, auth_token: Option<String>, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
-    match uri.path() {
-        "/messages" => {
+    let path = uri.path().trim_start_matches("/");
+    match path {
+        "messages" => {
             let message = match serde_json::from_str(&rpc_call.body) {
                 Ok(message) => message,
                 Err(e) => {
@@ -137,7 +139,7 @@ async fn handle_post_request(rpc_call: RpcCall, uri: http::Uri, auth_token: Opti
             };
             return handlers::insert_message(message, auth_token, pool).await; 
         },
-        "/block_list" => {
+        "block_list" => {
             #[derive(Debug, Deserialize)]
             struct JSON { public_key: String }
             let json: JSON = match serde_json::from_str(&rpc_call.body) {
@@ -149,7 +151,7 @@ async fn handle_post_request(rpc_call: RpcCall, uri: http::Uri, auth_token: Opti
             };
             return handlers::ban(&json.public_key, auth_token, pool).await;
         },
-        "/claim_auth_token" => {
+        "claim_auth_token" => {
             #[derive(Debug, Deserialize)]
             struct JSON { public_key: String }
             let json: JSON = match serde_json::from_str(&rpc_call.body) {
@@ -161,7 +163,7 @@ async fn handle_post_request(rpc_call: RpcCall, uri: http::Uri, auth_token: Opti
             };
             return handlers::claim_auth_token(&json.public_key, auth_token, pool).await;
         },
-        "/files" => {
+        "files" => {
             #[derive(Debug, Deserialize)]
             struct JSON { file: String }
             let json: JSON = match serde_json::from_str(&rpc_call.body) {
@@ -181,9 +183,10 @@ async fn handle_post_request(rpc_call: RpcCall, uri: http::Uri, auth_token: Opti
 }
 
 async fn handle_delete_request(rpc_call: RpcCall, uri: http::Uri, auth_token: Option<String>, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
+    let path = uri.path().trim_start_matches("/");
     // DELETE /messages/:server_id
-    if uri.path().starts_with("/messages") {
-        let components: Vec<&str> = uri.path()[1..].split("/").collect(); // Drop the leading slash and split on subsequent slashes
+    if path.starts_with("messages") {
+        let components: Vec<&str> = path.split("/").collect(); // Split on subsequent slashes
         if components.len() != 2 {
             println!("Invalid endpoint: {}.", rpc_call.endpoint);
             return Err(warp::reject::custom(Error::InvalidRpcCall));
@@ -198,8 +201,8 @@ async fn handle_delete_request(rpc_call: RpcCall, uri: http::Uri, auth_token: Op
         return handlers::delete_message(server_id, auth_token, pool).await;
     }
     // DELETE /block_list/:public_key
-    if uri.path().starts_with("/block_list") {
-        let components: Vec<&str> = uri.path()[1..].split("/").collect(); // Drop the leading slash and split on subsequent slashes
+    if path.starts_with("block_list") {
+        let components: Vec<&str> = path.split("/").collect(); // Split on subsequent slashes
         if components.len() != 2 {
             println!("Invalid endpoint: {}.", rpc_call.endpoint);
             return Err(warp::reject::custom(Error::InvalidRpcCall));
@@ -208,7 +211,7 @@ async fn handle_delete_request(rpc_call: RpcCall, uri: http::Uri, auth_token: Op
         return handlers::unban(&public_key, auth_token, pool).await;
     }
     // DELETE /auth_token
-    if uri.path() == "/auth_token" {
+    if path == "auth_token" {
         return handlers::delete_auth_token(auth_token, pool).await;
     }
     // Unrecognized endpoint
