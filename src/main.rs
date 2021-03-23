@@ -1,4 +1,4 @@
-use std::{fs, path::PathBuf};
+use std::fs;
 
 use futures::join;
 use structopt::StructOpt;
@@ -26,15 +26,15 @@ struct Opt {
     plaintext: bool,
 
     /// Path to TLS certificate.
-    #[structopt(long = "tls-cert")]
-    tls_cert_file: PathBuf,
+    #[structopt(long = "tls-cert", default_value = "tls_certificate.pem")]
+    tls_cert_file: String,
 
     /// Path to TLS private key.
-    #[structopt(long = "tls-key")]
-    tls_priv_key_file: PathBuf,
+    #[structopt(long = "tls-priv_key", default_value = "tls_private_key.pem")]
+    tls_priv_key_file: String,
 
     /// Set port to bind to.
-    #[structopt(short, long, default_value = "443")]
+    #[structopt(short = "P", long = "port", default_value = "443")]
     port: u16,
 
     /// Set IP to bind to.
