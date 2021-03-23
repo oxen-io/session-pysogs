@@ -1,5 +1,6 @@
 use std::convert::TryInto;
 use std::fs;
+use std::collections::HashMap;
 use std::io::prelude::*;
 use std::path::Path;
 
@@ -13,7 +14,6 @@ use warp::{Rejection, http::StatusCode, reply::Reply, reply::Response};
 use super::crypto;
 use super::errors::Error;
 use super::models;
-use super::rpc;
 use super::storage;
 
 enum AuthorizationLevel {
@@ -131,10 +131,12 @@ pub async fn get_file(id: &str) -> Result<GenericStringResponse, Rejection> { //
 
 // Authentication
 
-pub async fn get_auth_token_challenge(hex_public_key: &str, pool: &storage::DatabaseConnectionPool) -> Result<models::Challenge, Rejection> { // Doesn't return a response directly for testing purposes
+pub async fn get_auth_token_challenge(query_params: HashMap<String, String>, pool: &storage::DatabaseConnectionPool) -> Result<models::Challenge, Rejection> { // Doesn't return a response directly for testing purposes
+    // Get the public key
+    let hex_public_key = query_params.get("public_key").ok_or(warp::reject::custom(Error::InvalidRpcCall))?;
     // Validate the public key
     if !is_valid_public_key(hex_public_key) { 
-        println!("Ignoring challenge request for invalid public key.");
+        println!("Ignoring challenge request for invalid public key: {}.", hex_public_key);
         return Err(warp::reject::custom(Error::ValidationFailed)); 
     }
     // Convert the public key to bytes and cut off the version byte
@@ -270,15 +272,25 @@ pub async fn insert_message(mut message: models::Message, auth_token: Option<Str
 }
 
 /// Returns either the last `limit` messages or all messages since `from_server_id, limited to `limit`.
-pub async fn get_messages(options: rpc::QueryOptions, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
+pub async fn get_messages(query_params: HashMap<String, String>, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
     // Get a database connection
     let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
-    // Unwrap parameters
-    let from_server_id = options.from_server_id.unwrap_or(0);
-    let limit = options.limit.unwrap_or(256); // Never return more than 256 messages at once
+    // Unwrap query parameters
+    let from_server_id: i64;
+    if let Some(str) = query_params.get("from_server_id") {
+        from_server_id = str.parse().unwrap_or(0);
+    } else {
+        from_server_id = 0;
+    }
+    let limit: u16;
+    if let Some(str) = query_params.get("limit") {
+        limit = str.parse().unwrap_or(256); // Never return more than 256 messages at once
+    } else {
+        limit = 256;
+    }
     // Query the database
     let raw_query: String;
-    if options.from_server_id.is_some() {
+    if query_params.get("from_server_id").is_some() {
         raw_query = format!("SELECT id, data, signature FROM {} WHERE rowid > (?1) LIMIT (?2)", storage::MESSAGES_TABLE);
     } else {
         raw_query = format!("SELECT id, data, signature FROM {} ORDER BY rowid DESC LIMIT (?2)", storage::MESSAGES_TABLE);
@@ -360,15 +372,25 @@ pub async fn delete_message(row_id: i64, auth_token: Option<String>, pool: &stor
 }
 
 /// Returns either the last `limit` deleted messages or all deleted messages since `from_server_id, limited to `limit`.
-pub async fn get_deleted_messages(options: rpc::QueryOptions, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
+pub async fn get_deleted_messages(query_params: HashMap<String, String>, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
     // Get a database connection
     let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
-    // Unwrap parameters
-    let from_server_id = options.from_server_id.unwrap_or(0);
-    let limit = options.limit.unwrap_or(256); // Never return more than 256 deleted messages at once
+    // Unwrap query parameters
+    let from_server_id: i64;
+    if let Some(str) = query_params.get("from_server_id") {
+        from_server_id = str.parse().unwrap_or(0);
+    } else {
+        from_server_id = 0;
+    }
+    let limit: u16;
+    if let Some(str) = query_params.get("limit") {
+        limit = str.parse().unwrap_or(256); // Never return more than 256 messages at once
+    } else {
+        limit = 256;
+    }
     // Query the database
     let raw_query: String;
-    if options.from_server_id.is_some() {
+    if query_params.get("from_server_id").is_some() {
         raw_query = format!("SELECT id FROM {} WHERE rowid > (?1) LIMIT (?2)", storage::DELETED_MESSAGES_TABLE);
     } else {
         raw_query = format!("SELECT id FROM {} ORDER BY rowid DESC LIMIT (?2)", storage::DELETED_MESSAGES_TABLE);
