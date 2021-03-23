@@ -1322,6 +1322,7 @@ dependencies = [
  "structopt",
  "tokio",
  "tokio-test",
+ "url",
  "uuid",
  "warp",
  "x25519-dalek",

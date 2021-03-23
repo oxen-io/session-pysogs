@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
@@ -41,7 +42,9 @@ fn test_authorization() {
     let (user_private_key, user_public_key) = aw!(crypto::generate_x25519_key_pair());
     let hex_user_public_key = format!("05{}", hex::encode(user_public_key.to_bytes()));
     // Get a challenge
-    let challenge = aw!(handlers::get_auth_token_challenge(&hex_user_public_key, &pool)).unwrap();
+    let mut query_params: HashMap<String, String> = HashMap::new();
+    query_params.insert("public_key".to_string(), hex_user_public_key.clone());
+    let challenge = aw!(handlers::get_auth_token_challenge(query_params, &pool)).unwrap();
     // Generate a symmetric key
     let ephemeral_public_key = base64::decode(challenge.ephemeral_public_key).unwrap();
     let symmetric_key = aw!(crypto::get_x25519_symmetric_key(&ephemeral_public_key, &user_private_key)).unwrap();
