@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use warp::{Rejection, reply::Reply, reply::Response};
 
 use super::errors::Error;
@@ -12,7 +12,7 @@ pub struct RpcCall {
     pub endpoint: String,
     pub body: String,
     pub method: String,
-    pub headers: String
+    pub headers: HashMap<String, String>
 }
 
 #[derive(Debug, Deserialize)]
@@ -217,20 +217,12 @@ async fn handle_delete_request(rpc_call: RpcCall, uri: http::Uri, auth_token: Op
 
 fn get_auth_token(rpc_call: &RpcCall) -> Option<String> {
     if rpc_call.headers.is_empty() { return None; }
-    let headers: HashMap<String, String> = match serde_json::from_str(&rpc_call.headers) {
-        Ok(headers) => headers,
-        Err(_) => return None
-    };
-    return headers.get("Authorization").map(|s| s.to_string());
+    return rpc_call.headers.get("Authorization").map(|s| s.to_string());
 }
 
 fn get_room_id(rpc_call: &RpcCall) -> Option<isize> {
     if rpc_call.headers.is_empty() { return None; }
-    let headers: HashMap<String, String> = match serde_json::from_str(&rpc_call.headers) {
-        Ok(headers) => headers,
-        Err(_) => return None
-    };
-    let header = headers.get("Room")?;
+    let header = rpc_call.headers.get("Room")?;
     match header.parse() {
         Ok(room_id) => return Some(room_id),
         Err(_) => return None

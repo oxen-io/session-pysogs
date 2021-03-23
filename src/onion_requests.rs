@@ -35,14 +35,7 @@ pub async fn handle_onion_request(blob: warp::hyper::body::Bytes) -> Result<Resp
 }
 
 async fn handle_decrypted_onion_request(plaintext: &[u8], symmetric_key: &[u8]) -> Result<Response, Rejection> {
-    let json = match String::from_utf8(plaintext.to_vec()) {
-        Ok(json) => json,
-        Err(e) => {
-            println!("Couldn't parse RPC call from JSON due to error: {}.", e);
-            return Err(warp::reject::custom(Error::InvalidOnionRequest));
-        }
-    };
-    let rpc_call = match serde_json::from_str(&json) {
+    let rpc_call = match serde_json::from_slice(plaintext) {
         Ok(rpc_call) => rpc_call,
         Err(e) => {
             println!("Couldn't parse RPC call from JSON due to error: {}.", e);
