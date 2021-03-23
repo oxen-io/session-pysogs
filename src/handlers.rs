@@ -23,6 +23,7 @@ enum AuthorizationLevel {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct GenericStringResponse { 
+    pub status_code: u16,
     pub result: String
 }
 
@@ -99,7 +100,7 @@ pub async fn store_file(base64_encoded_bytes: &str, pool: &storage::DatabaseConn
         pos += count;
     }
     // Return
-    let json = GenericStringResponse { result : id };
+    let json = GenericStringResponse { status_code : StatusCode::OK.as_u16(), result : id };
     return Ok(warp::reply::json(&json).into_response());
 }
 
@@ -125,7 +126,7 @@ pub async fn get_file(id: &str) -> Result<GenericStringResponse, Rejection> { //
     // Base64 encode the result
     let base64_encoded_bytes = base64::encode(bytes);
     // Return
-    let json = GenericStringResponse { result : base64_encoded_bytes };
+    let json = GenericStringResponse { status_code : StatusCode::OK.as_u16(), result : base64_encoded_bytes };
     return Ok(json);
 }
 
@@ -268,7 +269,13 @@ pub async fn insert_message(mut message: models::Message, auth_token: Option<Str
     // Commit
     tx.commit().map_err(|_| Error::DatabaseFailedInternally)?;
     // Return
-    return Ok(warp::reply::json(&message).into_response());
+    #[derive(Debug, Deserialize, Serialize)]
+    struct Response {
+        status_code: u16,
+        message: models::Message
+    }
+    let response = Response { status_code : StatusCode::OK.as_u16(), message : message };
+    return Ok(warp::reply::json(&response).into_response());
 }
 
 /// Returns either the last `limit` messages or all messages since `from_server_id, limited to `limit`.
@@ -308,10 +315,11 @@ pub async fn get_messages(query_params: HashMap<String, String>, pool: &storage:
     let messages: Vec<models::Message> = rows.filter_map(|result| result.ok()).collect();
     // Return the messages
     #[derive(Debug, Deserialize, Serialize)]
-    pub struct Response { 
-        pub messages: Vec<models::Message>
+    struct Response {
+        status_code: u16,
+        messages: Vec<models::Message>
     }
-    let response = Response { messages };
+    let response = Response { status_code : StatusCode::OK.as_u16(), messages : messages };
     return Ok(warp::reply::json(&response).into_response());
 }
 
@@ -408,10 +416,11 @@ pub async fn get_deleted_messages(query_params: HashMap<String, String>, pool: &
     let ids: Vec<i64> = rows.filter_map(|result| result.ok()).collect();
     // Return the IDs
     #[derive(Debug, Deserialize, Serialize)]
-    pub struct Response { 
-        pub ids: Vec<i64>
+    struct Response { 
+        status_code: u16,
+        ids: Vec<i64>
     }
-    let response = Response { ids };
+    let response = Response { status_code : StatusCode::OK.as_u16(), ids : ids };
     return Ok(warp::reply::json(&response).into_response());
 }
 
@@ -421,10 +430,11 @@ pub async fn get_deleted_messages(query_params: HashMap<String, String>, pool: &
 pub async fn get_moderators(pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
     let public_keys = get_moderators_vector(pool).await?;
     #[derive(Debug, Deserialize, Serialize)]
-    pub struct Response { 
-        pub moderators: Vec<String>
+    struct Response { 
+        status_code: u16,
+        moderators: Vec<String>
     }
-    let response = Response { moderators : public_keys };
+    let response = Response { status_code : StatusCode::OK.as_u16(), moderators : public_keys };
     return Ok(warp::reply::json(&response).into_response());
 }
 
@@ -488,10 +498,11 @@ pub async fn unban(public_key: &str, auth_token: Option<String>, pool: &storage:
 pub async fn get_banned_public_keys(pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
     let public_keys = get_banned_public_keys_vector(pool).await?;
     #[derive(Debug, Deserialize, Serialize)]
-    pub struct Response { 
-        pub banned_members: Vec<String>
+    struct Response { 
+        status_code: u16,
+        banned_members: Vec<String>
     }
-    let response = Response { banned_members : public_keys };
+    let response = Response { status_code : StatusCode::OK.as_u16(), banned_members : public_keys };
     return Ok(warp::reply::json(&response).into_response());
 }
 
@@ -516,10 +527,11 @@ pub async fn get_member_count(pool: &storage::DatabaseConnectionPool) -> Result<
     let public_key_count = public_keys.len();
     // Return
     #[derive(Debug, Deserialize, Serialize)]
-    pub struct Response { 
-        pub member_count: usize
+    struct Response { 
+        status_code: u16,
+        member_count: usize
     }
-    let response = Response { member_count : public_key_count };
+    let response = Response { status_code : StatusCode::OK.as_u16(), member_count : public_key_count };
     return Ok(warp::reply::json(&response).into_response());
 }
 

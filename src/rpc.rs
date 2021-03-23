@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
-use warp::{Rejection, reply::Reply, reply::Response};
+use warp::{http::StatusCode, Rejection, reply::Reply, reply::Response};
 
 use super::errors::Error;
 use super::handlers;
+use super::models;
 use super::storage;
 
 #[derive(Deserialize, Serialize, Debug)]
@@ -77,7 +78,14 @@ async fn handle_get_request(rpc_call: RpcCall, path: &str, query_params: HashMap
         "block_list" => return handlers::get_banned_public_keys(pool).await,
         "member_count" => return handlers::get_member_count(pool).await,
         "auth_token_challenge" => {
-            return handlers::get_auth_token_challenge(query_params, pool).await.map(|json| warp::reply::json(&json).into_response());
+            let challenge = handlers::get_auth_token_challenge(query_params, pool).await?;
+            #[derive(Debug, Deserialize, Serialize)]
+            struct Response {
+                status_code: u16,
+                challenge: models::Challenge
+            }
+            let response = Response { status_code : StatusCode::OK.as_u16(), challenge : challenge };
+            return Ok(warp::reply::json(&response).into_response());
         },
         _ => {
             println!("Ignoring RPC call with invalid or unused endpoint: {}.", rpc_call.endpoint);
