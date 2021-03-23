@@ -57,13 +57,13 @@ lazy_static::lazy_static! {
     static ref POOLS: Mutex<HashMap<String, DatabaseConnectionPool>> = Mutex::new(HashMap::new());
 }
 
-pub fn pool_by_room_id(room_id: isize) -> Result<DatabaseConnectionPool, Error> {
+pub fn pool_by_room_id(room_id: &str) -> Result<DatabaseConnectionPool, Error> {
     // Get a database connection
     let conn = MAIN_POOL.get().map_err(|_| Error::DatabaseFailedInternally)?;
     // Query the database
     let raw_query = format!("SELECT name FROM {} WHERE id = (?1)", MAIN_TABLE);
     let mut query = conn.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
-    let rows = match query.query_map(params![ &room_id ], |row| {
+    let rows = match query.query_map(params![ room_id ], |row| {
         Ok(row.get(0)?)
     }) {
         Ok(rows) => rows,

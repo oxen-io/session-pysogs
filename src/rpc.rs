@@ -30,7 +30,7 @@ pub async fn handle_rpc_call(rpc_call: RpcCall) -> Result<Response, Rejection> {
             return Err(warp::reject::custom(Error::InvalidRpcCall))
         }
     };
-    let pool = storage::pool_by_room_id(room_id)?;
+    let pool = storage::pool_by_room_id(&room_id)?;
     // Check that the endpoint is a valid URI
     let uri = match rpc_call.endpoint.parse::<http::Uri>() {
         Ok(uri) => uri,
@@ -223,11 +223,7 @@ fn get_auth_token(rpc_call: &RpcCall) -> Option<String> {
     return rpc_call.headers.get("Authorization").map(|s| s.to_string());
 }
 
-fn get_room_id(rpc_call: &RpcCall) -> Option<isize> {
+fn get_room_id(rpc_call: &RpcCall) -> Option<String> {
     if rpc_call.headers.is_empty() { return None; }
-    let header = rpc_call.headers.get("Room")?;
-    match header.parse() {
-        Ok(room_id) => return Some(room_id),
-        Err(_) => return None
-    };
+    return rpc_call.headers.get("Room").map(|s| s.to_string());
 }
