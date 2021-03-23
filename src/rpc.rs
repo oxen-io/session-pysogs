@@ -32,7 +32,8 @@ pub async fn handle_rpc_call(rpc_call: RpcCall) -> Result<Response, Rejection> {
     };
     let pool = storage::pool_by_room_id(&room_id);
     // Check that the endpoint is a valid URI
-    let uri = match rpc_call.endpoint.parse::<http::Uri>() {
+    let raw_uri = format!("/{}", rpc_call.endpoint.trim_start_matches("/"));
+    let uri = match raw_uri.parse::<http::Uri>() {
         Ok(uri) => uri,
         Err(e) => {
             println!("Couldn't parse URI from: {} due to error: {}.", rpc_call.endpoint, e);
