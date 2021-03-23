@@ -1,7 +1,7 @@
 use std::convert::TryInto;
 
 use serde::{Deserialize, Serialize};
-use warp::{Rejection, reply::Reply, reply::Response};
+use warp::{Rejection, reply::Reply, reply::Response, http::StatusCode};
 
 use super::crypto;
 use super::errors::Error;
@@ -106,7 +106,11 @@ async fn encrypt_response(response: Response, symmetric_key: &[u8]) -> Result<Re
     }
     let ciphertext = crypto::encrypt_aes_gcm(&bytes, symmetric_key).await.unwrap();
     let json = base64::encode(&ciphertext);
-    return Ok(warp::reply::json(&json).into_response());
+    let response = warp::http::Response::builder()
+        .status(StatusCode::OK.as_u16())
+        .body(json)
+        .into_response();
+    return Ok(response);
 }
 
 // Utilities
