@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::fs;
+use std::path::Path;
 use std::sync::Mutex;
 
 use rusqlite::params;
@@ -17,7 +18,7 @@ pub const MAIN_TABLE: &str = "main";
 lazy_static::lazy_static! {
 
     pub static ref MAIN_POOL: DatabaseConnectionPool = {
-        let file_name = format!("database.db");
+        let file_name = "database.db";
         let db_manager = r2d2_sqlite::SqliteConnectionManager::file(file_name);
         return r2d2::Pool::new(db_manager).unwrap();
     };
@@ -86,8 +87,8 @@ pub fn pool_by_room_name(room: &str) -> DatabaseConnectionPool {
     if let Some(pool) = pools.get(room) {
         return pool.clone();
     } else {
-        let file_name = format!("{}.db", room);
-        let db_manager = r2d2_sqlite::SqliteConnectionManager::file(format!("rooms/{}", file_name));
+        let path = Path::new(format!("./rooms/{}.db", room));
+        let db_manager = r2d2_sqlite::SqliteConnectionManager::file(path);
         let pool = r2d2::Pool::new(db_manager).unwrap();
         pools.insert(room.to_string(), pool);
         return pools[room].clone();
