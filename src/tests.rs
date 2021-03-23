@@ -23,10 +23,6 @@ fn perform_main_setup() {
 
 fn set_up_test_room() {
     perform_main_setup();
-    match fs::remove_file("rooms/test_room.db") {
-        Ok(_) => (),
-        Err(_) => ()
-    }
     let test_room = "test_room";
     storage::create_database_if_needed(test_room);
     let raw_path = format!("rooms/{}.db", test_room);
