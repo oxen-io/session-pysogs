@@ -6,7 +6,7 @@ edition = "2018"
 
 [dependencies]
 aes-gcm = "0.8"
-argparse = "0.2.2"
+structopt = "0.3"
 base64 = "0.13"
 chrono = "0.4"
 curve25519-parser = "0.2"
