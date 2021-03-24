@@ -307,7 +307,7 @@ pub async fn get_messages(query_params: HashMap<String, String>, auth_token: &st
     // Query the database
     let raw_query: String;
     if query_params.get("from_server_id").is_some() {
-        raw_query = format!("SELECT id, public_key, data, signature FROM {} WHERE rowid > (?1) LIMIT (?2)", storage::MESSAGES_TABLE);
+        raw_query = format!("SELECT id, public_key, data, signature FROM {} WHERE rowid > (?1) ORDER BY rowid ASC LIMIT (?2)", storage::MESSAGES_TABLE);
     } else {
         raw_query = format!("SELECT id, public_key, data, signature FROM {} ORDER BY rowid DESC LIMIT (?2)", storage::MESSAGES_TABLE);
     }
@@ -411,7 +411,7 @@ pub async fn get_deleted_messages(query_params: HashMap<String, String>, auth_to
     // Query the database
     let raw_query: String;
     if query_params.get("from_server_id").is_some() {
-        raw_query = format!("SELECT id FROM {} WHERE rowid > (?1) LIMIT (?2)", storage::DELETED_MESSAGES_TABLE);
+        raw_query = format!("SELECT id FROM {} WHERE rowid > (?1) ORDER BY rowid ASC LIMIT (?2)", storage::DELETED_MESSAGES_TABLE);
     } else {
         raw_query = format!("SELECT id FROM {} ORDER BY rowid DESC LIMIT (?2)", storage::DELETED_MESSAGES_TABLE);
     }
