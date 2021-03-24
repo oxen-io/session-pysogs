@@ -266,6 +266,7 @@ pub async fn insert_message(mut message: models::Message, auth_token: Option<Str
     }
     let id = tx.last_insert_rowid();
     message.server_id = Some(id);
+    message.public_key = Some(requesting_public_key);
     // Commit
     tx.commit().map_err(|_| Error::DatabaseFailedInternally)?;
     // Return
