@@ -290,9 +290,9 @@ pub async fn get_messages(query_params: HashMap<String, String>, pool: &storage:
     } else {
         from_server_id = 0;
     }
-    let limit: u16;
+    let limit: u16; // Never return more than 256 messages at once
     if let Some(str) = query_params.get("limit") {
-        limit = str.parse().unwrap_or(256); // Never return more than 256 messages at once
+        limit = std::cmp::min(str.parse().unwrap_or(256), 256);
     } else {
         limit = 256;
     }
@@ -391,9 +391,9 @@ pub async fn get_deleted_messages(query_params: HashMap<String, String>, pool: &
     } else {
         from_server_id = 0;
     }
-    let limit: u16;
+    let limit: u16; // Never return more than 256 messages at once
     if let Some(str) = query_params.get("limit") {
-        limit = str.parse().unwrap_or(256); // Never return more than 256 messages at once
+        limit = std::cmp::min(str.parse().unwrap_or(256), 256);
     } else {
         limit = 256;
     }
