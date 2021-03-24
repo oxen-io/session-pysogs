@@ -50,7 +50,7 @@ pub async fn handle_rpc_call(rpc_call: RpcCall) -> Result<Response, Rejection> {
     let auth_token = get_auth_token(&rpc_call);
     // Switch on the HTTP method
     match rpc_call.method.as_ref() {
-        "GET" => return handle_get_request(rpc_call, &path, query_params, &pool).await,
+        "GET" => return handle_get_request(rpc_call, &path, auth_token, query_params, &pool).await,
         "POST" => return handle_post_request(rpc_call, &path, auth_token, &pool).await,
         "DELETE" => return handle_delete_request(rpc_call, &path, auth_token, &pool).await,
         _ => {
@@ -60,8 +60,22 @@ pub async fn handle_rpc_call(rpc_call: RpcCall) -> Result<Response, Rejection> {
     }
 }
 
-async fn handle_get_request(rpc_call: RpcCall, path: &str, query_params: HashMap<String, String>, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
-    // Switch on the path    
+async fn handle_get_request(rpc_call: RpcCall, path: &str, auth_token: Option<String>, query_params: HashMap<String, String>, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
+    // Getting an auth token challenge doesn't require authorization, so we
+    // handle it first
+    if path == "auth_token_challenge" {
+        let challenge = handlers::get_auth_token_challenge(query_params, pool).await?;
+        #[derive(Debug, Deserialize, Serialize)]
+        struct Response {
+            status_code: u16,
+            challenge: models::Challenge
+        }
+        let response = Response { status_code : StatusCode::OK.as_u16(), challenge : challenge };
+        return Ok(warp::reply::json(&response).into_response());
+    }
+    // Check that the auth token is present
+    let auth_token = auth_token.ok_or(warp::reject::custom(Error::Unauthorized))?;
+    // Switch on the path
     if path.starts_with("files") {
         let components: Vec<&str> = path.split("/").collect(); // Split on subsequent slashes
         if components.len() != 2 {
@@ -69,14 +83,14 @@ async fn handle_get_request(rpc_call: RpcCall, path: &str, query_params: HashMap
             return Err(warp::reject::custom(Error::InvalidRpcCall));
         }
         let file_id = components[1];
-        return handlers::get_file(file_id).await.map(|json| warp::reply::json(&json).into_response());
+        return handlers::get_file(file_id, &auth_token, &pool).await.map(|json| warp::reply::json(&json).into_response());
     }
     match path {
-        "messages" => return handlers::get_messages(query_params, pool).await,
-        "deleted_messages" => return handlers::get_deleted_messages(query_params, pool).await,
-        "moderators" => return handlers::get_moderators(pool).await,
-        "block_list" => return handlers::get_banned_public_keys(pool).await,
-        "member_count" => return handlers::get_member_count(pool).await,
+        "messages" => return handlers::get_messages(query_params, &auth_token, pool).await,
+        "deleted_messages" => return handlers::get_deleted_messages(query_params, &auth_token, pool).await,
+        "moderators" => return handlers::get_moderators(&auth_token, pool).await,
+        "block_list" => return handlers::get_banned_public_keys(&auth_token, pool).await,
+        "member_count" => return handlers::get_member_count(&auth_token, pool).await,
         "auth_token_challenge" => {
             let challenge = handlers::get_auth_token_challenge(query_params, pool).await?;
             #[derive(Debug, Deserialize, Serialize)]
@@ -95,6 +109,9 @@ async fn handle_get_request(rpc_call: RpcCall, path: &str, query_params: HashMap
 }
 
 async fn handle_post_request(rpc_call: RpcCall, path: &str, auth_token: Option<String>, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
+    // Check that the auth token is present
+    let auth_token = auth_token.ok_or(warp::reject::custom(Error::Unauthorized))?;
+    // Switch on the path
     match path {
         "messages" => {
             let message = match serde_json::from_str(&rpc_call.body) {
@@ -104,7 +121,7 @@ async fn handle_post_request(rpc_call: RpcCall, path: &str, auth_token: Option<S
                     return Err(warp::reject::custom(Error::InvalidRpcCall));
                 }
             };
-            return handlers::insert_message(message, auth_token, pool).await; 
+            return handlers::insert_message(message, &auth_token, pool).await; 
         },
         "block_list" => {
             #[derive(Debug, Deserialize)]
@@ -116,7 +133,7 @@ async fn handle_post_request(rpc_call: RpcCall, path: &str, auth_token: Option<S
                     return Err(warp::reject::custom(Error::InvalidRpcCall));
                 }
             };
-            return handlers::ban(&json.public_key, auth_token, pool).await;
+            return handlers::ban(&json.public_key, &auth_token, pool).await;
         },
         "claim_auth_token" => {
             #[derive(Debug, Deserialize)]
@@ -128,7 +145,7 @@ async fn handle_post_request(rpc_call: RpcCall, path: &str, auth_token: Option<S
                     return Err(warp::reject::custom(Error::InvalidRpcCall));
                 }
             };
-            return handlers::claim_auth_token(&json.public_key, auth_token, pool).await;
+            return handlers::claim_auth_token(&json.public_key, &auth_token, pool).await;
         },
         "files" => {
             #[derive(Debug, Deserialize)]
@@ -140,7 +157,7 @@ async fn handle_post_request(rpc_call: RpcCall, path: &str, auth_token: Option<S
                     return Err(warp::reject::custom(Error::InvalidRpcCall));
                 }
             };
-            return handlers::store_file(&json.file, pool).await;
+            return handlers::store_file(&json.file, &auth_token, pool).await;
         },
         _ => {
             println!("Ignoring RPC call with invalid or unused endpoint: {}.", rpc_call.endpoint);
@@ -150,6 +167,8 @@ async fn handle_post_request(rpc_call: RpcCall, path: &str, auth_token: Option<S
 }
 
 async fn handle_delete_request(rpc_call: RpcCall, path: &str, auth_token: Option<String>, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
+    // Check that the auth token is present
+    let auth_token = auth_token.ok_or(warp::reject::custom(Error::Unauthorized))?;
     // DELETE /messages/:server_id
     if path.starts_with("messages") {
         let components: Vec<&str> = path.split("/").collect(); // Split on subsequent slashes
@@ -164,7 +183,7 @@ async fn handle_delete_request(rpc_call: RpcCall, path: &str, auth_token: Option
                 return Err(warp::reject::custom(Error::InvalidRpcCall));
             }
         };
-        return handlers::delete_message(server_id, auth_token, pool).await;
+        return handlers::delete_message(server_id, &auth_token, pool).await;
     }
     // DELETE /block_list/:public_key
     if path.starts_with("block_list") {
@@ -174,11 +193,11 @@ async fn handle_delete_request(rpc_call: RpcCall, path: &str, auth_token: Option
             return Err(warp::reject::custom(Error::InvalidRpcCall));
         }
         let public_key = components[1].to_string();
-        return handlers::unban(&public_key, auth_token, pool).await;
+        return handlers::unban(&public_key, &auth_token, pool).await;
     }
     // DELETE /auth_token
     if path == "auth_token" {
-        return handlers::delete_auth_token(auth_token, pool).await;
+        return handlers::delete_auth_token(&auth_token, pool).await;
     }
     // Unrecognized endpoint
     println!("Ignoring RPC call with invalid or unused endpoint: {}.", rpc_call.endpoint);

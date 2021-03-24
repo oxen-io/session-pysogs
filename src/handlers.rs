@@ -52,7 +52,10 @@ pub async fn create_room(id: &str, name: &str) -> Result<Response, Rejection> {
 
 // Files
 
-pub async fn store_file(base64_encoded_bytes: &str, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
+pub async fn store_file(base64_encoded_bytes: &str, auth_token: &str, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
+    // Check authorization level
+    let (has_authorization_level, _) = has_authorization_level(auth_token, AuthorizationLevel::Basic, pool).await?;
+    if !has_authorization_level { return Err(warp::reject::custom(Error::Unauthorized)); }
     // Parse bytes
     let bytes = match base64::decode(base64_encoded_bytes) {
         Ok(bytes) => bytes,
@@ -104,7 +107,10 @@ pub async fn store_file(base64_encoded_bytes: &str, pool: &storage::DatabaseConn
     return Ok(warp::reply::json(&json).into_response());
 }
 
-pub async fn get_file(id: &str) -> Result<GenericStringResponse, Rejection> { // Doesn't return a response directly for testing purposes
+pub async fn get_file(id: &str, auth_token: &str, pool: &storage::DatabaseConnectionPool) -> Result<GenericStringResponse, Rejection> { // Doesn't return a response directly for testing purposes
+    // Check authorization level
+    let (has_authorization_level, _) = has_authorization_level(auth_token, AuthorizationLevel::Basic, pool).await?;
+    if !has_authorization_level { return Err(warp::reject::custom(Error::Unauthorized)); }
     // Check that the ID is a valid UUID
     match Uuid::parse_str(id) {
         Ok(_) => (),
@@ -167,15 +173,14 @@ pub async fn get_auth_token_challenge(query_params: HashMap<String, String>, poo
     return Ok(models::Challenge { ciphertext : base64::encode(ciphertext), ephemeral_public_key : base64::encode(ephemeral_public_key.to_bytes()) });
 }
 
-pub async fn claim_auth_token(public_key: &str, token: Option<String>, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
+pub async fn claim_auth_token(public_key: &str, auth_token: &str, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
     // Validate the public key
     if !is_valid_public_key(&public_key) { 
         println!("Ignoring claim token request for invalid public key.");
         return Err(warp::reject::custom(Error::ValidationFailed)); 
     }
     // Validate the token
-    let token = token.ok_or(warp::reject::custom(Error::ValidationFailed))?;
-    if hex::decode(&token).is_err() { 
+    if hex::decode(auth_token).is_err() { 
         println!("Ignoring claim token request for invalid token.");
         return Err(warp::reject::custom(Error::ValidationFailed)); 
     }
@@ -197,7 +202,7 @@ pub async fn claim_auth_token(public_key: &str, token: Option<String>, pool: &st
     };
     let pending_tokens: Vec<(i64, Vec<u8>)> = rows.filter_map(|result| result.ok()).collect();
     // Check that the token being claimed is in fact one of the pending tokens
-    let claim = hex::decode(token).unwrap(); // Safe because we validated it above
+    let claim = hex::decode(auth_token).unwrap(); // Safe because we validated it above
     let index = pending_tokens.iter().position(|(_, pending_token)| *pending_token == claim).ok_or_else(|| Error::Unauthorized)?;
     let token = &pending_tokens[index].1;
     // Store the claimed token
@@ -220,7 +225,7 @@ pub async fn claim_auth_token(public_key: &str, token: Option<String>, pool: &st
     return Ok(warp::reply::json(&json).into_response());
 }
 
-pub async fn delete_auth_token(auth_token: Option<String>, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
+pub async fn delete_auth_token(auth_token: &str, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
     // Check authorization level
     let (has_authorization_level, requesting_public_key) = has_authorization_level(auth_token, AuthorizationLevel::Basic, pool).await?;
     if !has_authorization_level { return Err(warp::reject::custom(Error::Unauthorized)); }
@@ -243,7 +248,7 @@ pub async fn delete_auth_token(auth_token: Option<String>, pool: &storage::Datab
 // Message sending & receiving
 
 /// Inserts the given `message` into the database if it's valid.
-pub async fn insert_message(mut message: models::Message, auth_token: Option<String>, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
+pub async fn insert_message(mut message: models::Message, auth_token: &str, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
     // Validate the message
     if !message.is_valid() { 
         println!("Ignoring invalid message.");
@@ -280,7 +285,10 @@ pub async fn insert_message(mut message: models::Message, auth_token: Option<Str
 }
 
 /// Returns either the last `limit` messages or all messages since `from_server_id, limited to `limit`.
-pub async fn get_messages(query_params: HashMap<String, String>, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
+pub async fn get_messages(query_params: HashMap<String, String>, auth_token: &str, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
+    // Check authorization level
+    let (has_authorization_level, _) = has_authorization_level(auth_token, AuthorizationLevel::Basic, pool).await?;
+    if !has_authorization_level { return Err(warp::reject::custom(Error::Unauthorized)); }
     // Get a database connection
     let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     // Unwrap query parameters
@@ -327,7 +335,7 @@ pub async fn get_messages(query_params: HashMap<String, String>, pool: &storage:
 // Message deletion
 
 /// Deletes the message with the given `row_id` from the database, if it's present.
-pub async fn delete_message(row_id: i64, auth_token: Option<String>, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
+pub async fn delete_message(row_id: i64, auth_token: &str, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
     // Check authorization level
     let (has_authorization_level, requesting_public_key) = has_authorization_level(auth_token, AuthorizationLevel::Basic, pool).await?;
     if !has_authorization_level { return Err(warp::reject::custom(Error::Unauthorized)); }
@@ -381,7 +389,10 @@ pub async fn delete_message(row_id: i64, auth_token: Option<String>, pool: &stor
 }
 
 /// Returns either the last `limit` deleted messages or all deleted messages since `from_server_id, limited to `limit`.
-pub async fn get_deleted_messages(query_params: HashMap<String, String>, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
+pub async fn get_deleted_messages(query_params: HashMap<String, String>, auth_token: &str, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
+    // Check authorization level
+    let (has_authorization_level, _) = has_authorization_level(auth_token, AuthorizationLevel::Basic, pool).await?;
+    if !has_authorization_level { return Err(warp::reject::custom(Error::Unauthorized)); }
     // Get a database connection
     let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     // Unwrap query parameters
@@ -428,7 +439,11 @@ pub async fn get_deleted_messages(query_params: HashMap<String, String>, pool: &
 // Moderation
 
 /// Returns the full list of moderators.
-pub async fn get_moderators(pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
+pub async fn get_moderators(auth_token: &str, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
+    // Check authorization level
+    let (has_authorization_level, _) = has_authorization_level(auth_token, AuthorizationLevel::Basic, pool).await?;
+    if !has_authorization_level { return Err(warp::reject::custom(Error::Unauthorized)); }
+    // Return
     let public_keys = get_moderators_vector(pool).await?;
     #[derive(Debug, Deserialize, Serialize)]
     struct Response { 
@@ -440,7 +455,7 @@ pub async fn get_moderators(pool: &storage::DatabaseConnectionPool) -> Result<Re
 }
 
 /// Bans the given `public_key` if the requesting user is a moderator.
-pub async fn ban(public_key: &str, auth_token: Option<String>, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
+pub async fn ban(public_key: &str, auth_token: &str, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
     // Validate the public key
     if !is_valid_public_key(&public_key) { 
         println!("Ignoring ban request for invalid public key.");
@@ -468,7 +483,7 @@ pub async fn ban(public_key: &str, auth_token: Option<String>, pool: &storage::D
 }
 
 /// Unbans the given `public_key` if the requesting user is a moderator.
-pub async fn unban(public_key: &str, auth_token: Option<String>, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
+pub async fn unban(public_key: &str, auth_token: &str, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
     // Validate the public key
     if !is_valid_public_key(&public_key) { 
         println!("Ignoring unban request for invalid public key.");
@@ -496,7 +511,11 @@ pub async fn unban(public_key: &str, auth_token: Option<String>, pool: &storage:
 }
 
 /// Returns the full list of banned public keys.
-pub async fn get_banned_public_keys(pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
+pub async fn get_banned_public_keys(auth_token: &str, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
+    // Check authorization level
+    let (has_authorization_level, _) = has_authorization_level(auth_token, AuthorizationLevel::Basic, pool).await?;
+    if !has_authorization_level { return Err(warp::reject::custom(Error::Unauthorized)); }
+    // Return
     let public_keys = get_banned_public_keys_vector(pool).await?;
     #[derive(Debug, Deserialize, Serialize)]
     struct Response { 
@@ -509,7 +528,10 @@ pub async fn get_banned_public_keys(pool: &storage::DatabaseConnectionPool) -> R
 
 // General
 
-pub async fn get_member_count(pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
+pub async fn get_member_count(auth_token: &str, pool: &storage::DatabaseConnectionPool) -> Result<Response, Rejection> {
+    // Check authorization level
+    let (has_authorization_level, _) = has_authorization_level(auth_token, AuthorizationLevel::Basic, pool).await?;
+    if !has_authorization_level { return Err(warp::reject::custom(Error::Unauthorized)); }
     // Get a database connection
     let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     // Query the database
@@ -615,11 +637,9 @@ async fn get_public_key_for_auth_token(auth_token: &str, pool: &storage::Databas
     return Ok(public_keys.get(0).map(|s| s.to_string()));
 }
 
-async fn has_authorization_level(auth_token: Option<String>, level: AuthorizationLevel, pool: &storage::DatabaseConnectionPool) -> Result<(bool, String), Rejection> {
-    // Check that the auth token is present
-    let auth_token = auth_token.ok_or(warp::reject::custom(Error::Unauthorized))?;
+async fn has_authorization_level(auth_token: &str, level: AuthorizationLevel, pool: &storage::DatabaseConnectionPool) -> Result<(bool, String), Rejection> {
     // Check that we have a public key associated with the given auth token
-    let public_key_option = get_public_key_for_auth_token(&auth_token, pool).await?;
+    let public_key_option = get_public_key_for_auth_token(auth_token, pool).await?;
     let public_key = public_key_option.ok_or(warp::reject::custom(Error::Unauthorized))?;
     // Check that the given public key isn't banned
     if is_banned(&public_key, pool).await? { return Err(warp::reject::custom(Error::Unauthorized)); }

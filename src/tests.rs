@@ -32,10 +32,8 @@ fn set_up_test_room() {
     fs::read(path).unwrap(); // Fail if this doesn't exist    
 }
 
-#[test]
-fn test_authorization() {
-    // Ensure the test room is set up and get a database connection pool
-    set_up_test_room();
+fn get_auth_token() -> (String, String) {
+    // Get a database connection pool
     let test_room_id = "test_room";
     let pool = storage::pool_by_room_id(&test_room_id);
     // Generate a fake user key pair
@@ -51,17 +49,28 @@ fn test_authorization() {
     // Decrypt the challenge
     let ciphertext = base64::decode(challenge.ciphertext).unwrap();
     let plaintext = aw!(crypto::decrypt_aes_gcm(&ciphertext, &symmetric_key)).unwrap();
+    // Try to claim the correct token
+    return (hex::encode(plaintext), hex_user_public_key);
+}
+
+#[test]
+fn test_authorization() {
+    // Ensure the test room is set up and get a database connection pool
+    set_up_test_room();
+    let test_room_id = "test_room";
+    let pool = storage::pool_by_room_id(&test_room_id);
+    // Get an auth token
+    let (auth_token, hex_user_public_key) = get_auth_token();
     // Try to claim an incorrect token
     let mut incorrect_token = [0u8; 48];
     thread_rng().fill(&mut incorrect_token[..]);
-    let token = Some(hex::encode(incorrect_token));
-    match aw!(handlers::claim_auth_token(&hex_user_public_key, token, &pool)) {
+    let hex_incorrect_token = hex::encode(incorrect_token);
+    match aw!(handlers::claim_auth_token(&hex_user_public_key, &hex_incorrect_token, &pool)) {
         Ok(_) => assert!(false),
         Err(_) => ()
     }
     // Try to claim the correct token
-    let token = Some(hex::encode(plaintext));
-    let response = aw!(handlers::claim_auth_token(&hex_user_public_key, token, &pool)).unwrap();
+    let response = aw!(handlers::claim_auth_token(&hex_user_public_key, &auth_token, &pool)).unwrap();
     assert_eq!(response.status(), StatusCode::OK);
 }
 
@@ -71,14 +80,16 @@ fn test_file_handling() {
     set_up_test_room();
     let test_room_id = "test_room";
     let pool = storage::pool_by_room_id(&test_room_id);
+    // Get an auth token
+    let (auth_token, _) = get_auth_token();
     // Store the test file
-    aw!(handlers::store_file(TEST_FILE, &pool)).unwrap();
+    aw!(handlers::store_file(TEST_FILE, &auth_token, &pool)).unwrap();
     // Check that there's a file record
     let conn = pool.get().unwrap();
     let raw_query = format!("SELECT id FROM {}", storage::FILES_TABLE);
     let id: String = conn.query_row(&raw_query, params![], |row| { Ok(row.get(0)?) }).unwrap();
     // Retrieve the file and check the content
-    let base64_encoded_file = aw!(handlers::get_file(&id)).unwrap().result;
+    let base64_encoded_file = aw!(handlers::get_file(&id, &auth_token, &pool)).unwrap().result;
     assert_eq!(base64_encoded_file, TEST_FILE);
     // Prune the file and check that it's gone
     aw!(storage::prune_files(-60)); // Will evaluate to now + 60
