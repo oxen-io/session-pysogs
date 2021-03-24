@@ -9,10 +9,7 @@ pub struct Message {
 }
 
 impl Message {
-
-    pub fn is_valid(&self) -> bool {
-        return !self.data.is_empty() && !self.signature.is_empty();
-    }
+    pub fn is_valid(&self) -> bool { return !self.data.is_empty() && !self.signature.is_empty(); }
 }
 
 #[derive(Debug, Deserialize, Serialize)]

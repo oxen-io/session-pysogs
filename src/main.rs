@@ -1,8 +1,8 @@
 use std::fs;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 use futures::join;
 use structopt::StructOpt;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use tokio;
 use warp::Filter;
 
@@ -39,7 +39,7 @@ struct Opt {
 
     /// Set IP to bind to.
     #[structopt(short = "H", long = "host", default_value = "0.0.0.0")]
-    host: Ipv4Addr,
+    host: Ipv4Addr
 }
 
 #[tokio::main]
@@ -55,7 +55,7 @@ async fn main() {
     // Create required folders
     fs::create_dir_all("./rooms").unwrap();
     fs::create_dir_all("./files").unwrap();
-    // Create the main room    
+    // Create the main room
     let main_room_id = "main";
     let main_room_name = "Main";
     handlers::create_room(&main_room_id, &main_room_name).await.unwrap();
@@ -69,7 +69,12 @@ async fn main() {
         println!("Running in plaintext mode on {}.", addr);
         let serve_routes_future = warp::serve(routes).run(addr);
         // Keep futures alive
-        join!(prune_pending_tokens_future, prune_tokens_future, prune_files_future, serve_routes_future);
+        join!(
+            prune_pending_tokens_future,
+            prune_tokens_future,
+            prune_files_future,
+            serve_routes_future
+        );
     } else {
         println!("Running on {} with TLS.", addr);
         let serve_routes_future = warp::serve(routes)
@@ -78,6 +83,11 @@ async fn main() {
             .key_path(opt.tls_priv_key_file)
             .run(addr);
         // Keep futures alive
-        join!(prune_pending_tokens_future, prune_tokens_future, prune_files_future, serve_routes_future);
+        join!(
+            prune_pending_tokens_future,
+            prune_tokens_future,
+            prune_files_future,
+            serve_routes_future
+        );
     }
 }

@@ -1,7 +1,7 @@
 use std::convert::TryInto;
 
+use aes_gcm::aead::{generic_array::GenericArray, Aead, NewAead};
 use aes_gcm::Aes256Gcm;
-use aes_gcm::aead::{Aead, NewAead, generic_array::GenericArray};
 use hmac::{Hmac, Mac, NewMac};
 use rand::{thread_rng, Rng};
 use rand_core::OsRng;
@@ -11,7 +11,7 @@ use super::errors::Error;
 
 type HmacSha256 = Hmac<Sha256>;
 
-// By default the aes-gcm crate will use software implementations of both AES and the POLYVAL universal hash function. When 
+// By default the aes-gcm crate will use software implementations of both AES and the POLYVAL universal hash function. When
 // targeting modern x86/x86_64 CPUs, use the following RUSTFLAGS to take advantage of high performance AES-NI and CLMUL CPU
 // intrinsics:
 //
@@ -32,10 +32,15 @@ lazy_static::lazy_static! {
     };
 }
 
-pub async fn get_x25519_symmetric_key(public_key: &[u8], private_key: &x25519_dalek::StaticSecret) -> Result<Vec<u8>, warp::reject::Rejection> {
+pub async fn get_x25519_symmetric_key(
+    public_key: &[u8], private_key: &x25519_dalek::StaticSecret
+) -> Result<Vec<u8>, warp::reject::Rejection> {
     if public_key.len() != 32 {
-        println!("Couldn't create symmetric key using public key of invalid length: {}.", hex::encode(public_key));
-        return Err(warp::reject::custom(Error::DecryptionFailed)); 
+        println!(
+            "Couldn't create symmetric key using public key of invalid length: {}.",
+            hex::encode(public_key)
+        );
+        return Err(warp::reject::custom(Error::DecryptionFailed));
     }
     let public_key: [u8; 32] = public_key.try_into().unwrap(); // Safe because we know it has a length of 32 at this point
     let dalek_public_key = x25519_dalek::PublicKey::from(public_key);
@@ -45,7 +50,9 @@ pub async fn get_x25519_symmetric_key(public_key: &[u8], private_key: &x25519_da
     return Ok(mac.finalize().into_bytes().to_vec());
 }
 
-pub async fn encrypt_aes_gcm(plaintext: &[u8], symmetric_key: &[u8]) -> Result<Vec<u8>, warp::reject::Rejection> {
+pub async fn encrypt_aes_gcm(
+    plaintext: &[u8], symmetric_key: &[u8]
+) -> Result<Vec<u8>, warp::reject::Rejection> {
     let mut iv = [0u8; IV_SIZE];
     thread_rng().fill(&mut iv[..]);
     let cipher = Aes256Gcm::new(&GenericArray::from_slice(symmetric_key));
@@ -54,7 +61,7 @@ pub async fn encrypt_aes_gcm(plaintext: &[u8], symmetric_key: &[u8]) -> Result<V
             let mut iv_and_ciphertext = iv.to_vec();
             iv_and_ciphertext.append(&mut ciphertext);
             return Ok(iv_and_ciphertext);
-        },
+        }
         Err(e) => {
             println!("Couldn't encrypt ciphertext due to error: {}.", e);
             return Err(warp::reject::custom(Error::DecryptionFailed));
@@ -62,10 +69,12 @@ pub async fn encrypt_aes_gcm(plaintext: &[u8], symmetric_key: &[u8]) -> Result<V
     };
 }
 
-pub async fn decrypt_aes_gcm(iv_and_ciphertext: &[u8], symmetric_key: &[u8]) -> Result<Vec<u8>, warp::reject::Rejection> {
-    if iv_and_ciphertext.len() < IV_SIZE { 
+pub async fn decrypt_aes_gcm(
+    iv_and_ciphertext: &[u8], symmetric_key: &[u8]
+) -> Result<Vec<u8>, warp::reject::Rejection> {
+    if iv_and_ciphertext.len() < IV_SIZE {
         println!("Ignoring ciphertext of invalid size: {}.", iv_and_ciphertext.len());
-        return Err(warp::reject::custom(Error::DecryptionFailed)); 
+        return Err(warp::reject::custom(Error::DecryptionFailed));
     }
     let iv: [u8; IV_SIZE] = iv_and_ciphertext[0..IV_SIZE].try_into().unwrap(); // Safe because we know iv_and_ciphertext has a length of at least IV_SIZE bytes
     let ciphertext: Vec<u8> = iv_and_ciphertext[IV_SIZE..].try_into().unwrap(); // Safe because we know iv_and_ciphertext has a length of at least IV_SIZE bytes

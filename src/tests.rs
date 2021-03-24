@@ -14,7 +14,7 @@ macro_rules! aw {
     ($e:expr) => {
         tokio_test::block_on($e)
     };
-  }
+}
 
 fn perform_main_setup() {
     storage::create_main_database_if_needed();
@@ -29,7 +29,7 @@ fn set_up_test_room() {
     aw!(handlers::create_room(&test_room_id, &test_room_name)).unwrap();
     let raw_path = format!("rooms/{}.db", test_room_id);
     let path = Path::new(&raw_path);
-    fs::read(path).unwrap(); // Fail if this doesn't exist    
+    fs::read(path).unwrap(); // Fail if this doesn't exist
 }
 
 fn get_auth_token() -> (String, String) {
@@ -45,7 +45,8 @@ fn get_auth_token() -> (String, String) {
     let challenge = aw!(handlers::get_auth_token_challenge(query_params, &pool)).unwrap();
     // Generate a symmetric key
     let ephemeral_public_key = base64::decode(challenge.ephemeral_public_key).unwrap();
-    let symmetric_key = aw!(crypto::get_x25519_symmetric_key(&ephemeral_public_key, &user_private_key)).unwrap();
+    let symmetric_key =
+        aw!(crypto::get_x25519_symmetric_key(&ephemeral_public_key, &user_private_key)).unwrap();
     // Decrypt the challenge
     let ciphertext = base64::decode(challenge.ciphertext).unwrap();
     let plaintext = aw!(crypto::decrypt_aes_gcm(&ciphertext, &symmetric_key)).unwrap();
@@ -70,7 +71,8 @@ fn test_authorization() {
         Err(_) => ()
     }
     // Try to claim the correct token
-    let response = aw!(handlers::claim_auth_token(&hex_user_public_key, &auth_token, &pool)).unwrap();
+    let response =
+        aw!(handlers::claim_auth_token(&hex_user_public_key, &auth_token, &pool)).unwrap();
     assert_eq!(response.status(), StatusCode::OK);
 }
 
@@ -87,7 +89,7 @@ fn test_file_handling() {
     // Check that there's a file record
     let conn = pool.get().unwrap();
     let raw_query = format!("SELECT id FROM {}", storage::FILES_TABLE);
-    let id: String = conn.query_row(&raw_query, params![], |row| { Ok(row.get(0)?) }).unwrap();
+    let id: String = conn.query_row(&raw_query, params![], |row| Ok(row.get(0)?)).unwrap();
     // Retrieve the file and check the content
     let base64_encoded_file = aw!(handlers::get_file(&id, &auth_token, &pool)).unwrap().result;
     assert_eq!(base64_encoded_file, TEST_FILE);
@@ -100,7 +102,7 @@ fn test_file_handling() {
     // Check that the file record is also gone
     let conn = pool.get().unwrap();
     let raw_query = format!("SELECT id FROM {}", storage::FILES_TABLE);
-    let result: Result<String, _> = conn.query_row(&raw_query, params![], |row| { Ok(row.get(0)?) });
+    let result: Result<String, _> = conn.query_row(&raw_query, params![], |row| Ok(row.get(0)?));
     match result {
         Ok(_) => assert!(false), // It should be gone now
         Err(_) => ()
