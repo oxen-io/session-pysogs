@@ -28,7 +28,7 @@ pub async fn handle_rpc_call(rpc_call: RpcCall) -> Result<Response, Rejection> {
     let pool = storage::pool_by_room_id(&room_id);
     // Check that the endpoint is a valid URI and deconstruct it into a path
     // and query parameters.
-    // Adding "http://placeholder.io" in front of the endpoint we get is a workaround
+    // Adding "http://placeholder.io" in front of the endpoint is a workaround
     // for the fact that the URL crate doesn't accept relative URLs. There are
     // other (cleaner) ways to fix this but they tend to be much more complex.
     let raw_uri = format!("http://placeholder.io/{}", rpc_call.endpoint.trim_start_matches("/"));

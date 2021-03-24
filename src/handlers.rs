@@ -298,13 +298,13 @@ pub async fn get_messages(query_params: HashMap<String, String>, pool: &storage:
     // Query the database
     let raw_query: String;
     if query_params.get("from_server_id").is_some() {
-        raw_query = format!("SELECT id, data, signature FROM {} WHERE rowid > (?1) LIMIT (?2)", storage::MESSAGES_TABLE);
+        raw_query = format!("SELECT id, public_key, data, signature FROM {} WHERE rowid > (?1) LIMIT (?2)", storage::MESSAGES_TABLE);
     } else {
-        raw_query = format!("SELECT id, data, signature FROM {} ORDER BY rowid DESC LIMIT (?2)", storage::MESSAGES_TABLE);
+        raw_query = format!("SELECT id, public_key, data, signature FROM {} ORDER BY rowid DESC LIMIT (?2)", storage::MESSAGES_TABLE);
     }
     let mut query = conn.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
     let rows = match query.query_map(params![ from_server_id, limit ], |row| {
-        Ok(models::Message { server_id : row.get(0)?, data : row.get(1)?, signature : row.get(2)? })
+        Ok(models::Message { server_id : row.get(0)?, public_key : row.get(1)?, data : row.get(2)?, signature : row.get(3)? })
     }) {
         Ok(rows) => rows,
         Err(e) => {

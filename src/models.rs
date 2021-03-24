@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Message {
     pub server_id: Option<i64>,
+    pub public_key: Option<String>,
     pub data: String,
     pub signature: String
 }
