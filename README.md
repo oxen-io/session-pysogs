@@ -1,3 +1,4 @@
+![example workflow](https://github.com/nielsandriesse/session-open-group-server/actions/workflows/build.yml/badge.svg)
 
 ## Requirements
 
