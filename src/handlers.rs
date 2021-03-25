@@ -629,6 +629,36 @@ pub async fn get_banned_public_keys(
 
 // General
 
+pub async fn get_info(room_id: &str) -> Result<Response, Rejection> {
+    #[derive(Debug, Deserialize, Serialize)]
+    struct Info {
+        name: String,
+        image_id: Option<String>,
+    }
+    // Get a connection
+    let pool = &storage::MAIN_POOL;
+    let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
+    // Get the room info if possible
+    let raw_query = format!("SELECT name, image_id FROM {} where id = (?1)", storage::MAIN_TABLE);
+    let info: Info = match conn.query_row(&raw_query, params![room_id], |row| 
+        Ok(Info {
+            name: row.get(0)?,
+            image_id: row.get(1).ok(),
+        })
+    ) {
+        Ok(info) => info,
+        Err(_) => return Err(warp::reject::custom(Error::NoSuchRoom)),
+    };
+    // Return
+    #[derive(Debug, Deserialize, Serialize)]
+    struct Response {
+        status_code: u16,
+        info: Info,
+    }
+    let response = Response { status_code: StatusCode::OK.as_u16(), info };
+    return Ok(warp::reply::json(&response).into_response());
+}
+
 pub async fn get_member_count(
     auth_token: &str, pool: &storage::DatabaseConnectionPool,
 ) -> Result<Response, Rejection> {

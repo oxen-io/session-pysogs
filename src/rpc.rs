@@ -50,7 +50,7 @@ pub async fn handle_rpc_call(rpc_call: RpcCall) -> Result<Response, Rejection> {
     let auth_token = get_auth_token(&rpc_call);
     // Switch on the HTTP method
     match rpc_call.method.as_ref() {
-        "GET" => return handle_get_request(rpc_call, &path, auth_token, query_params, &pool).await,
+        "GET" => return handle_get_request(rpc_call, &path, &room_id, auth_token, query_params, &pool).await,
         "POST" => return handle_post_request(rpc_call, &path, auth_token, &pool).await,
         "DELETE" => return handle_delete_request(rpc_call, &path, auth_token, &pool).await,
         _ => {
@@ -61,11 +61,11 @@ pub async fn handle_rpc_call(rpc_call: RpcCall) -> Result<Response, Rejection> {
 }
 
 async fn handle_get_request(
-    rpc_call: RpcCall, path: &str, auth_token: Option<String>,
+    rpc_call: RpcCall, path: &str, room_id: &str, auth_token: Option<String>,
     query_params: HashMap<String, String>, pool: &storage::DatabaseConnectionPool,
 ) -> Result<Response, Rejection> {
-    // Getting an auth token challenge doesn't require authorization, so we
-    // handle it first
+    // Getting an auth token challenge or requesting room info don't require authorization, so
+    // we handle them first
     if path == "auth_token_challenge" {
         let challenge = handlers::get_auth_token_challenge(query_params, pool).await?;
         #[derive(Debug, Deserialize, Serialize)]
@@ -75,6 +75,8 @@ async fn handle_get_request(
         }
         let response = Response { status_code: StatusCode::OK.as_u16(), challenge };
         return Ok(warp::reply::json(&response).into_response());
+    } else if path == "info" {
+        return handlers::get_info(&room_id).await;
     }
     // Check that the auth token is present
     let auth_token = auth_token.ok_or(warp::reject::custom(Error::Unauthorized))?;

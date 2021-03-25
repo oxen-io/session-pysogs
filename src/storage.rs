@@ -34,7 +34,8 @@ fn create_main_tables_if_needed(conn: &DatabaseConnection) {
     let main_table_cmd = format!(
         "CREATE TABLE IF NOT EXISTS {} (
         id TEXT PRIMARY KEY,
-        name TEXT
+        name TEXT,
+        image_id TEXT
     )",
         MAIN_TABLE
     );
