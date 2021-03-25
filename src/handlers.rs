@@ -365,10 +365,13 @@ pub async fn insert_message(
     let tx = conn.transaction().map_err(|_| Error::DatabaseFailedInternally)?;
     // Insert the message
     let stmt = format!(
-        "INSERT INTO {} (public_key, data, signature) VALUES (?1, ?2, ?3)",
+        "INSERT INTO {} (public_key, timestamp, data, signature) VALUES (?1, ?2, ?3, ?4)",
         storage::MESSAGES_TABLE
     );
-    match tx.execute(&stmt, params![&requesting_public_key, message.data, message.signature]) {
+    match tx.execute(
+        &stmt,
+        params![&requesting_public_key, message.timestamp, message.data, message.signature],
+    ) {
         Ok(_) => (),
         Err(e) => {
             println!("Couldn't insert message due to error: {}.", e);
@@ -418,10 +421,10 @@ pub async fn get_messages(
     // Query the database
     let raw_query: String;
     if query_params.get("from_server_id").is_some() {
-        raw_query = format!("SELECT id, public_key, data, signature FROM {} WHERE rowid > (?1) ORDER BY rowid ASC LIMIT (?2)", storage::MESSAGES_TABLE);
+        raw_query = format!("SELECT id, public_key, timestamp, data, signature FROM {} WHERE rowid > (?1) ORDER BY rowid ASC LIMIT (?2)", storage::MESSAGES_TABLE);
     } else {
         raw_query = format!(
-            "SELECT id, public_key, data, signature FROM {} ORDER BY rowid DESC LIMIT (?2)",
+            "SELECT id, public_key, timestamp, data, signature FROM {} ORDER BY rowid DESC LIMIT (?2)",
             storage::MESSAGES_TABLE
         );
     }
@@ -430,8 +433,9 @@ pub async fn get_messages(
         Ok(models::Message {
             server_id: row.get(0)?,
             public_key: row.get(1)?,
-            data: row.get(2)?,
-            signature: row.get(3)?,
+            timestamp: row.get(2)?,
+            data: row.get(3)?,
+            signature: row.get(4)?,
         })
     }) {
         Ok(rows) => rows,
