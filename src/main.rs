@@ -39,7 +39,7 @@ struct Opt {
 
     /// Set IP to bind to.
     #[structopt(short = "H", long = "host", default_value = "0.0.0.0")]
-    host: Ipv4Addr
+    host: Ipv4Addr,
 }
 
 #[tokio::main]

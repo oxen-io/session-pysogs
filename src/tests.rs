@@ -50,8 +50,13 @@ fn get_auth_token() -> (String, String) {
     // Decrypt the challenge
     let ciphertext = base64::decode(challenge.ciphertext).unwrap();
     let plaintext = aw!(crypto::decrypt_aes_gcm(&ciphertext, &symmetric_key)).unwrap();
-    // Try to claim the correct token
-    return (hex::encode(plaintext), hex_user_public_key);
+    let auth_token = hex::encode(plaintext);
+    // Try to claim the token
+    let response =
+        aw!(handlers::claim_auth_token(&hex_user_public_key, &auth_token, &pool)).unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    // return
+    return (auth_token, hex_user_public_key);
 }
 
 #[test]
@@ -61,19 +66,15 @@ fn test_authorization() {
     let test_room_id = "test_room";
     let pool = storage::pool_by_room_id(&test_room_id);
     // Get an auth token
-    let (auth_token, hex_user_public_key) = get_auth_token();
-    // Try to claim an incorrect token
+    let (_, hex_user_public_key) = get_auth_token(); // This tests claiming a token internally
+                                                     // Try to claim an incorrect token
     let mut incorrect_token = [0u8; 48];
     thread_rng().fill(&mut incorrect_token[..]);
     let hex_incorrect_token = hex::encode(incorrect_token);
     match aw!(handlers::claim_auth_token(&hex_user_public_key, &hex_incorrect_token, &pool)) {
         Ok(_) => assert!(false),
-        Err(_) => ()
+        Err(_) => (),
     }
-    // Try to claim the correct token
-    let response =
-        aw!(handlers::claim_auth_token(&hex_user_public_key, &auth_token, &pool)).unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
 }
 
 #[test]
@@ -97,7 +98,7 @@ fn test_file_handling() {
     aw!(storage::prune_files(-60)); // Will evaluate to now + 60
     match fs::read(format!("files/{}", id)) {
         Ok(_) => assert!(false), // It should be gone now
-        Err(_) => ()
+        Err(_) => (),
     }
     // Check that the file record is also gone
     let conn = pool.get().unwrap();
@@ -105,7 +106,7 @@ fn test_file_handling() {
     let result: Result<String, _> = conn.query_row(&raw_query, params![], |row| Ok(row.get(0)?));
     match result {
         Ok(_) => assert!(false), // It should be gone now
-        Err(_) => ()
+        Err(_) => (),
     }
 }
 
