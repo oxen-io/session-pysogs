@@ -22,6 +22,12 @@ enum AuthorizationLevel {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
+struct RoomInfo {
+    name: String,
+    image_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
 pub struct GenericStringResponse {
     pub status_code: u16,
     pub result: String,
@@ -48,6 +54,61 @@ pub async fn create_room(id: &str, name: &str) -> Result<Response, Rejection> {
     // Return
     let json = models::StatusCode { status_code: StatusCode::OK.as_u16() };
     return Ok(warp::reply::json(&json).into_response());
+}
+
+pub async fn get_room(room_id: &str) -> Result<Response, Rejection> {
+    // Get a connection
+    let pool = &storage::MAIN_POOL;
+    let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
+    // Get the room info if possible
+    let raw_query = format!("SELECT name, image_id FROM {} where id = (?1)", storage::MAIN_TABLE);
+    let room = match conn.query_row(&raw_query, params![room_id], |row| 
+        Ok(RoomInfo {
+            name: row.get(0)?,
+            image_id: row.get(1).ok(),
+        })
+    ) {
+        Ok(info) => info,
+        Err(_) => return Err(warp::reject::custom(Error::NoSuchRoom)),
+    };
+    // Return
+    #[derive(Debug, Deserialize, Serialize)]
+    struct Response {
+        status_code: u16,
+        room: RoomInfo,
+    }
+    let response = Response { status_code: StatusCode::OK.as_u16(), room };
+    return Ok(warp::reply::json(&response).into_response());
+}
+
+pub async fn get_all_rooms() -> Result<Response, Rejection> {
+    // Get a connection
+    let pool = &storage::MAIN_POOL;
+    let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
+    // Get the room info if possible
+    let raw_query = format!("SELECT name, image_id FROM {}", storage::MAIN_TABLE);
+    let mut query = conn.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
+    let rows = match query.query_map(params![], |row| {
+        Ok(RoomInfo {
+            name: row.get(0)?,
+            image_id: row.get(1).ok(),
+        })
+    }) {
+        Ok(rows) => rows,
+        Err(e) => {
+            println!("Couldn't get rooms due to error: {}.", e);
+            return Err(warp::reject::custom(Error::DatabaseFailedInternally));
+        }
+    };
+    let rooms: Vec<RoomInfo> = rows.filter_map(|result| result.ok()).collect();
+    // Return
+    #[derive(Debug, Deserialize, Serialize)]
+    struct Response {
+        status_code: u16,
+        rooms: Vec<RoomInfo>,
+    }
+    let response = Response { status_code: StatusCode::OK.as_u16(), rooms };
+    return Ok(warp::reply::json(&response).into_response());
 }
 
 // Files
@@ -628,36 +689,6 @@ pub async fn get_banned_public_keys(
 }
 
 // General
-
-pub async fn get_info(room_id: &str) -> Result<Response, Rejection> {
-    #[derive(Debug, Deserialize, Serialize)]
-    struct Info {
-        name: String,
-        image_id: Option<String>,
-    }
-    // Get a connection
-    let pool = &storage::MAIN_POOL;
-    let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
-    // Get the room info if possible
-    let raw_query = format!("SELECT name, image_id FROM {} where id = (?1)", storage::MAIN_TABLE);
-    let info: Info = match conn.query_row(&raw_query, params![room_id], |row| 
-        Ok(Info {
-            name: row.get(0)?,
-            image_id: row.get(1).ok(),
-        })
-    ) {
-        Ok(info) => info,
-        Err(_) => return Err(warp::reject::custom(Error::NoSuchRoom)),
-    };
-    // Return
-    #[derive(Debug, Deserialize, Serialize)]
-    struct Response {
-        status_code: u16,
-        info: Info,
-    }
-    let response = Response { status_code: StatusCode::OK.as_u16(), info };
-    return Ok(warp::reply::json(&response).into_response());
-}
 
 pub async fn get_member_count(
     auth_token: &str, pool: &storage::DatabaseConnectionPool,
