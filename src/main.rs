@@ -42,6 +42,8 @@ struct Opt {
     host: Ipv4Addr,
 }
 
+// TODO: Rate limiting
+
 #[tokio::main]
 async fn main() {
     // Parse arguments
