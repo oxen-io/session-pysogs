@@ -48,9 +48,9 @@ async fn handle_decrypted_onion_request(
     let result = rpc::handle_rpc_call(rpc_call)
         .await
         // Turn any error that occurred into an HTTP response
-        .or_else(super::errors::into_response)?; // Safe because at this point any error should be caught and turned into an HTTP response (i.e. an OK result)
-                                                 // Encrypt the HTTP response so that it's propagated back to the client that made
-                                                 // the onion request
+        // Unwrapping is safe because at this point any error should be caught and turned into an HTTP response (i.e. an OK result)
+        .or_else(super::errors::into_response)?;
+    // Encrypt the HTTP response so that it's propagated back to the client that made the onion request
     return encrypt_response(result, symmetric_key).await;
 }
 
