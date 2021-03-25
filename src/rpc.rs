@@ -83,8 +83,6 @@ async fn handle_get_request(
             println!("Invalid endpoint: {}.", rpc_call.endpoint);
             return Err(warp::reject::custom(Error::InvalidRpcCall));
         }
-    } else if path == "rooms" {
-        return handlers::get_all_rooms().await;
     }
     // Check that the auth token is present
     let auth_token = auth_token.ok_or(warp::reject::custom(Error::Unauthorized))?;

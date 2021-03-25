@@ -23,6 +23,7 @@ enum AuthorizationLevel {
 
 #[derive(Debug, Deserialize, Serialize)]
 struct RoomInfo {
+    id: String,
     name: String,
     image_id: Option<String>,
 }
@@ -61,9 +62,10 @@ pub async fn get_room(room_id: &str) -> Result<Response, Rejection> {
     let pool = &storage::MAIN_POOL;
     let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     // Get the room info if possible
-    let raw_query = format!("SELECT name, image_id FROM {} where id = (?1)", storage::MAIN_TABLE);
+    let raw_query =
+        format!("SELECT id, name, image_id FROM {} where id = (?1)", storage::MAIN_TABLE);
     let room = match conn.query_row(&raw_query, params![room_id], |row| {
-        Ok(RoomInfo { name: row.get(0)?, image_id: row.get(1).ok() })
+        Ok(RoomInfo { id: row.get(0)?, name: row.get(1)?, image_id: row.get(2).ok() })
     }) {
         Ok(info) => info,
         Err(_) => return Err(warp::reject::custom(Error::NoSuchRoom)),
@@ -83,11 +85,11 @@ pub async fn get_all_rooms() -> Result<Response, Rejection> {
     let pool = &storage::MAIN_POOL;
     let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     // Get the room info if possible
-    let raw_query = format!("SELECT name, image_id FROM {}", storage::MAIN_TABLE);
+    let raw_query = format!("SELECT id, name, image_id FROM {}", storage::MAIN_TABLE);
     let mut query = conn.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
-    let rows = match query
-        .query_map(params![], |row| Ok(RoomInfo { name: row.get(0)?, image_id: row.get(1).ok() }))
-    {
+    let rows = match query.query_map(params![], |row| {
+        Ok(RoomInfo { id: row.get(0)?, name: row.get(1)?, image_id: row.get(2).ok() })
+    }) {
         Ok(rows) => rows,
         Err(e) => {
             println!("Couldn't get rooms due to error: {}.", e);
