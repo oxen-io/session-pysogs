@@ -30,6 +30,4 @@ jobs:
     - name: Run tests
       run: cargo test --verbose
     - name: Check formatting
-      run: |
-        rustup install nightly
-        cargo +nightly fmt -- --check
+      run: cargo fmt -- --check

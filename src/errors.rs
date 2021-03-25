@@ -8,7 +8,7 @@ pub enum Error {
     /// Usually this means the endpoint or HTTP method specified in the RPC call was malformed.
     InvalidRpcCall,
     Unauthorized,
-    ValidationFailed
+    ValidationFailed,
 }
 impl warp::reject::Reject for Error {}
 

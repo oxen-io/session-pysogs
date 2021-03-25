@@ -33,7 +33,7 @@ lazy_static::lazy_static! {
 }
 
 pub async fn get_x25519_symmetric_key(
-    public_key: &[u8], private_key: &x25519_dalek::StaticSecret
+    public_key: &[u8], private_key: &x25519_dalek::StaticSecret,
 ) -> Result<Vec<u8>, warp::reject::Rejection> {
     if public_key.len() != 32 {
         println!(
@@ -51,7 +51,7 @@ pub async fn get_x25519_symmetric_key(
 }
 
 pub async fn encrypt_aes_gcm(
-    plaintext: &[u8], symmetric_key: &[u8]
+    plaintext: &[u8], symmetric_key: &[u8],
 ) -> Result<Vec<u8>, warp::reject::Rejection> {
     let mut iv = [0u8; IV_SIZE];
     thread_rng().fill(&mut iv[..]);
@@ -70,7 +70,7 @@ pub async fn encrypt_aes_gcm(
 }
 
 pub async fn decrypt_aes_gcm(
-    iv_and_ciphertext: &[u8], symmetric_key: &[u8]
+    iv_and_ciphertext: &[u8], symmetric_key: &[u8],
 ) -> Result<Vec<u8>, warp::reject::Rejection> {
     if iv_and_ciphertext.len() < IV_SIZE {
         println!("Ignoring ciphertext of invalid size: {}.", iv_and_ciphertext.len());

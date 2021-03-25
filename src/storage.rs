@@ -188,21 +188,21 @@ pub async fn prune_files_periodically() {
 async fn prune_tokens() {
     let rooms = match get_all_room_ids().await {
         Ok(rooms) => rooms,
-        Err(_) => return
+        Err(_) => return,
     };
     for room in rooms {
         let pool = pool_by_room_id(&room);
         // It's not catastrophic if we fail to prune the database for a given room
         let conn = match pool.get() {
             Ok(conn) => conn,
-            Err(e) => return println!("Couldn't prune tokens due to error: {}.", e)
+            Err(e) => return println!("Couldn't prune tokens due to error: {}.", e),
         };
         let stmt = format!("DELETE FROM {} WHERE timestamp < (?1)", TOKENS_TABLE);
         let now = chrono::Utc::now().timestamp();
         let expiration = now - TOKEN_EXPIRATION;
         match conn.execute(&stmt, params![expiration]) {
             Ok(_) => (),
-            Err(e) => return println!("Couldn't prune tokens due to error: {}.", e)
+            Err(e) => return println!("Couldn't prune tokens due to error: {}.", e),
         };
     }
     println!("Pruned tokens.");
@@ -211,21 +211,21 @@ async fn prune_tokens() {
 async fn prune_pending_tokens() {
     let rooms = match get_all_room_ids().await {
         Ok(rooms) => rooms,
-        Err(_) => return
+        Err(_) => return,
     };
     for room in rooms {
         let pool = pool_by_room_id(&room);
         // It's not catastrophic if we fail to prune the database for a given room
         let conn = match pool.get() {
             Ok(conn) => conn,
-            Err(e) => return println!("Couldn't prune pending tokens due to error: {}.", e)
+            Err(e) => return println!("Couldn't prune pending tokens due to error: {}.", e),
         };
         let stmt = format!("DELETE FROM {} WHERE timestamp < (?1)", PENDING_TOKENS_TABLE);
         let now = chrono::Utc::now().timestamp();
         let expiration = now - PENDING_TOKEN_EXPIRATION;
         match conn.execute(&stmt, params![expiration]) {
             Ok(_) => (),
-            Err(e) => return println!("Couldn't prune pending tokens due to error: {}.", e)
+            Err(e) => return println!("Couldn't prune pending tokens due to error: {}.", e),
         };
     }
     println!("Pruned pending tokens.");
@@ -235,7 +235,7 @@ pub async fn prune_files(file_expiration: i64) {
     // The expiration setting is passed in for testing purposes
     let rooms = match get_all_room_ids().await {
         Ok(rooms) => rooms,
-        Err(_) => return
+        Err(_) => return,
     };
     for room in rooms {
         // It's not catastrophic if we fail to prune the database for a given room
@@ -245,13 +245,13 @@ pub async fn prune_files(file_expiration: i64) {
         // Get a database connection and open a transaction
         let conn = match pool.get() {
             Ok(conn) => conn,
-            Err(e) => return println!("Couldn't prune files due to error: {}.", e)
+            Err(e) => return println!("Couldn't prune files due to error: {}.", e),
         };
         // Get the IDs of the files to delete
         let raw_query = format!("SELECT id FROM {} WHERE timestamp < (?1)", FILES_TABLE);
         let mut query = match conn.prepare(&raw_query) {
             Ok(query) => query,
-            Err(e) => return println!("Couldn't prune files due to error: {}.", e)
+            Err(e) => return println!("Couldn't prune files due to error: {}.", e),
         };
         let rows = match query.query_map(params![expiration], |row| Ok(row.get(0)?)) {
             Ok(rows) => rows,
@@ -266,14 +266,14 @@ pub async fn prune_files(file_expiration: i64) {
             for id in ids {
                 match fs::remove_file(format!("files/{}", id)) {
                     Ok(_) => deleted_ids.push(id),
-                    Err(e) => println!("Couldn't delete file due to error: {}.", e)
+                    Err(e) => println!("Couldn't delete file due to error: {}.", e),
                 }
             }
             // Remove the file records from the database (only for the files that were successfully deleted)
             let stmt = format!("DELETE FROM {} WHERE id IN (?1)", FILES_TABLE);
             match conn.execute(&stmt, deleted_ids) {
                 Ok(_) => (),
-                Err(e) => return println!("Couldn't prune files due to error: {}.", e)
+                Err(e) => return println!("Couldn't prune files due to error: {}.", e),
             };
         }
     }

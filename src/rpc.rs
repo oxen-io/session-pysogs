@@ -13,7 +13,7 @@ pub struct RpcCall {
     pub endpoint: String,
     pub body: String,
     pub method: String,
-    pub headers: HashMap<String, String>
+    pub headers: HashMap<String, String>,
 }
 
 pub async fn handle_rpc_call(rpc_call: RpcCall) -> Result<Response, Rejection> {
@@ -62,7 +62,7 @@ pub async fn handle_rpc_call(rpc_call: RpcCall) -> Result<Response, Rejection> {
 
 async fn handle_get_request(
     rpc_call: RpcCall, path: &str, auth_token: Option<String>,
-    query_params: HashMap<String, String>, pool: &storage::DatabaseConnectionPool
+    query_params: HashMap<String, String>, pool: &storage::DatabaseConnectionPool,
 ) -> Result<Response, Rejection> {
     // Getting an auth token challenge doesn't require authorization, so we
     // handle it first
@@ -71,7 +71,7 @@ async fn handle_get_request(
         #[derive(Debug, Deserialize, Serialize)]
         struct Response {
             status_code: u16,
-            challenge: models::Challenge
+            challenge: models::Challenge,
         }
         let response = Response { status_code: StatusCode::OK.as_u16(), challenge };
         return Ok(warp::reply::json(&response).into_response());
@@ -103,7 +103,7 @@ async fn handle_get_request(
             #[derive(Debug, Deserialize, Serialize)]
             struct Response {
                 status_code: u16,
-                challenge: models::Challenge
+                challenge: models::Challenge,
             }
             let response = Response { status_code: StatusCode::OK.as_u16(), challenge };
             return Ok(warp::reply::json(&response).into_response());
@@ -117,7 +117,7 @@ async fn handle_get_request(
 
 async fn handle_post_request(
     rpc_call: RpcCall, path: &str, auth_token: Option<String>,
-    pool: &storage::DatabaseConnectionPool
+    pool: &storage::DatabaseConnectionPool,
 ) -> Result<Response, Rejection> {
     // Check that the auth token is present
     let auth_token = auth_token.ok_or(warp::reject::custom(Error::Unauthorized))?;
@@ -136,7 +136,7 @@ async fn handle_post_request(
         "block_list" => {
             #[derive(Debug, Deserialize)]
             struct JSON {
-                public_key: String
+                public_key: String,
             }
             let json: JSON = match serde_json::from_str(&rpc_call.body) {
                 Ok(message) => message,
@@ -150,7 +150,7 @@ async fn handle_post_request(
         "claim_auth_token" => {
             #[derive(Debug, Deserialize)]
             struct JSON {
-                public_key: String
+                public_key: String,
             }
             let json: JSON = match serde_json::from_str(&rpc_call.body) {
                 Ok(message) => message,
@@ -164,7 +164,7 @@ async fn handle_post_request(
         "files" => {
             #[derive(Debug, Deserialize)]
             struct JSON {
-                file: String
+                file: String,
             }
             let json: JSON = match serde_json::from_str(&rpc_call.body) {
                 Ok(message) => message,
@@ -184,7 +184,7 @@ async fn handle_post_request(
 
 async fn handle_delete_request(
     rpc_call: RpcCall, path: &str, auth_token: Option<String>,
-    pool: &storage::DatabaseConnectionPool
+    pool: &storage::DatabaseConnectionPool,
 ) -> Result<Response, Rejection> {
     // Check that the auth token is present
     let auth_token = auth_token.ok_or(warp::reject::custom(Error::Unauthorized))?;

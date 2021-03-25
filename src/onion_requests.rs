@@ -11,12 +11,12 @@ use super::rpc;
 #[derive(Deserialize, Serialize, Debug)]
 struct OnionRequestPayload {
     pub ciphertext: Vec<u8>,
-    pub metadata: OnionRequestPayloadMetadata
+    pub metadata: OnionRequestPayloadMetadata,
 }
 
 #[derive(Deserialize, Serialize, Debug)]
 struct OnionRequestPayloadMetadata {
-    pub ephemeral_key: String
+    pub ephemeral_key: String,
 }
 
 pub async fn handle_onion_request(blob: warp::hyper::body::Bytes) -> Result<Response, Rejection> {
@@ -35,7 +35,7 @@ pub async fn handle_onion_request(blob: warp::hyper::body::Bytes) -> Result<Resp
 }
 
 async fn handle_decrypted_onion_request(
-    plaintext: &[u8], symmetric_key: &[u8]
+    plaintext: &[u8], symmetric_key: &[u8],
 ) -> Result<Response, Rejection> {
     let rpc_call = match serde_json::from_slice(plaintext) {
         Ok(rpc_call) => rpc_call,
@@ -55,7 +55,7 @@ async fn handle_decrypted_onion_request(
 }
 
 async fn parse_onion_request_payload(
-    blob: warp::hyper::body::Bytes
+    blob: warp::hyper::body::Bytes,
 ) -> Result<OnionRequestPayload, Rejection> {
     // The encoding of an onion request looks like: | 4 bytes: size N of ciphertext | N bytes: ciphertext | json as utf8 |
     if blob.len() < 4 {
@@ -94,7 +94,7 @@ async fn parse_onion_request_payload(
 
 /// Returns the decrypted `payload.ciphertext` plus the `symmetric_key` that was used for decryption if successful.
 async fn decrypt_onion_request_payload(
-    payload: OnionRequestPayload
+    payload: OnionRequestPayload,
 ) -> Result<(Vec<u8>, Vec<u8>), Rejection> {
     let ephemeral_key = hex::decode(payload.metadata.ephemeral_key).unwrap(); // Safe because it was validated in the parsing step
     let symmetric_key =
