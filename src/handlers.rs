@@ -8,7 +8,6 @@ use chrono;
 use rand::{thread_rng, Rng};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 use warp::{http::StatusCode, reply::Reply, reply::Response, Rejection};
 
 use super::crypto;
@@ -112,6 +111,8 @@ pub async fn get_all_rooms() -> Result<Response, Rejection> {
 pub async fn store_file(
     base64_encoded_bytes: &str, auth_token: &str, pool: &storage::DatabaseConnectionPool,
 ) -> Result<Response, Rejection> {
+    // It'd be nice to use the UUID crate for the file ID, but clients want an integer ID
+    let now = chrono::Utc::now().timestamp();
     // Check authorization level
     let (has_authorization_level, _) =
         has_authorization_level(auth_token, AuthorizationLevel::Basic, pool).await?;
@@ -126,17 +127,12 @@ pub async fn store_file(
             return Err(warp::reject::custom(Error::ValidationFailed));
         }
     };
-    // Generate UUID
-    let id = Uuid::new_v4();
-    let mut buffer = Uuid::encode_buffer();
-    let id: String = id.to_simple().encode_lower(&mut buffer).to_string();
     // Update the database
     // We do this * before * storing the actual file, so that in case something goes
     // wrong we're not left with files that'll never be pruned.
-    let now = chrono::Utc::now().timestamp();
     let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     let stmt = format!("INSERT INTO {} (id, timestamp) VALUES (?1, ?2)", storage::FILES_TABLE);
-    let _ = match conn.execute(&stmt, params![id, now]) {
+    let _ = match conn.execute(&stmt, params![now, now]) {
         Ok(rows) => rows,
         Err(e) => {
             println!("Couldn't insert file record due to error: {}.", e);
@@ -145,7 +141,7 @@ pub async fn store_file(
     };
     // Write to file
     let mut pos = 0;
-    let raw_path = format!("files/{}", &id);
+    let raw_path = format!("files/{}", &now);
     let path = Path::new(&raw_path);
     let mut buffer = match fs::File::create(path) {
         Ok(buffer) => buffer,
@@ -165,12 +161,17 @@ pub async fn store_file(
         pos += count;
     }
     // Return
-    let json = GenericStringResponse { status_code: StatusCode::OK.as_u16(), result: id };
-    return Ok(warp::reply::json(&json).into_response());
+    #[derive(Debug, Deserialize, Serialize)]
+    struct Response {
+        status_code: u16,
+        result: i64,
+    }
+    let response = Response { status_code: StatusCode::OK.as_u16(), result: now };
+    return Ok(warp::reply::json(&response).into_response());
 }
 
 pub async fn get_file(
-    id: &str, auth_token: &str, pool: &storage::DatabaseConnectionPool,
+    id: i64, auth_token: &str, pool: &storage::DatabaseConnectionPool,
 ) -> Result<GenericStringResponse, Rejection> {
     // Doesn't return a response directly for testing purposes
     // Check authorization level
@@ -179,14 +180,6 @@ pub async fn get_file(
     if !has_authorization_level {
         return Err(warp::reject::custom(Error::Unauthorized));
     }
-    // Check that the ID is a valid UUID
-    match Uuid::parse_str(id) {
-        Ok(_) => (),
-        Err(e) => {
-            println!("Couldn't parse UUID from: {} due to error: {}.", id, e);
-            return Err(warp::reject::custom(Error::ValidationFailed));
-        }
-    };
     // Try to read the file
     let raw_path = format!("files/{}", id);
     let path = Path::new(&raw_path);

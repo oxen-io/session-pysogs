@@ -147,7 +147,7 @@ fn create_room_tables_if_needed(conn: &DatabaseConnection) {
     // Files
     let files_table_cmd = format!(
         "CREATE TABLE IF NOT EXISTS {} (
-        id STRING PRIMARY KEY,
+        id INTEGER PRIMARY KEY,
         timestamp INTEGER
     )",
         FILES_TABLE
@@ -261,10 +261,10 @@ pub async fn prune_files(file_expiration: i64) {
                 return println!("Couldn't prune files due to error: {}.", e);
             }
         };
-        let ids: Vec<String> = rows.filter_map(|result| result.ok()).collect();
+        let ids: Vec<i64> = rows.filter_map(|result| result.ok()).collect();
         if !ids.is_empty() {
             // Delete the files
-            let mut deleted_ids: Vec<String> = vec![];
+            let mut deleted_ids: Vec<i64> = vec![];
             for id in ids {
                 match fs::remove_file(format!("files/{}", id)) {
                     Ok(_) => deleted_ids.push(id),

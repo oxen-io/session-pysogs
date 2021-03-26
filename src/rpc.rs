@@ -94,7 +94,13 @@ async fn handle_get_request(
             println!("Invalid endpoint: {}.", rpc_call.endpoint);
             return Err(warp::reject::custom(Error::InvalidRpcCall));
         }
-        let file_id = components[1];
+        let file_id: i64 = match components[1].parse() {
+            Ok(file_id) => file_id,
+            Err(_) => {
+                println!("Invalid endpoint: {}.", rpc_call.endpoint);
+                return Err(warp::reject::custom(Error::InvalidRpcCall));
+            }
+        };
         return handlers::get_file(file_id, &auth_token, &pool)
             .await
             .map(|json| warp::reply::json(&json).into_response());
