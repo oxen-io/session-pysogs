@@ -85,7 +85,7 @@ async fn handle_get_request(
         }
     }
     // Check that the auth token is present
-    let auth_token = auth_token.ok_or(warp::reject::custom(Error::Unauthorized))?;
+    let auth_token = auth_token.ok_or(warp::reject::custom(Error::NoAuthToken))?;
     // Switch on the path
     let pool = get_pool_for_room(&rpc_call)?;
     if path.starts_with("files") {
@@ -129,7 +129,7 @@ async fn handle_post_request(
     pool: &storage::DatabaseConnectionPool,
 ) -> Result<Response, Rejection> {
     // Check that the auth token is present
-    let auth_token = auth_token.ok_or(warp::reject::custom(Error::Unauthorized))?;
+    let auth_token = auth_token.ok_or(warp::reject::custom(Error::NoAuthToken))?;
     // Switch on the path
     match path {
         "messages" => {
@@ -196,7 +196,7 @@ async fn handle_delete_request(
     pool: &storage::DatabaseConnectionPool,
 ) -> Result<Response, Rejection> {
     // Check that the auth token is present
-    let auth_token = auth_token.ok_or(warp::reject::custom(Error::Unauthorized))?;
+    let auth_token = auth_token.ok_or(warp::reject::custom(Error::NoAuthToken))?;
     // DELETE /messages/:server_id
     if path.starts_with("messages") {
         let components: Vec<&str> = path.split("/").collect(); // Split on subsequent slashes

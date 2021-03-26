@@ -816,7 +816,7 @@ async fn has_authorization_level(
 ) -> Result<(bool, String), Rejection> {
     // Check that we have a public key associated with the given auth token
     let public_key_option = get_public_key_for_auth_token(auth_token, pool).await?;
-    let public_key = public_key_option.ok_or(warp::reject::custom(Error::Unauthorized))?;
+    let public_key = public_key_option.ok_or(warp::reject::custom(Error::NoAuthToken))?;
     // Check that the given public key isn't banned
     if is_banned(&public_key, pool).await? {
         return Err(warp::reject::custom(Error::Unauthorized));
