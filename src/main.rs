@@ -57,10 +57,8 @@ async fn main() {
     // Create required folders
     fs::create_dir_all("./rooms").unwrap();
     fs::create_dir_all("./files").unwrap();
-    // Create the main room
-    let main_room_id = "main";
-    let main_room_name = "Main";
-    handlers::create_room(&main_room_id, &main_room_name).await.unwrap();
+    // Create default rooms
+    create_default_rooms().await;
     // Set up pruning jobs
     let prune_pending_tokens_future = storage::prune_pending_tokens_periodically();
     let prune_tokens_future = storage::prune_tokens_periodically();
@@ -91,5 +89,14 @@ async fn main() {
             prune_files_future,
             serve_routes_future
         );
+    }
+}
+
+async fn create_default_rooms() {
+    let info: Vec<(&str, &str)> = vec![("main", "Main")];
+    for info in info {
+        let id = info.0;
+        let name = info.1;
+        handlers::create_room(id, name).await.unwrap();
     }
 }
