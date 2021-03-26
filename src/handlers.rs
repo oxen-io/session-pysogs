@@ -569,6 +569,26 @@ pub async fn get_deleted_messages(
 
 // Moderation
 
+// Currently not exposed
+pub async fn make_public_key_moderator(
+    public_key: &str, pool: &storage::DatabaseConnectionPool,
+) -> Result<Response, Rejection> {
+    // Get a database connection
+    let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
+    // Insert the moderator
+    let stmt = format!("INSERT INTO {} (public_key) VALUES (?1)", storage::MODERATORS_TABLE);
+    match conn.execute(&stmt, params![public_key]) {
+        Ok(_) => (),
+        Err(e) => {
+            println!("Couldn't make public key moderator due to error: {}.", e);
+            return Err(warp::reject::custom(Error::DatabaseFailedInternally));
+        }
+    }
+    // Return
+    let json = models::StatusCode { status_code: StatusCode::OK.as_u16() };
+    return Ok(warp::reply::json(&json).into_response());
+}
+
 /// Returns the full list of moderators.
 pub async fn get_moderators(
     auth_token: &str, pool: &storage::DatabaseConnectionPool,
