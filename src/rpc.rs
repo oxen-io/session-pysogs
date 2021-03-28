@@ -261,8 +261,8 @@ async fn handle_delete_request(
 fn get_pool_for_room(rpc_call: &RpcCall) -> Result<storage::DatabaseConnectionPool, Rejection> {
     let room_id: String;
     match MODE {
-        // In file server mode we don't have a concept of rooms, but for convenience we just
-        // always use the main room
+        // In file server mode we don't have a concept of rooms, but for convenience (i.e. so
+        // we can use the same database structure) we just always use the main room
         Mode::FileServer => room_id = "main".to_string(),
         Mode::OpenGroupServer => {
             room_id = match get_room_id(&rpc_call) {
