@@ -43,7 +43,6 @@ struct Opt {
 }
 
 // TODO: Rate limiting
-// TODO: OGS mode & FS mode
 // TODO: Distribute as binary
 
 #[tokio::main]
