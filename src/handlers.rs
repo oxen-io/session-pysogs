@@ -203,12 +203,6 @@ pub async fn get_file(
 pub async fn get_group_image(
     room_id: &str, auth_token: &str, pool: &storage::DatabaseConnectionPool,
 ) -> Result<Response, Rejection> {
-    // Check authorization level
-    let (has_authorization_level, _) =
-        has_authorization_level(auth_token, AuthorizationLevel::Basic, pool).await?;
-    if !has_authorization_level {
-        return Err(warp::reject::custom(Error::Unauthorized));
-    }
     // Try to read the file
     let raw_path = format!("files/{}", room_id);
     let path = Path::new(&raw_path);
