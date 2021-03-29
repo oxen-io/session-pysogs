@@ -114,6 +114,17 @@ async fn handle_get_request(
             .map(|json| warp::reply::json(&json).into_response());
     }
     match path {
+        "group_image" => {
+            reject_if_file_server_mode(path)?;
+            let room_id = match get_room_id(&rpc_call) {
+                Some(room_id) => room_id,
+                None => {
+                    println!("Missing room ID.");
+                    return Err(warp::reject::custom(Error::InvalidRpcCall));
+                }
+            };
+            return handlers::get_group_image(&room_id, &auth_token, &pool).await;
+        }
         "messages" => {
             reject_if_file_server_mode(path)?;
             return handlers::get_messages(query_params, &auth_token, &pool).await;

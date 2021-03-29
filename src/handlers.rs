@@ -200,6 +200,35 @@ pub async fn get_file(
     return Ok(json);
 }
 
+pub async fn get_group_image(
+    room_id: &str, auth_token: &str, pool: &storage::DatabaseConnectionPool,
+) -> Result<Response, Rejection> {
+    // Check authorization level
+    let (has_authorization_level, _) =
+        has_authorization_level(auth_token, AuthorizationLevel::Basic, pool).await?;
+    if !has_authorization_level {
+        return Err(warp::reject::custom(Error::Unauthorized));
+    }
+    // Try to read the file
+    let raw_path = format!("files/{}", room_id);
+    let path = Path::new(&raw_path);
+    let bytes = match fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            println!("Couldn't read file due to error: {}.", e);
+            return Err(warp::reject::custom(Error::ValidationFailed));
+        }
+    };
+    // Base64 encode the result
+    let base64_encoded_bytes = base64::encode(bytes);
+    // Return
+    let json = GenericStringResponse {
+        status_code: StatusCode::OK.as_u16(),
+        result: base64_encoded_bytes,
+    };
+    return Ok(warp::reply::json(&json).into_response());
+}
+
 // Authentication
 
 pub async fn get_auth_token_challenge(
