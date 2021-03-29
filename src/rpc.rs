@@ -46,13 +46,17 @@ pub async fn handle_rpc_call(rpc_call: RpcCall) -> Result<Response, Rejection> {
     };
     // Get the auth token if possible
     let auth_token = get_auth_token(&rpc_call);
-    // Get a database connection pool
-    let pool = get_pool_for_room(&rpc_call)?;
     // Switch on the HTTP method
     match rpc_call.method.as_ref() {
-        "GET" => return handle_get_request(rpc_call, &path, auth_token, query_params, &pool).await,
-        "POST" => return handle_post_request(rpc_call, &path, auth_token, &pool).await,
-        "DELETE" => return handle_delete_request(&path, auth_token, &pool).await,
+        "GET" => return handle_get_request(rpc_call, &path, auth_token, query_params).await,
+        "POST" => {
+            let pool = get_pool_for_room(&rpc_call)?;
+            return handle_post_request(rpc_call, &path, auth_token, &pool).await;
+        }
+        "DELETE" => {
+            let pool = get_pool_for_room(&rpc_call)?;
+            return handle_delete_request(&path, auth_token, &pool).await;
+        }
         _ => {
             println!("Ignoring RPC call with invalid or unused HTTP method: {}.", rpc_call.method);
             return Err(warp::reject::custom(Error::InvalidRpcCall));
@@ -62,11 +66,12 @@ pub async fn handle_rpc_call(rpc_call: RpcCall) -> Result<Response, Rejection> {
 
 async fn handle_get_request(
     rpc_call: RpcCall, path: &str, auth_token: Option<String>,
-    query_params: HashMap<String, String>, pool: &storage::DatabaseConnectionPool,
+    query_params: HashMap<String, String>,
 ) -> Result<Response, Rejection> {
     // Handle routes that don't require authorization first
     if path == "auth_token_challenge" {
-        let challenge = handlers::get_auth_token_challenge(query_params, pool).await?;
+        let pool = get_pool_for_room(&rpc_call)?;
+        let challenge = handlers::get_auth_token_challenge(query_params, &pool).await?;
         #[derive(Debug, Deserialize, Serialize)]
         struct Response {
             status_code: u16,
@@ -90,6 +95,7 @@ async fn handle_get_request(
     // Check that the auth token is present
     let auth_token = auth_token.ok_or(warp::reject::custom(Error::NoAuthToken))?;
     // Switch on the path
+    let pool = get_pool_for_room(&rpc_call)?;
     if path.starts_with("files") {
         let components: Vec<&str> = path.split("/").collect(); // Split on subsequent slashes
         if components.len() != 2 {
@@ -103,33 +109,33 @@ async fn handle_get_request(
                 return Err(warp::reject::custom(Error::InvalidRpcCall));
             }
         };
-        return handlers::get_file(file_id, &auth_token, pool)
+        return handlers::get_file(file_id, &auth_token, &pool)
             .await
             .map(|json| warp::reply::json(&json).into_response());
     }
     match path {
         "messages" => {
             reject_if_file_server_mode(path)?;
-            return handlers::get_messages(query_params, &auth_token, pool).await;
+            return handlers::get_messages(query_params, &auth_token, &pool).await;
         }
         "deleted_messages" => {
             reject_if_file_server_mode(path)?;
-            return handlers::get_deleted_messages(query_params, &auth_token, pool).await;
+            return handlers::get_deleted_messages(query_params, &auth_token, &pool).await;
         }
         "moderators" => {
             reject_if_file_server_mode(path)?;
-            return handlers::get_moderators(&auth_token, pool).await;
+            return handlers::get_moderators(&auth_token, &pool).await;
         }
         "block_list" => {
             reject_if_file_server_mode(path)?;
-            return handlers::get_banned_public_keys(&auth_token, pool).await;
+            return handlers::get_banned_public_keys(&auth_token, &pool).await;
         }
         "member_count" => {
             reject_if_file_server_mode(path)?;
-            return handlers::get_member_count(&auth_token, pool).await;
+            return handlers::get_member_count(&auth_token, &pool).await;
         }
         "auth_token_challenge" => {
-            let challenge = handlers::get_auth_token_challenge(query_params, pool).await?;
+            let challenge = handlers::get_auth_token_challenge(query_params, &pool).await?;
             #[derive(Debug, Deserialize, Serialize)]
             struct Response {
                 status_code: u16,
