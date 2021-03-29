@@ -215,24 +215,32 @@ pub async fn get_auth_token_challenge(
         return Err(warp::reject::custom(Error::ValidationFailed));
     }
     // Convert the public key to bytes and cut off the version byte
-    let public_key: [u8; 32] = hex::decode(hex_public_key).unwrap()[1..].try_into().unwrap(); // Safe because we know it has a length of 32 at this point
-                                                                                              // Generate an ephemeral key pair
+    // This is safe because we know it has a length of 32 at this point
+    let public_key: [u8; 32] = hex::decode(hex_public_key).unwrap()[1..].try_into().unwrap();
+    // Generate an ephemeral key pair
     let (ephemeral_private_key, ephemeral_public_key) = crypto::generate_x25519_key_pair().await;
     // Generate a symmetric key from the requesting user's public key and the ephemeral private key
     let symmetric_key =
         crypto::get_x25519_symmetric_key(&public_key, &ephemeral_private_key).await?;
-    // Generate a random token
-    let mut token = [0u8; 48];
-    thread_rng().fill(&mut token[..]);
+    // Generate a random token (or get the currently pending one if possible)
+    let pending_tokens = get_pending_tokens(&hex_public_key, &pool).await?;
+    let token: Vec<u8>;
+    if !pending_tokens.is_empty() {
+        token = pending_tokens[0].1.clone();
+    } else {
+        let mut buffer = [0u8; 48];
+        thread_rng().fill(&mut buffer[..]);
+        token = buffer.to_vec();
+    }
     // Store the (pending) token
     // Note that a given public key can have multiple pending tokens
-    let now = chrono::Utc::now().timestamp();
     let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
+    let now = chrono::Utc::now().timestamp();
     let stmt = format!(
         "INSERT INTO {} (public_key, timestamp, token) VALUES (?1, ?2, ?3)",
         storage::PENDING_TOKENS_TABLE
     );
-    let _ = match conn.execute(&stmt, params![hex_public_key, now, token.to_vec()]) {
+    let _ = match conn.execute(&stmt, params![hex_public_key, now, token]) {
         Ok(rows) => rows,
         Err(e) => {
             println!("Couldn't insert pending token due to error: {}.", e);
@@ -264,23 +272,7 @@ pub async fn claim_auth_token(
     // Get a database connection
     let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     // Get the pending tokens for the given public key
-    let raw_query = format!(
-        "SELECT timestamp, token FROM {} WHERE public_key = (?1) AND timestamp > (?2)",
-        storage::PENDING_TOKENS_TABLE
-    );
-    let mut query = conn.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
-    let now = chrono::Utc::now().timestamp();
-    let expiration = now - storage::PENDING_TOKEN_EXPIRATION;
-    let rows = match query
-        .query_map(params![public_key, expiration], |row| Ok((row.get(0)?, row.get(1)?)))
-    {
-        Ok(rows) => rows,
-        Err(e) => {
-            println!("Couldn't get pending tokens due to error: {}.", e);
-            return Err(warp::reject::custom(Error::DatabaseFailedInternally));
-        }
-    };
-    let pending_tokens: Vec<(i64, Vec<u8>)> = rows.filter_map(|result| result.ok()).collect();
+    let pending_tokens = get_pending_tokens(&public_key, &pool).await?;
     // Check that the token being claimed is in fact one of the pending tokens
     let claim = hex::decode(auth_token).unwrap(); // Safe because we validated it above
     let index = pending_tokens
@@ -738,6 +730,30 @@ pub async fn get_member_count(
 }
 
 // Utilities
+
+async fn get_pending_tokens(
+    public_key: &str, pool: &storage::DatabaseConnectionPool,
+) -> Result<Vec<(i64, Vec<u8>)>, Rejection> {
+    let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
+    let raw_query = format!(
+        "SELECT timestamp, token FROM {} WHERE public_key = (?1) AND timestamp > (?2)",
+        storage::PENDING_TOKENS_TABLE
+    );
+    let mut query = conn.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
+    let now = chrono::Utc::now().timestamp();
+    let expiration = now - storage::PENDING_TOKEN_EXPIRATION;
+    let rows = match query
+        .query_map(params![public_key, expiration], |row| Ok((row.get(0)?, row.get(1)?)))
+    {
+        Ok(rows) => rows,
+        Err(e) => {
+            println!("Couldn't get pending tokens due to error: {}.", e);
+            return Err(warp::reject::custom(Error::DatabaseFailedInternally));
+        }
+    };
+    let pending_tokens: Vec<(i64, Vec<u8>)> = rows.filter_map(|result| result.ok()).collect();
+    return Ok(pending_tokens);
+}
 
 async fn get_moderators_vector(
     pool: &storage::DatabaseConnectionPool,
