@@ -56,6 +56,25 @@ pub async fn create_room(id: &str, name: &str) -> Result<Response, Rejection> {
     return Ok(warp::reply::json(&json).into_response());
 }
 
+// Currently not exposed
+pub async fn delete_room(id: &str) -> Result<Response, Rejection> {
+    // Get a connection
+    let pool = &storage::MAIN_POOL;
+    let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
+    // Insert the room
+    let stmt = format!("DELETE FROM {} WHERE id = (?1)", storage::MAIN_TABLE);
+    match conn.execute(&stmt, params![id]) {
+        Ok(_) => (),
+        Err(e) => {
+            println!("Couldn't delete room due to error: {}.", e);
+            return Err(warp::reject::custom(Error::DatabaseFailedInternally));
+        }
+    }
+    // Return
+    let json = models::StatusCode { status_code: StatusCode::OK.as_u16() };
+    return Ok(warp::reply::json(&json).into_response());
+}
+
 pub async fn get_room(room_id: &str) -> Result<Response, Rejection> {
     // Get a connection
     let pool = &storage::MAIN_POOL;
