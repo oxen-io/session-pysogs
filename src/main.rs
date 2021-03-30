@@ -18,6 +18,9 @@ mod storage;
 #[cfg(test)]
 mod tests;
 
+// The default is * not * to run in TLS mode. This is because normally the server communicates through
+// onion requests, eliminating the need for TLS.
+
 #[derive(StructOpt)]
 #[structopt(name = "Session Open Group Server")]
 struct Opt {
