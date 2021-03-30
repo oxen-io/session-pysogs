@@ -200,9 +200,7 @@ pub async fn get_file(
     return Ok(json);
 }
 
-pub async fn get_group_image(
-    room_id: &str, auth_token: &str, pool: &storage::DatabaseConnectionPool,
-) -> Result<Response, Rejection> {
+pub async fn get_group_image(room_id: &str) -> Result<Response, Rejection> {
     // Try to read the file
     let raw_path = format!("files/{}", room_id);
     let path = Path::new(&raw_path);

@@ -123,7 +123,7 @@ async fn handle_get_request(
                     return Err(warp::reject::custom(Error::InvalidRpcCall));
                 }
             };
-            return handlers::get_group_image(&room_id, &auth_token, &pool).await;
+            return handlers::get_group_image(&room_id).await;
         }
         "messages" => {
             reject_if_file_server_mode(path)?;
