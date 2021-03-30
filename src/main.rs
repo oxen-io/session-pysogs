@@ -9,11 +9,14 @@ use warp::Filter;
 mod crypto;
 mod errors;
 mod handlers;
+mod logging;
 mod models;
 mod onion_requests;
 mod routes;
 mod rpc;
 mod storage;
+
+use log::info;
 
 #[cfg(test)]
 mod tests;
@@ -44,25 +47,33 @@ struct Opt {
     #[structopt(long = "x25519-private-key", default_value = "x25519_private_key.pem")]
     x25519_private_key: String,
 
+    /// Path to the file where logs will be saved. If not provided, logs are only
+    /// printed to stdout.
+    #[structopt(long = "log-file")]
+    log_file: Option<String>,
+
     /// Port to bind to.
     #[structopt(short = "P", long = "port", default_value = "80")]
     port: u16,
 
     /// IP to bind to.
     #[structopt(short = "H", long = "host", default_value = "0.0.0.0")]
-    host: Ipv4Addr,
+    host: Ipv4Addr
 }
 
 #[tokio::main]
 async fn main() {
     // Parse arguments
     let opt = Opt::from_args();
+
+    logging::init(opt.log_file);
+
     let addr = SocketAddr::new(IpAddr::V4(opt.host), opt.port);
     *crypto::PRIVATE_KEY_PATH.lock().unwrap() = opt.x25519_private_key;
     *crypto::PUBLIC_KEY_PATH.lock().unwrap() = opt.x25519_public_key;
     // Print the server public key
     let hex_public_key = hex::encode(crypto::PUBLIC_KEY.as_bytes());
-    println!("The public key of this server is: {}", hex_public_key);
+    info!("The public key of this server is: {}", hex_public_key);
     // Create the main database
     storage::create_main_database_if_needed();
     // Create required folders
@@ -77,7 +88,7 @@ async fn main() {
     // Serve routes
     let routes = routes::root().or(routes::lsrpc());
     if opt.tls {
-        println!("Running on {} with TLS.", addr);
+        info!("Running on {} with TLS.", addr);
         let serve_routes_future = warp::serve(routes)
             .tls()
             .cert_path(opt.tls_certificate)
@@ -91,7 +102,7 @@ async fn main() {
             serve_routes_future
         );
     } else {
-        println!("Running on {}.", addr);
+        info!("Running on {}.", addr);
         let serve_routes_future = warp::serve(routes).run(addr);
         // Keep futures alive
         join!(

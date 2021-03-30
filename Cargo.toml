@@ -5,6 +5,8 @@ authors = ["Niels Andriesse <niels@oxen.io>"]
 edition = "2018"
 
 [dependencies]
+log = "0.4"
+log4rs = "1"
 aes-gcm = "0.8"
 base64 = "0.13"
 chrono = "0.4"
