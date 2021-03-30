@@ -87,6 +87,9 @@ async fn handle_get_request(
         } else if components.len() == 2 {
             let room_id = components[1];
             return handlers::get_room(&room_id).await;
+        } else if components.len() == 3 && components[2] == "image" {
+            let room_id = components[1];
+            return handlers::get_group_image(&room_id).await;
         } else {
             println!("Invalid endpoint: {}.", rpc_call.endpoint);
             return Err(warp::reject::custom(Error::InvalidRpcCall));
@@ -114,17 +117,6 @@ async fn handle_get_request(
             .map(|json| warp::reply::json(&json).into_response());
     }
     match path {
-        "group_image" => {
-            reject_if_file_server_mode(path)?;
-            let room_id = match get_room_id(&rpc_call) {
-                Some(room_id) => room_id,
-                None => {
-                    println!("Missing room ID.");
-                    return Err(warp::reject::custom(Error::InvalidRpcCall));
-                }
-            };
-            return handlers::get_group_image(&room_id).await;
-        }
         "messages" => {
             reject_if_file_server_mode(path)?;
             return handlers::get_messages(query_params, &auth_token, &pool).await;
