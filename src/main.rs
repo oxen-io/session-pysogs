@@ -21,9 +21,9 @@ mod tests;
 #[derive(StructOpt)]
 #[structopt(name = "Session Open Group Server")]
 struct Opt {
-    /// Run in plaintext mode for use behind a reverse proxy.
+    /// Run in TLS mode.
     #[structopt(long)]
-    plaintext: bool,
+    tls: bool,
 
     /// Path to TLS certificate.
     #[structopt(long = "tls-cert", default_value = "tls_certificate.pem")]
@@ -34,7 +34,7 @@ struct Opt {
     tls_priv_key_file: String,
 
     /// Set port to bind to.
-    #[structopt(short = "P", long = "port", default_value = "443")]
+    #[structopt(short = "P", long = "port", default_value = "80")]
     port: u16,
 
     /// Set IP to bind to.
@@ -66,9 +66,13 @@ async fn main() {
     let prune_files_future = storage::prune_files_periodically();
     // Serve routes
     let routes = routes::root().or(routes::lsrpc());
-    if opt.plaintext {
-        println!("Running in plaintext mode on {}.", addr);
-        let serve_routes_future = warp::serve(routes).run(addr);
+    if opt.tls {
+        println!("Running on {} with TLS.", addr);
+        let serve_routes_future = warp::serve(routes)
+            .tls()
+            .cert_path(opt.tls_cert_file)
+            .key_path(opt.tls_priv_key_file)
+            .run(addr);
         // Keep futures alive
         join!(
             prune_pending_tokens_future,
@@ -77,12 +81,7 @@ async fn main() {
             serve_routes_future
         );
     } else {
-        println!("Running on {} with TLS.", addr);
-        let serve_routes_future = warp::serve(routes)
-            .tls()
-            .cert_path(opt.tls_cert_file)
-            .key_path(opt.tls_priv_key_file)
-            .run(addr);
+        let serve_routes_future = warp::serve(routes).run(addr);
         // Keep futures alive
         join!(
             prune_pending_tokens_future,
