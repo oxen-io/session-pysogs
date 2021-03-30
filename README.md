@@ -56,4 +56,4 @@ If you want to run with TLS enabled:
 | tls-certificate | tls_certificate.pem | Path to TLS certificate |
 | tls-private-key | tls_private_key.pem | Path to TLS private key |
 
-Note that the default is * not * to run in TLS mode. This is because normally the server communicates through onion requests, eliminating the need for TLS.
+Note that the default is * not * to run in TLS mode. This is because normally the server communicates through [onion requests](https://arxiv.org/pdf/2002.04609.pdf), eliminating the need for TLS.
