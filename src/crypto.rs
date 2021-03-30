@@ -1,4 +1,6 @@
 use std::convert::TryInto;
+use std::fs;
+use std::sync::Mutex;
 
 use aes_gcm::aead::{generic_array::GenericArray, Aead, NewAead};
 use aes_gcm::Aes256Gcm;
@@ -21,14 +23,20 @@ const IV_SIZE: usize = 12;
 
 lazy_static::lazy_static! {
 
+    pub static ref PRIVATE_KEY_PATH: Mutex<String> = Mutex::new("".to_string());
+
     pub static ref PRIVATE_KEY: x25519_dalek::StaticSecret = {
-        let bytes = include_bytes!("../x25519_private_key.pem");
-        return curve25519_parser::parse_openssl_25519_privkey(bytes).unwrap();
+        let path: &str = &*PRIVATE_KEY_PATH.lock().unwrap();
+        let raw_private_key = fs::read_to_string(path).unwrap();
+        return curve25519_parser::parse_openssl_25519_privkey(raw_private_key.as_bytes()).unwrap();
     };
 
+    pub static ref PUBLIC_KEY_PATH: Mutex<String> = Mutex::new("".to_string());
+
     pub static ref PUBLIC_KEY: x25519_dalek::PublicKey = {
-        let bytes = include_bytes!("../x25519_public_key.pem");
-        return curve25519_parser::parse_openssl_25519_pubkey(bytes).unwrap();
+        let path: &str = &*PUBLIC_KEY_PATH.lock().unwrap();
+        let raw_public_key = fs::read_to_string(path).unwrap();
+        return curve25519_parser::parse_openssl_25519_pubkey(raw_public_key.as_bytes()).unwrap();
     };
 }
 

@@ -29,33 +29,40 @@ struct Opt {
     tls: bool,
 
     /// Path to TLS certificate.
-    #[structopt(long = "tls-cert", default_value = "tls_certificate.pem")]
-    tls_cert_file: String,
+    #[structopt(long = "tls-certificate", default_value = "tls_certificate.pem")]
+    tls_certificate: String,
 
     /// Path to TLS private key.
-    #[structopt(long = "tls-priv_key", default_value = "tls_private_key.pem")]
-    tls_priv_key_file: String,
+    #[structopt(long = "tls-private-key", default_value = "tls_private_key.pem")]
+    tls_private_key: String,
 
-    /// Set port to bind to.
+    /// Path to X25519 public key.
+    #[structopt(long = "x25519-public-key", default_value = "x25519_public_key.pem")]
+    x25519_public_key: String,
+
+    /// Path to X25519 private key.
+    #[structopt(long = "x25519-private-key", default_value = "x25519_private_key.pem")]
+    x25519_private_key: String,
+
+    /// Port to bind to.
     #[structopt(short = "P", long = "port", default_value = "80")]
     port: u16,
 
-    /// Set IP to bind to.
+    /// IP to bind to.
     #[structopt(short = "H", long = "host", default_value = "0.0.0.0")]
     host: Ipv4Addr,
 }
-
-// TODO: Rate limiting
-// TODO: Distribute as binary
 
 #[tokio::main]
 async fn main() {
     // Parse arguments
     let opt = Opt::from_args();
     let addr = SocketAddr::new(IpAddr::V4(opt.host), opt.port);
+    *crypto::PRIVATE_KEY_PATH.lock().unwrap() = opt.x25519_private_key;
+    *crypto::PUBLIC_KEY_PATH.lock().unwrap() = opt.x25519_public_key;
     // Print the server public key
-    let public_key = hex::encode(crypto::PUBLIC_KEY.as_bytes());
-    println!("The public key of this server is: {}", public_key);
+    let hex_public_key = hex::encode(crypto::PUBLIC_KEY.as_bytes());
+    println!("The public key of this server is: {}", hex_public_key);
     // Create the main database
     storage::create_main_database_if_needed();
     // Create required folders
@@ -73,8 +80,8 @@ async fn main() {
         println!("Running on {} with TLS.", addr);
         let serve_routes_future = warp::serve(routes)
             .tls()
-            .cert_path(opt.tls_cert_file)
-            .key_path(opt.tls_priv_key_file)
+            .cert_path(opt.tls_certificate)
+            .key_path(opt.tls_private_key)
             .run(addr);
         // Keep futures alive
         join!(
