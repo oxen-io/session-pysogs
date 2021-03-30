@@ -84,6 +84,7 @@ async fn main() {
             serve_routes_future
         );
     } else {
+        println!("Running on {}.", addr);
         let serve_routes_future = warp::serve(routes).run(addr);
         // Keep futures alive
         join!(
