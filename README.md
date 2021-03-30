@@ -1,5 +1,7 @@
 ![example workflow](https://github.com/nielsandriesse/session-open-group-server/actions/workflows/build.yml/badge.svg)
 
+[Documentation](https://github.com/nielsandriesse/session-open-group-server/wiki/Documentation)
+
 ## Requirements
 
 | Dependency    | Version       |
