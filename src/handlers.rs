@@ -45,6 +45,7 @@ pub async fn create_room(room: models::Room) -> Result<Response, Rejection> {
     // Set up the database
     storage::create_database_if_needed(&room.id);
     // Return
+    println!("Created room with ID: {}", &room.id);
     let json = models::StatusCode { status_code: StatusCode::OK.as_u16() };
     return Ok(warp::reply::json(&json).into_response());
 }
@@ -64,6 +65,7 @@ pub async fn delete_room(id: String) -> Result<Response, Rejection> {
         }
     }
     // Return
+    println!("Deleted room with ID: {}", &id);
     let json = models::StatusCode { status_code: StatusCode::OK.as_u16() };
     return Ok(warp::reply::json(&json).into_response());
 }
@@ -611,6 +613,7 @@ pub async fn add_moderator(
         }
     }
     // Return
+    println!("Added moderator: {} to room with ID: {}", &body.public_key, &body.room_id);
     let json = models::StatusCode { status_code: StatusCode::OK.as_u16() };
     return Ok(warp::reply::json(&json).into_response());
 }
@@ -631,6 +634,7 @@ pub async fn delete_moderator(
         }
     }
     // Return
+    println!("Deleted moderator: {} from room with ID: {}", &body.public_key, &body.room_id);
     let json = models::StatusCode { status_code: StatusCode::OK.as_u16() };
     return Ok(warp::reply::json(&json).into_response());
 }
