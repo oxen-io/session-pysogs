@@ -3,6 +3,7 @@ use std::fs;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 use futures::join;
+use log::info;
 use structopt::StructOpt;
 use tokio;
 use warp::Filter;
@@ -10,6 +11,7 @@ use warp::Filter;
 mod crypto;
 mod errors;
 mod handlers;
+mod logging;
 mod models;
 mod onion_requests;
 mod options;
@@ -33,13 +35,14 @@ async fn main() {
         execute_commands(opt).await;
     } else {
         // Run in server mode
+        logging::init(opt.log_file);
         let addr = SocketAddr::new(IpAddr::V4(opt.host), opt.port);
         let localhost = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 3030);
         *crypto::PRIVATE_KEY_PATH.lock().unwrap() = opt.x25519_private_key;
         *crypto::PUBLIC_KEY_PATH.lock().unwrap() = opt.x25519_public_key;
         // Print the server public key
         let hex_public_key = hex::encode(crypto::PUBLIC_KEY.as_bytes());
-        println!("The public key of this server is: {}", hex_public_key);
+        info!("The public key of this server is: {}", hex_public_key);
         // Create the main database
         storage::create_main_database_if_needed();
         // Create required folders
@@ -58,7 +61,7 @@ async fn main() {
             .or(routes::add_moderator())
             .or(routes::delete_moderator());
         if opt.tls {
-            println!("Running on {} with TLS.", addr);
+            info!("Running on {} with TLS.", addr);
             let serve_public_routes_future = warp::serve(public_routes)
                 .tls()
                 .cert_path(opt.tls_certificate)
@@ -74,7 +77,7 @@ async fn main() {
                 serve_private_routes_future
             );
         } else {
-            println!("Running on {}.", addr);
+            info!("Running on {}.", addr);
             let serve_public_routes_future = warp::serve(public_routes).run(addr);
             let serve_private_routes_future = warp::serve(private_routes).run(localhost);
             // Keep futures alive
@@ -98,12 +101,12 @@ async fn execute_commands(opt: options::Opt) {
         params.insert("id", &args[0]);
         params.insert("name", &args[1]);
         client.post(format!("{}/rooms", localhost)).json(&params).send().await.unwrap();
-        println!("Added room with ID: {}", &args[0]);
+        info!("Added room with ID: {}", &args[0]);
     }
     // Delete a room
     if let Some(args) = opt.delete_room {
         client.delete(format!("{}/rooms/{}", localhost, args)).send().await.unwrap();
-        println!("Deleted room with ID: {}", &args);
+        info!("Deleted room with ID: {}", &args);
     }
     // Add a moderator
     if let Some(args) = opt.add_moderator {
@@ -111,7 +114,7 @@ async fn execute_commands(opt: options::Opt) {
         params.insert("public_key", &args[0]);
         params.insert("room_id", &args[1]);
         client.post(format!("{}/moderators", localhost)).json(&params).send().await.unwrap();
-        println!("Added moderator: {} to room with ID: {}", &args[0], &args[1]);
+        info!("Added moderator: {} to room with ID: {}", &args[0], &args[1]);
     }
     // Delete a moderator
     if let Some(args) = opt.delete_moderator {
@@ -119,7 +122,7 @@ async fn execute_commands(opt: options::Opt) {
         params.insert("public_key", &args[0]);
         params.insert("room_id", &args[1]);
         client.post(format!("{}/delete_moderator", localhost)).json(&params).send().await.unwrap();
-        println!("Deleted moderator: {} from room with ID: {}", &args[0], &args[1]);
+        info!("Deleted moderator: {} from room with ID: {}", &args[0], &args[1]);
     }
 }
 

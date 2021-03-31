@@ -24,6 +24,10 @@ pub struct Opt {
     #[structopt(short = "H", long = "host", default_value = "0.0.0.0")]
     pub host: Ipv4Addr,
 
+    /// Path to the log file. If not provided, logs are only printed to stdout.
+    #[structopt(long = "log-file")]
+    pub log_file: Option<String>,
+
     /// Run in TLS mode.
     #[structopt(long = "tls")]
     pub tls: bool,
