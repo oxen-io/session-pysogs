@@ -26,7 +26,7 @@ fn set_up_test_room() {
     perform_main_setup();
     let test_room_id = "test_room";
     let test_room_name = "Test Room";
-    aw!(handlers::create_room(&test_room_id, &test_room_name)).unwrap();
+    handlers::create_room(&test_room_id, &test_room_name).unwrap();
     let raw_path = format!("rooms/{}.db", test_room_id);
     let path = Path::new(&raw_path);
     fs::read(path).unwrap(); // Fail if this doesn't exist
@@ -37,23 +37,22 @@ fn get_auth_token() -> (String, String) {
     let test_room_id = "test_room";
     let pool = storage::pool_by_room_id(&test_room_id);
     // Generate a fake user key pair
-    let (user_private_key, user_public_key) = aw!(crypto::generate_x25519_key_pair());
+    let (user_private_key, user_public_key) = crypto::generate_x25519_key_pair();
     let hex_user_public_key = format!("05{}", hex::encode(user_public_key.to_bytes()));
     // Get a challenge
     let mut query_params: HashMap<String, String> = HashMap::new();
     query_params.insert("public_key".to_string(), hex_user_public_key.clone());
-    let challenge = aw!(handlers::get_auth_token_challenge(query_params, &pool)).unwrap();
+    let challenge = handlers::get_auth_token_challenge(query_params, &pool).unwrap();
     // Generate a symmetric key
     let ephemeral_public_key = base64::decode(challenge.ephemeral_public_key).unwrap();
     let symmetric_key =
-        aw!(crypto::get_x25519_symmetric_key(&ephemeral_public_key, &user_private_key)).unwrap();
+        crypto::get_x25519_symmetric_key(&ephemeral_public_key, &user_private_key).unwrap();
     // Decrypt the challenge
     let ciphertext = base64::decode(challenge.ciphertext).unwrap();
-    let plaintext = aw!(crypto::decrypt_aes_gcm(&ciphertext, &symmetric_key)).unwrap();
+    let plaintext = crypto::decrypt_aes_gcm(&ciphertext, &symmetric_key).unwrap();
     let auth_token = hex::encode(plaintext);
     // Try to claim the token
-    let response =
-        aw!(handlers::claim_auth_token(&hex_user_public_key, &auth_token, &pool)).unwrap();
+    let response = handlers::claim_auth_token(&hex_user_public_key, &auth_token, &pool).unwrap();
     assert_eq!(response.status(), StatusCode::OK);
     // return
     return (auth_token, hex_user_public_key);
@@ -71,7 +70,7 @@ fn test_authorization() {
     let mut incorrect_token = [0u8; 48];
     thread_rng().fill(&mut incorrect_token[..]);
     let hex_incorrect_token = hex::encode(incorrect_token);
-    match aw!(handlers::claim_auth_token(&hex_user_public_key, &hex_incorrect_token, &pool)) {
+    match handlers::claim_auth_token(&hex_user_public_key, &hex_incorrect_token, &pool) {
         Ok(_) => assert!(false),
         Err(_) => (),
     }
@@ -86,13 +85,13 @@ fn test_file_handling() {
     // Get an auth token
     let (auth_token, _) = get_auth_token();
     // Store the test file
-    aw!(handlers::store_file(TEST_FILE, &auth_token, &pool)).unwrap();
+    handlers::store_file(TEST_FILE, &auth_token, &pool).unwrap();
     // Check that there's a file record
     let conn = pool.get().unwrap();
     let raw_query = format!("SELECT id FROM {}", storage::FILES_TABLE);
     let id: i64 = conn.query_row(&raw_query, params![], |row| Ok(row.get(0)?)).unwrap();
     // Retrieve the file and check the content
-    let base64_encoded_file = aw!(handlers::get_file(id, &auth_token, &pool)).unwrap().result;
+    let base64_encoded_file = handlers::get_file(id, &auth_token, &pool).unwrap().result;
     assert_eq!(base64_encoded_file, TEST_FILE);
     // Prune the file and check that it's gone
     aw!(storage::prune_files(-60)); // Will evaluate to now + 60

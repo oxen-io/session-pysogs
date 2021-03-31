@@ -40,7 +40,7 @@ lazy_static::lazy_static! {
     };
 }
 
-pub async fn get_x25519_symmetric_key(
+pub fn get_x25519_symmetric_key(
     public_key: &[u8], private_key: &x25519_dalek::StaticSecret,
 ) -> Result<Vec<u8>, warp::reject::Rejection> {
     if public_key.len() != 32 {
@@ -58,7 +58,7 @@ pub async fn get_x25519_symmetric_key(
     return Ok(mac.finalize().into_bytes().to_vec());
 }
 
-pub async fn encrypt_aes_gcm(
+pub fn encrypt_aes_gcm(
     plaintext: &[u8], symmetric_key: &[u8],
 ) -> Result<Vec<u8>, warp::reject::Rejection> {
     let mut iv = [0u8; IV_SIZE];
@@ -77,7 +77,7 @@ pub async fn encrypt_aes_gcm(
     };
 }
 
-pub async fn decrypt_aes_gcm(
+pub fn decrypt_aes_gcm(
     iv_and_ciphertext: &[u8], symmetric_key: &[u8],
 ) -> Result<Vec<u8>, warp::reject::Rejection> {
     if iv_and_ciphertext.len() < IV_SIZE {
@@ -96,7 +96,7 @@ pub async fn decrypt_aes_gcm(
     };
 }
 
-pub async fn generate_x25519_key_pair() -> (x25519_dalek::StaticSecret, x25519_dalek::PublicKey) {
+pub fn generate_x25519_key_pair() -> (x25519_dalek::StaticSecret, x25519_dalek::PublicKey) {
     let private_key = x25519_dalek::StaticSecret::new(OsRng);
     let public_key = x25519_dalek::PublicKey::from(&private_key);
     return (private_key, public_key);

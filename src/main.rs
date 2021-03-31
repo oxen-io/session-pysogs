@@ -108,6 +108,6 @@ async fn create_default_rooms() {
     for info in info {
         let id = info.0;
         let name = info.1;
-        handlers::create_room(id, name).await.unwrap();
+        handlers::create_room(id, name).unwrap();
     }
 }
