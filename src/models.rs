@@ -23,7 +23,7 @@ pub struct Room {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-pub struct AddModeratorRequestBody {
+pub struct ChangeModeratorRequestBody {
     pub public_key: String,
     pub room_id: String,
 }

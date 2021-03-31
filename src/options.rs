@@ -35,4 +35,18 @@ pub struct Opt {
     /// Path to TLS private key.
     #[structopt(long = "tls-private-key", default_value = "tls_private_key.pem")]
     pub tls_private_key: String,
+
+    /// Add a room with the given ID and name.
+    #[structopt(long = "add-room")]
+    pub add_room: Vec<String>,
+
+    /// Deletes the room with the given ID.
+    #[structopt(long = "delete-room")]
+    pub delete_room: String,
+
+    /// Makes the given public key a moderator for the room with the given ID.
+    pub add_moderator: Vec<String>,
+
+    /// Removes moderator permission for the given public key in the room with the given ID.
+    pub delete_moderator: Vec<String>,
 }

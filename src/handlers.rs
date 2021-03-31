@@ -594,9 +594,9 @@ pub async fn get_deleted_messages(
 
 // Moderation
 
-// Currently not exposed
-pub async fn make_public_key_moderator(
-    body: models::AddModeratorRequestBody,
+// Not publicly exposed.
+pub async fn add_moderator(
+    body: models::ChangeModeratorRequestBody,
 ) -> Result<Response, Rejection> {
     // Get a database connection
     let pool = storage::pool_by_room_id(&body.room_id);
@@ -607,6 +607,26 @@ pub async fn make_public_key_moderator(
         Ok(_) => (),
         Err(e) => {
             println!("Couldn't make public key moderator due to error: {}.", e);
+            return Err(warp::reject::custom(Error::DatabaseFailedInternally));
+        }
+    }
+    // Return
+    let json = models::StatusCode { status_code: StatusCode::OK.as_u16() };
+    return Ok(warp::reply::json(&json).into_response());
+}
+
+pub async fn delete_moderator(
+    body: models::ChangeModeratorRequestBody,
+) -> Result<Response, Rejection> {
+    // Get a database connection
+    let pool = storage::pool_by_room_id(&body.room_id);
+    let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
+    // Insert the moderator
+    let stmt = format!("DELETE FROM {} WHERE public_key = (?1)", storage::MODERATORS_TABLE);
+    match conn.execute(&stmt, params![&body.public_key]) {
+        Ok(_) => (),
+        Err(e) => {
+            println!("Couldn't delete moderator due to error: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     }

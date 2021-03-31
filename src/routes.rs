@@ -48,7 +48,17 @@ pub fn add_moderator() -> impl Filter<Extract = impl warp::Reply, Error = Reject
     return warp::post()
         .and(warp::path("moderators"))
         .and(warp::body::json())
-        .and_then(handlers::make_public_key_moderator);
+        .and_then(handlers::add_moderator);
+}
+
+/// POST /delete_moderator
+///
+/// Not publicly exposed.
+pub fn delete_moderator() -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+    return warp::post()
+        .and(warp::path("delete_moderator"))
+        .and(warp::body::json())
+        .and_then(handlers::delete_moderator);
 }
 
 pub async fn root_html() -> Result<Response, Rejection> {
