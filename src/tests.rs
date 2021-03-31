@@ -8,6 +8,7 @@ use warp::http::StatusCode;
 
 use super::crypto;
 use super::handlers;
+use super::models;
 use super::storage;
 
 macro_rules! aw {
@@ -26,7 +27,12 @@ fn set_up_test_room() {
     perform_main_setup();
     let test_room_id = "test_room";
     let test_room_name = "Test Room";
-    aw!(handlers::create_room(&test_room_id, &test_room_name)).unwrap();
+    let test_room = models::Room {
+        id: test_room_id.to_string(),
+        name: test_room_name.to_string(),
+        image_id: None,
+    };
+    aw!(handlers::create_room(test_room)).unwrap();
     let raw_path = format!("rooms/{}.db", test_room_id);
     let path = Path::new(&raw_path);
     fs::read(path).unwrap(); // Fail if this doesn't exist

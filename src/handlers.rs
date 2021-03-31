@@ -21,13 +21,6 @@ enum AuthorizationLevel {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-struct RoomInfo {
-    id: String,
-    name: String,
-    image_id: Option<String>,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
 pub struct GenericStringResponse {
     pub status_code: u16,
     pub result: String,
@@ -35,14 +28,14 @@ pub struct GenericStringResponse {
 
 // Rooms
 
-// Currently not exposed
-pub async fn create_room(id: &str, name: &str) -> Result<Response, Rejection> {
+// Not publicly exposed.
+pub async fn create_room(room: models::Room) -> Result<Response, Rejection> {
     // Get a connection
     let pool = &storage::MAIN_POOL;
     let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     // Insert the room
     let stmt = format!("REPLACE INTO {} (id, name) VALUES (?1, ?2)", storage::MAIN_TABLE);
-    match conn.execute(&stmt, params![id, name]) {
+    match conn.execute(&stmt, params![&room.id, &room.name]) {
         Ok(_) => (),
         Err(e) => {
             println!("Couldn't create room due to error: {}.", e);
@@ -50,20 +43,20 @@ pub async fn create_room(id: &str, name: &str) -> Result<Response, Rejection> {
         }
     }
     // Set up the database
-    storage::create_database_if_needed(id);
+    storage::create_database_if_needed(&room.id);
     // Return
     let json = models::StatusCode { status_code: StatusCode::OK.as_u16() };
     return Ok(warp::reply::json(&json).into_response());
 }
 
-// Currently not exposed
-pub async fn delete_room(id: &str) -> Result<Response, Rejection> {
+// Not publicly exposed.
+pub async fn delete_room(id: String) -> Result<Response, Rejection> {
     // Get a connection
     let pool = &storage::MAIN_POOL;
     let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     // Insert the room
     let stmt = format!("DELETE FROM {} WHERE id = (?1)", storage::MAIN_TABLE);
-    match conn.execute(&stmt, params![id]) {
+    match conn.execute(&stmt, params![&id]) {
         Ok(_) => (),
         Err(e) => {
             println!("Couldn't delete room due to error: {}.", e);
@@ -83,7 +76,7 @@ pub async fn get_room(room_id: &str) -> Result<Response, Rejection> {
     let raw_query =
         format!("SELECT id, name, image_id FROM {} where id = (?1)", storage::MAIN_TABLE);
     let room = match conn.query_row(&raw_query, params![room_id], |row| {
-        Ok(RoomInfo { id: row.get(0)?, name: row.get(1)?, image_id: row.get(2).ok() })
+        Ok(models::Room { id: row.get(0)?, name: row.get(1)?, image_id: row.get(2).ok() })
     }) {
         Ok(info) => info,
         Err(_) => return Err(warp::reject::custom(Error::NoSuchRoom)),
@@ -92,7 +85,7 @@ pub async fn get_room(room_id: &str) -> Result<Response, Rejection> {
     #[derive(Debug, Deserialize, Serialize)]
     struct Response {
         status_code: u16,
-        room: RoomInfo,
+        room: models::Room,
     }
     let response = Response { status_code: StatusCode::OK.as_u16(), room };
     return Ok(warp::reply::json(&response).into_response());
@@ -106,7 +99,7 @@ pub async fn get_all_rooms() -> Result<Response, Rejection> {
     let raw_query = format!("SELECT id, name, image_id FROM {}", storage::MAIN_TABLE);
     let mut query = conn.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
     let rows = match query.query_map(params![], |row| {
-        Ok(RoomInfo { id: row.get(0)?, name: row.get(1)?, image_id: row.get(2).ok() })
+        Ok(models::Room { id: row.get(0)?, name: row.get(1)?, image_id: row.get(2).ok() })
     }) {
         Ok(rows) => rows,
         Err(e) => {
@@ -114,12 +107,12 @@ pub async fn get_all_rooms() -> Result<Response, Rejection> {
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
-    let rooms: Vec<RoomInfo> = rows.filter_map(|result| result.ok()).collect();
+    let rooms: Vec<models::Room> = rows.filter_map(|result| result.ok()).collect();
     // Return
     #[derive(Debug, Deserialize, Serialize)]
     struct Response {
         status_code: u16,
-        rooms: Vec<RoomInfo>,
+        rooms: Vec<models::Room>,
     }
     let response = Response { status_code: StatusCode::OK.as_u16(), rooms };
     return Ok(warp::reply::json(&response).into_response());
@@ -603,13 +596,14 @@ pub async fn get_deleted_messages(
 
 // Currently not exposed
 pub async fn make_public_key_moderator(
-    public_key: &str, pool: &storage::DatabaseConnectionPool,
+    body: models::AddModeratorRequestBody,
 ) -> Result<Response, Rejection> {
     // Get a database connection
+    let pool = storage::pool_by_room_id(&body.room_id);
     let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     // Insert the moderator
     let stmt = format!("INSERT INTO {} (public_key) VALUES (?1)", storage::MODERATORS_TABLE);
-    match conn.execute(&stmt, params![public_key]) {
+    match conn.execute(&stmt, params![&body.public_key]) {
         Ok(_) => (),
         Err(e) => {
             println!("Couldn't make public key moderator due to error: {}.", e);

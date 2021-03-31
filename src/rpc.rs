@@ -8,6 +8,7 @@ use super::handlers;
 use super::models;
 use super::storage;
 
+#[allow(dead_code)]
 enum Mode {
     FileServer,
     OpenGroupServer,
