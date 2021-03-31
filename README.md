@@ -4,7 +4,7 @@
 
 [CLI Reference](https://github.com/nielsandriesse/session-open-group-server/wiki/CLI-Reference)
 
-Want to build the Session open group server from source? See [BUILDING.md](https://github.com/nielsandriesse/session-open-group-server/blob/main/BUILDING.md)
+Want to build the Session open group server from source? See [BUILDING.md](https://github.com/nielsandriesse/session-open-group-server/blob/main/BUILDING.md).
 
 ## Installation Instructions
 
