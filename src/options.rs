@@ -25,7 +25,7 @@ pub struct Opt {
     pub host: Ipv4Addr,
 
     /// Run in TLS mode.
-    #[structopt(long)]
+    #[structopt(long = "tls")]
     pub tls: bool,
 
     /// Path to TLS certificate.
@@ -38,15 +38,17 @@ pub struct Opt {
 
     /// Add a room with the given ID and name.
     #[structopt(long = "add-room")]
-    pub add_room: Vec<String>,
+    pub add_room: Option<Vec<String>>,
 
     /// Deletes the room with the given ID.
     #[structopt(long = "delete-room")]
-    pub delete_room: String,
+    pub delete_room: Option<String>,
 
     /// Makes the given public key a moderator for the room with the given ID.
-    pub add_moderator: Vec<String>,
+    #[structopt(long = "add-moderator")]
+    pub add_moderator: Option<Vec<String>>,
 
     /// Removes moderator permission for the given public key in the room with the given ID.
-    pub delete_moderator: Vec<String>,
+    #[structopt(long = "delete-moderator")]
+    pub delete_moderator: Option<Vec<String>>,
 }

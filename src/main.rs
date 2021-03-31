@@ -24,9 +24,15 @@ mod tests;
 async fn main() {
     // Parse arguments
     let opt = options::Opt::from_args();
-    if !opt.add_room.is_empty() || !opt.delete_room.is_empty() || !opt.add_moderator.is_empty() {
+    if opt.add_room.is_some()
+        || opt.delete_room.is_some()
+        || opt.add_moderator.is_some()
+        || opt.delete_moderator.is_some()
+    {
+        // Run in command mode
         execute_commands(opt).await;
     } else {
+        // Run in server mode
         let addr = SocketAddr::new(IpAddr::V4(opt.host), opt.port);
         let localhost = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 80);
         *crypto::PRIVATE_KEY_PATH.lock().unwrap() = opt.x25519_private_key;
@@ -86,25 +92,29 @@ async fn main() {
 async fn execute_commands(opt: options::Opt) {
     let client = reqwest::Client::new();
     let localhost = "http://127.0.0.1:80";
-    if !opt.add_room.is_empty() {
+    // Add a room
+    if let Some(args) = opt.add_room {
         let mut params = HashMap::new();
-        params.insert("id", &opt.add_room[0]);
-        params.insert("name", &opt.add_room[1]);
+        params.insert("id", &args[0]);
+        params.insert("name", &args[1]);
         client.post(format!("{}/rooms", localhost)).json(&params).send().await.unwrap();
     }
-    if !opt.delete_room.is_empty() {
-        client.delete(format!("{}/rooms/{}", localhost, opt.delete_room)).send().await.unwrap();
+    // Delete a room
+    if let Some(args) = opt.delete_room {
+        client.delete(format!("{}/rooms/{}", localhost, args)).send().await.unwrap();
     }
-    if !opt.add_moderator.is_empty() {
+    // Add a moderator
+    if let Some(args) = opt.add_moderator {
         let mut params = HashMap::new();
-        params.insert("public_key", &opt.add_moderator[0]);
-        params.insert("room_id", &opt.add_moderator[1]);
+        params.insert("public_key", &args[0]);
+        params.insert("room_id", &args[1]);
         client.post(format!("{}/moderators", localhost)).json(&params).send().await.unwrap();
     }
-    if !opt.delete_moderator.is_empty() {
+    // Delete a moderator
+    if let Some(args) = opt.delete_moderator {
         let mut params = HashMap::new();
-        params.insert("public_key", &opt.delete_moderator[0]);
-        params.insert("room_id", &opt.delete_moderator[1]);
+        params.insert("public_key", &args[0]);
+        params.insert("room_id", &args[1]);
         client.post(format!("{}/delete_moderator", localhost)).json(&params).send().await.unwrap();
     }
 }
