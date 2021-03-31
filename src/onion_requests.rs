@@ -97,9 +97,8 @@ async fn decrypt_onion_request_payload(
     payload: OnionRequestPayload,
 ) -> Result<(Vec<u8>, Vec<u8>), Rejection> {
     let ephemeral_key = hex::decode(payload.metadata.ephemeral_key).unwrap(); // Safe because it was validated in the parsing step
-    let symmetric_key =
-        crypto::get_x25519_symmetric_key(&ephemeral_key, &crypto::PRIVATE_KEY).await?;
-    let plaintext = crypto::decrypt_aes_gcm(&payload.ciphertext, &symmetric_key).await?;
+    let symmetric_key = crypto::get_x25519_symmetric_key(&ephemeral_key, &crypto::PRIVATE_KEY)?;
+    let plaintext = crypto::decrypt_aes_gcm(&payload.ciphertext, &symmetric_key)?;
     return Ok((plaintext, symmetric_key));
 }
 
@@ -112,7 +111,7 @@ async fn encrypt_response(response: Response, symmetric_key: &[u8]) -> Result<Re
         let error = models::StatusCode { status_code: response.status().as_u16() };
         bytes = serde_json::to_vec(&error).unwrap();
     }
-    let ciphertext = crypto::encrypt_aes_gcm(&bytes, symmetric_key).await.unwrap();
+    let ciphertext = crypto::encrypt_aes_gcm(&bytes, symmetric_key).unwrap();
     let json = base64::encode(&ciphertext);
     let response =
         warp::http::Response::builder().status(StatusCode::OK.as_u16()).body(json).into_response();
