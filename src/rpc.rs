@@ -24,7 +24,7 @@ pub struct RpcCall {
 
 const MODE: Mode = Mode::OpenGroupServer;
 
-pub async fn handle_rpc_call(rpc_call: RpcCall) -> Result<Response, Rejection> {
+pub fn handle_rpc_call(rpc_call: RpcCall) -> Result<Response, Rejection> {
     // Check that the endpoint is a valid URI and deconstruct it into a path
     // and query parameters.
     // Adding "http://placeholder.io" in front of the endpoint is a workaround
@@ -49,14 +49,14 @@ pub async fn handle_rpc_call(rpc_call: RpcCall) -> Result<Response, Rejection> {
     let auth_token = get_auth_token(&rpc_call);
     // Switch on the HTTP method
     match rpc_call.method.as_ref() {
-        "GET" => return handle_get_request(rpc_call, &path, auth_token, query_params).await,
+        "GET" => return handle_get_request(rpc_call, &path, auth_token, query_params),
         "POST" => {
             let pool = get_pool_for_room(&rpc_call)?;
-            return handle_post_request(rpc_call, &path, auth_token, &pool).await;
+            return handle_post_request(rpc_call, &path, auth_token, &pool);
         }
         "DELETE" => {
             let pool = get_pool_for_room(&rpc_call)?;
-            return handle_delete_request(&path, auth_token, &pool).await;
+            return handle_delete_request(&path, auth_token, &pool);
         }
         _ => {
             println!("Ignoring RPC call with invalid or unused HTTP method: {}.", rpc_call.method);
@@ -65,7 +65,7 @@ pub async fn handle_rpc_call(rpc_call: RpcCall) -> Result<Response, Rejection> {
     }
 }
 
-async fn handle_get_request(
+fn handle_get_request(
     rpc_call: RpcCall, path: &str, auth_token: Option<String>,
     query_params: HashMap<String, String>,
 ) -> Result<Response, Rejection> {
@@ -154,7 +154,7 @@ async fn handle_get_request(
     }
 }
 
-async fn handle_post_request(
+fn handle_post_request(
     rpc_call: RpcCall, path: &str, auth_token: Option<String>,
     pool: &storage::DatabaseConnectionPool,
 ) -> Result<Response, Rejection> {
@@ -223,7 +223,7 @@ async fn handle_post_request(
     }
 }
 
-async fn handle_delete_request(
+fn handle_delete_request(
     path: &str, auth_token: Option<String>, pool: &storage::DatabaseConnectionPool,
 ) -> Result<Response, Rejection> {
     // Check that the auth token is present

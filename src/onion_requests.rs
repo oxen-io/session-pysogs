@@ -20,8 +20,8 @@ struct OnionRequestPayloadMetadata {
 }
 
 pub async fn handle_onion_request(blob: warp::hyper::body::Bytes) -> Result<Response, Rejection> {
-    let payload = parse_onion_request_payload(blob).await?;
-    let (plaintext, symmetric_key) = decrypt_onion_request_payload(payload).await?;
+    let payload = parse_onion_request_payload(blob)?;
+    let (plaintext, symmetric_key) = decrypt_onion_request_payload(payload)?;
     // From this point on we can wrap any error that occurs in a HTTP response that's
     // encrypted with the given symmetric key, so that the error that occurred is
     // propagated back to the client that made the onion request.
@@ -46,7 +46,6 @@ async fn handle_decrypted_onion_request(
     };
     // Perform the RPC call
     let result = rpc::handle_rpc_call(rpc_call)
-        .await
         // Turn any error that occurred into an HTTP response
         // Unwrapping is safe because at this point any error should be caught and turned into an HTTP response (i.e. an OK result)
         .or_else(super::errors::into_response)?;
@@ -54,7 +53,7 @@ async fn handle_decrypted_onion_request(
     return encrypt_response(result, symmetric_key).await;
 }
 
-async fn parse_onion_request_payload(
+fn parse_onion_request_payload(
     blob: warp::hyper::body::Bytes,
 ) -> Result<OnionRequestPayload, Rejection> {
     // The encoding of an onion request looks like: | 4 bytes: size N of ciphertext | N bytes: ciphertext | json as utf8 |
@@ -93,7 +92,7 @@ async fn parse_onion_request_payload(
 }
 
 /// Returns the decrypted `payload.ciphertext` plus the `symmetric_key` that was used for decryption if successful.
-async fn decrypt_onion_request_payload(
+fn decrypt_onion_request_payload(
     payload: OnionRequestPayload,
 ) -> Result<(Vec<u8>, Vec<u8>), Rejection> {
     let ephemeral_key = hex::decode(payload.metadata.ephemeral_key).unwrap(); // Safe because it was validated in the parsing step

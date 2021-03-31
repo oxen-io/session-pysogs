@@ -188,7 +188,7 @@ pub async fn prune_files_periodically() {
 }
 
 async fn prune_tokens() {
-    let rooms = match get_all_room_ids().await {
+    let rooms = match get_all_room_ids() {
         Ok(rooms) => rooms,
         Err(_) => return,
     };
@@ -211,7 +211,7 @@ async fn prune_tokens() {
 }
 
 async fn prune_pending_tokens() {
-    let rooms = match get_all_room_ids().await {
+    let rooms = match get_all_room_ids() {
         Ok(rooms) => rooms,
         Err(_) => return,
     };
@@ -235,7 +235,7 @@ async fn prune_pending_tokens() {
 
 pub async fn prune_files(file_expiration: i64) {
     // The expiration setting is passed in for testing purposes
-    let rooms = match get_all_room_ids().await {
+    let rooms = match get_all_room_ids() {
         Ok(rooms) => rooms,
         Err(_) => return,
     };
@@ -282,7 +282,7 @@ pub async fn prune_files(file_expiration: i64) {
     println!("Pruned files.");
 }
 
-async fn get_all_room_ids() -> Result<Vec<String>, Error> {
+fn get_all_room_ids() -> Result<Vec<String>, Error> {
     // Get a database connection
     let conn = MAIN_POOL.get().map_err(|_| Error::DatabaseFailedInternally)?;
     // Query the database
