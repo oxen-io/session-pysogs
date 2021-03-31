@@ -43,12 +43,13 @@ sudo apt install build-essential
 
 **Command line arguments:**
 
-| Command            | Default                | Description                |
-| ------------------ |:----------------------:| -------------------------- |
-| x25519-public-key  | x25519_public_key.pem  | Path to X25519 public key  |
-| x25519-private-key | x25519_private_key.pem | Path to X25519 private key |
-| port               | 80                     | Port to bind to            |
-| host               | 0.0.0.0                | IP to bind to              |
+| Command            | Default                | Description                                                             |
+| ------------------ |:----------------------:| ----------------------------------------------------------------------- |
+| x25519-public-key  | x25519_public_key.pem  | Path to X25519 public key                                               |
+| x25519-private-key | x25519_private_key.pem | Path to X25519 private key                                              |
+| port               | 80                     | Port to bind to                                                         |
+| host               | 0.0.0.0                | IP to bind to                                                           |
+| log-file           | None                   | Path to the log file. If not provided, logs are only printed to stdout. |
 
 If you want to run with TLS enabled:
 
