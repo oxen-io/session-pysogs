@@ -25,7 +25,7 @@ pub struct RpcCall {
 
 const MODE: Mode = Mode::OpenGroupServer;
 
-pub fn handle_rpc_call(rpc_call: RpcCall) -> Result<Response, Rejection> {
+pub async fn handle_rpc_call(rpc_call: RpcCall) -> Result<Response, Rejection> {
     // Check that the endpoint is a valid URI and deconstruct it into a path
     // and query parameters.
     // Adding "http://placeholder.io" in front of the endpoint is a workaround
@@ -50,10 +50,10 @@ pub fn handle_rpc_call(rpc_call: RpcCall) -> Result<Response, Rejection> {
     let auth_token = get_auth_token(&rpc_call);
     // Switch on the HTTP method
     match rpc_call.method.as_ref() {
-        "GET" => return handle_get_request(rpc_call, &path, auth_token, query_params),
+        "GET" => return handle_get_request(rpc_call, &path, auth_token, query_params).await,
         "POST" => {
             let pool = get_pool_for_room(&rpc_call)?;
-            return handle_post_request(rpc_call, &path, auth_token, &pool);
+            return handle_post_request(rpc_call, &path, auth_token, &pool).await;
         }
         "DELETE" => {
             let pool = get_pool_for_room(&rpc_call)?;
@@ -66,7 +66,7 @@ pub fn handle_rpc_call(rpc_call: RpcCall) -> Result<Response, Rejection> {
     }
 }
 
-fn handle_get_request(
+async fn handle_get_request(
     rpc_call: RpcCall, path: &str, auth_token: Option<String>,
     query_params: HashMap<String, String>,
 ) -> Result<Response, Rejection> {
@@ -91,7 +91,7 @@ fn handle_get_request(
             return handlers::get_room(&room_id);
         } else if components.len() == 3 && components[2] == "image" {
             let room_id = components[1];
-            return handlers::get_group_image(&room_id);
+            return handlers::get_group_image(&room_id).await;
         } else {
             warn!("Invalid endpoint: {}.", rpc_call.endpoint);
             return Err(warp::reject::custom(Error::InvalidRpcCall));
@@ -115,6 +115,7 @@ fn handle_get_request(
             }
         };
         return handlers::get_file(file_id, &auth_token, &pool)
+            .await
             .map(|json| warp::reply::json(&json).into_response());
     }
     match path {
@@ -145,7 +146,7 @@ fn handle_get_request(
     }
 }
 
-fn handle_post_request(
+async fn handle_post_request(
     rpc_call: RpcCall, path: &str, auth_token: Option<String>,
     pool: &storage::DatabaseConnectionPool,
 ) -> Result<Response, Rejection> {
@@ -205,7 +206,7 @@ fn handle_post_request(
                     return Err(warp::reject::custom(Error::InvalidRpcCall));
                 }
             };
-            return handlers::store_file(&json.file, &auth_token, pool);
+            return handlers::store_file(&json.file, &auth_token, pool).await;
         }
         _ => {
             warn!("Ignoring RPC call with invalid or unused endpoint: {}.", path);

@@ -1,7 +1,5 @@
 use std::collections::HashMap;
 use std::convert::TryInto;
-use std::fs;
-use std::io::prelude::*;
 use std::path::Path;
 
 use chrono;
@@ -9,6 +7,8 @@ use log::{error, info, warn};
 use rand::{thread_rng, Rng};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
+use tokio::fs::File;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use warp::{http::StatusCode, reply::Reply, reply::Response, Rejection};
 
 use super::crypto;
@@ -123,7 +123,7 @@ pub fn get_all_rooms() -> Result<Response, Rejection> {
 
 // Files
 
-pub fn store_file(
+pub async fn store_file(
     base64_encoded_bytes: &str, auth_token: &str, pool: &storage::DatabaseConnectionPool,
 ) -> Result<Response, Rejection> {
     // It'd be nice to use the UUID crate for the file ID, but clients want an integer ID
@@ -157,26 +157,22 @@ pub fn store_file(
         }
     };
     // Write to file
-    let mut pos = 0;
     let raw_path = format!("files/{}", &now);
     let path = Path::new(&raw_path);
-    let mut buffer = match fs::File::create(path) {
-        Ok(buffer) => buffer,
+    let mut file = match File::create(path).await {
+        Ok(file) => file,
         Err(e) => {
             error!("Couldn't store file due to error: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
-    while pos < bytes.len() {
-        let count = match buffer.write(&bytes[pos..]) {
-            Ok(count) => count,
-            Err(e) => {
-                error!("Couldn't store file due to error: {}.", e);
-                return Err(warp::reject::custom(Error::DatabaseFailedInternally));
-            }
-        };
-        pos += count;
-    }
+    match file.write_all(&bytes).await {
+        Ok(_) => (),
+        Err(e) => {
+            error!("Couldn't store file due to error: {}.", e);
+            return Err(warp::reject::custom(Error::DatabaseFailedInternally));
+        }
+    };
     // Return
     #[derive(Debug, Deserialize, Serialize)]
     struct Response {
@@ -187,7 +183,7 @@ pub fn store_file(
     return Ok(warp::reply::json(&response).into_response());
 }
 
-pub fn get_file(
+pub async fn get_file(
     id: i64, auth_token: &str, pool: &storage::DatabaseConnectionPool,
 ) -> Result<GenericStringResponse, Rejection> {
     // Doesn't return a response directly for testing purposes
@@ -198,10 +194,18 @@ pub fn get_file(
         return Err(warp::reject::custom(Error::Unauthorized));
     }
     // Try to read the file
+    let mut bytes = vec![];
     let raw_path = format!("files/{}", id);
     let path = Path::new(&raw_path);
-    let bytes = match fs::read(path) {
-        Ok(bytes) => bytes,
+    let mut file = match File::open(path).await {
+        Ok(file) => file,
+        Err(e) => {
+            error!("Couldn't read file due to error: {}.", e);
+            return Err(warp::reject::custom(Error::ValidationFailed));
+        }
+    };
+    match file.read_to_end(&mut bytes).await {
+        Ok(_) => (),
         Err(e) => {
             error!("Couldn't read file due to error: {}.", e);
             return Err(warp::reject::custom(Error::ValidationFailed));
@@ -217,12 +221,20 @@ pub fn get_file(
     return Ok(json);
 }
 
-pub fn get_group_image(room_id: &str) -> Result<Response, Rejection> {
+pub async fn get_group_image(room_id: &str) -> Result<Response, Rejection> {
     // Try to read the file
+    let mut bytes = vec![];
     let raw_path = format!("files/{}", room_id);
     let path = Path::new(&raw_path);
-    let bytes = match fs::read(path) {
-        Ok(bytes) => bytes,
+    let mut file = match File::open(path).await {
+        Ok(file) => file,
+        Err(e) => {
+            error!("Couldn't read file due to error: {}.", e);
+            return Err(warp::reject::custom(Error::ValidationFailed));
+        }
+    };
+    match file.read_to_end(&mut bytes).await {
+        Ok(_) => (),
         Err(e) => {
             error!("Couldn't read file due to error: {}.", e);
             return Err(warp::reject::custom(Error::ValidationFailed));

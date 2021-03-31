@@ -47,6 +47,7 @@ async fn handle_decrypted_onion_request(
     };
     // Perform the RPC call
     let result = rpc::handle_rpc_call(rpc_call)
+        .await
         // Turn any error that occurred into an HTTP response
         // Unwrapping is safe because at this point any error should be caught and turned into an HTTP response (i.e. an OK result)
         .or_else(super::errors::into_response)?;
