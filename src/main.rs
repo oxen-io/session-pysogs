@@ -34,7 +34,7 @@ async fn main() {
     } else {
         // Run in server mode
         let addr = SocketAddr::new(IpAddr::V4(opt.host), opt.port);
-        let localhost = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
+        let localhost = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 3030);
         *crypto::PRIVATE_KEY_PATH.lock().unwrap() = opt.x25519_private_key;
         *crypto::PUBLIC_KEY_PATH.lock().unwrap() = opt.x25519_public_key;
         // Print the server public key
@@ -91,7 +91,7 @@ async fn main() {
 
 async fn execute_commands(opt: options::Opt) {
     let client = reqwest::Client::new();
-    let localhost = "http://127.0.0.1:8080";
+    let localhost = "http://127.0.0.1:3030";
     // Add a room
     if let Some(args) = opt.add_room {
         let mut params = HashMap::new();
