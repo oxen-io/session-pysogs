@@ -98,10 +98,12 @@ async fn execute_commands(opt: options::Opt) {
         params.insert("id", &args[0]);
         params.insert("name", &args[1]);
         client.post(format!("{}/rooms", localhost)).json(&params).send().await.unwrap();
+        println!("Added room with ID: {}", &args[0]);
     }
     // Delete a room
     if let Some(args) = opt.delete_room {
         client.delete(format!("{}/rooms/{}", localhost, args)).send().await.unwrap();
+        println!("Deleted room with ID: {}", &args);
     }
     // Add a moderator
     if let Some(args) = opt.add_moderator {
@@ -109,6 +111,7 @@ async fn execute_commands(opt: options::Opt) {
         params.insert("public_key", &args[0]);
         params.insert("room_id", &args[1]);
         client.post(format!("{}/moderators", localhost)).json(&params).send().await.unwrap();
+        println!("Added moderator: {} to room with ID: {}", &args[0], &args[1]);
     }
     // Delete a moderator
     if let Some(args) = opt.delete_moderator {
@@ -116,6 +119,7 @@ async fn execute_commands(opt: options::Opt) {
         params.insert("public_key", &args[0]);
         params.insert("room_id", &args[1]);
         client.post(format!("{}/delete_moderator", localhost)).json(&params).send().await.unwrap();
+        println!("Deleted moderator: {} from room with ID: {}", &args[0], &args[1]);
     }
 }
 
