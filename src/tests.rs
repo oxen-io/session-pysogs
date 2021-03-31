@@ -27,11 +27,7 @@ fn set_up_test_room() {
     perform_main_setup();
     let test_room_id = "test_room";
     let test_room_name = "Test Room";
-    let test_room = models::Room {
-        id: test_room_id.to_string(),
-        name: test_room_name.to_string(),
-        image_id: None,
-    };
+    let test_room = models::Room { id: test_room_id.to_string(), name: test_room_name.to_string() };
     aw!(handlers::create_room(test_room)).unwrap();
     let raw_path = format!("rooms/{}.db", test_room_id);
     let path = Path::new(&raw_path);

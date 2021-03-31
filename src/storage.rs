@@ -3,6 +3,7 @@ use std::fs;
 use std::path::Path;
 use std::sync::Mutex;
 
+use log::{error, info};
 use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::params;
 
@@ -197,17 +198,17 @@ async fn prune_tokens() {
         // It's not catastrophic if we fail to prune the database for a given room
         let conn = match pool.get() {
             Ok(conn) => conn,
-            Err(e) => return println!("Couldn't prune tokens due to error: {}.", e),
+            Err(e) => return error!("Couldn't prune tokens due to error: {}.", e),
         };
         let stmt = format!("DELETE FROM {} WHERE timestamp < (?1)", TOKENS_TABLE);
         let now = chrono::Utc::now().timestamp();
         let expiration = now - TOKEN_EXPIRATION;
         match conn.execute(&stmt, params![expiration]) {
             Ok(_) => (),
-            Err(e) => return println!("Couldn't prune tokens due to error: {}.", e),
+            Err(e) => return error!("Couldn't prune tokens due to error: {}.", e),
         };
     }
-    println!("Pruned tokens.");
+    info!("Pruned tokens.");
 }
 
 async fn prune_pending_tokens() {
@@ -220,17 +221,17 @@ async fn prune_pending_tokens() {
         // It's not catastrophic if we fail to prune the database for a given room
         let conn = match pool.get() {
             Ok(conn) => conn,
-            Err(e) => return println!("Couldn't prune pending tokens due to error: {}.", e),
+            Err(e) => return error!("Couldn't prune pending tokens due to error: {}.", e),
         };
         let stmt = format!("DELETE FROM {} WHERE timestamp < (?1)", PENDING_TOKENS_TABLE);
         let now = chrono::Utc::now().timestamp();
         let expiration = now - PENDING_TOKEN_EXPIRATION;
         match conn.execute(&stmt, params![expiration]) {
             Ok(_) => (),
-            Err(e) => return println!("Couldn't prune pending tokens due to error: {}.", e),
+            Err(e) => return error!("Couldn't prune pending tokens due to error: {}.", e),
         };
     }
-    println!("Pruned pending tokens.");
+    info!("Pruned pending tokens.");
 }
 
 pub async fn prune_files(file_expiration: i64) {
@@ -247,18 +248,18 @@ pub async fn prune_files(file_expiration: i64) {
         // Get a database connection and open a transaction
         let conn = match pool.get() {
             Ok(conn) => conn,
-            Err(e) => return println!("Couldn't prune files due to error: {}.", e),
+            Err(e) => return error!("Couldn't prune files due to error: {}.", e),
         };
         // Get the IDs of the files to delete
         let raw_query = format!("SELECT id FROM {} WHERE timestamp < (?1)", FILES_TABLE);
         let mut query = match conn.prepare(&raw_query) {
             Ok(query) => query,
-            Err(e) => return println!("Couldn't prune files due to error: {}.", e),
+            Err(e) => return error!("Couldn't prune files due to error: {}.", e),
         };
         let rows = match query.query_map(params![expiration], |row| Ok(row.get(0)?)) {
             Ok(rows) => rows,
             Err(e) => {
-                return println!("Couldn't prune files due to error: {}.", e);
+                return error!("Couldn't prune files due to error: {}.", e);
             }
         };
         let ids: Vec<i64> = rows.filter_map(|result| result.ok()).collect();
@@ -268,18 +269,18 @@ pub async fn prune_files(file_expiration: i64) {
             for id in ids {
                 match fs::remove_file(format!("files/{}", id)) {
                     Ok(_) => deleted_ids.push(id),
-                    Err(e) => println!("Couldn't delete file due to error: {}.", e),
+                    Err(e) => error!("Couldn't delete file due to error: {}.", e),
                 }
             }
             // Remove the file records from the database (only for the files that were successfully deleted)
             let stmt = format!("DELETE FROM {} WHERE id IN (?1)", FILES_TABLE);
             match conn.execute(&stmt, deleted_ids) {
                 Ok(_) => (),
-                Err(e) => return println!("Couldn't prune files due to error: {}.", e),
+                Err(e) => return error!("Couldn't prune files due to error: {}.", e),
             };
         }
     }
-    println!("Pruned files.");
+    info!("Pruned files.");
 }
 
 fn get_all_room_ids() -> Result<Vec<String>, Error> {
@@ -291,7 +292,7 @@ fn get_all_room_ids() -> Result<Vec<String>, Error> {
     let rows = match query.query_map(params![], |row| Ok(row.get(0)?)) {
         Ok(rows) => rows,
         Err(e) => {
-            println!("Couldn't query database due to error: {}.", e);
+            error!("Couldn't query database due to error: {}.", e);
             return Err(Error::DatabaseFailedInternally);
         }
     };

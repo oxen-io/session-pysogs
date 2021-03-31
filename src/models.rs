@@ -19,7 +19,6 @@ impl Message {
 pub struct Room {
     pub id: String,
     pub name: String,
-    pub image_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
