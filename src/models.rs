@@ -16,6 +16,19 @@ impl Message {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
+pub struct Room {
+    pub id: String,
+    pub name: String,
+    pub image_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ChangeModeratorRequestBody {
+    pub public_key: String,
+    pub room_id: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Challenge {
     pub ciphertext: String,
     pub ephemeral_public_key: String,

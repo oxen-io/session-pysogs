@@ -1,6 +1,7 @@
 use warp::{reply::Reply, reply::Response, Filter, Rejection};
 
 use super::errors;
+use super::handlers;
 use super::onion_requests;
 
 /// GET /
@@ -21,6 +22,43 @@ pub fn lsrpc() -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + C
         // to encrypt the response. In this scenario we still want to return a useful
         // status code to the receiving Service Node.
         .recover(into_response);
+}
+
+/// POST /rooms
+///
+/// Not publicly exposed.
+pub fn create_room() -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+    return warp::post()
+        .and(warp::path("rooms"))
+        .and(warp::body::json())
+        .and_then(handlers::create_room);
+}
+
+/// DELETE /rooms/:id
+///
+/// Not publicly exposed.
+pub fn delete_room() -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+    return warp::delete().and(warp::path!("rooms" / String)).and_then(handlers::delete_room);
+}
+
+/// POST /moderators
+///
+/// Not publicly exposed.
+pub fn add_moderator() -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+    return warp::post()
+        .and(warp::path("moderators"))
+        .and(warp::body::json())
+        .and_then(handlers::add_moderator);
+}
+
+/// POST /delete_moderator
+///
+/// Not publicly exposed.
+pub fn delete_moderator() -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+    return warp::post()
+        .and(warp::path("delete_moderator"))
+        .and(warp::body::json())
+        .and_then(handlers::delete_moderator);
 }
 
 pub async fn root_html() -> Result<Response, Rejection> {

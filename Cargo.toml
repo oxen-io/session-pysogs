@@ -16,6 +16,7 @@ http = "0.2"
 lazy_static = "1.4"
 rand = "0.8"
 rand_core = "0.5"
+reqwest = { version = "0.11", features = ["json"] }
 rusqlite = { version = "0.24", features = ["bundled"] }
 r2d2_sqlite = "0.17"
 r2d2 = "0.8"
