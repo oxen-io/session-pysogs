@@ -10,7 +10,9 @@ Want to build from source? See [BUILDING.md](https://github.com/nielsandriesse/s
 
 1. Pull in the Session open group server executable:
 
-`apt-get session-open-group-server`
+```
+apt-get session-open-group-server
+```
 
 2. Create a X25519 key pair for your server:
 
