@@ -1,0 +1,15 @@
+[Unit]
+Description=Session Open Group Server
+After=network-online.target
+Wants=network-online.target
+StartLimitInterval=0
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/session-open-group-server
+WorkingDirectory=/usr/local/session-open-group-server
+Restart=on-failure
+RestartSec=4
+
+[Install]
+WantedBy=multi-user.target
