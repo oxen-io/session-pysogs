@@ -8,13 +8,17 @@ Want to build from source? See [BUILDING.md](https://github.com/nielsandriesse/s
 
 ## Installation Instructions
 
-1. Pull in the Session open group server executable:
+| Dependency    | Version       |
+| ------------- |:-------------:|
+| openssl       | 1.1.1         |
+
+### Step 1: Pull in the Session open group server executable:
 
 ```
 apt-get session-open-group-server
 ```
 
-2. Create a X25519 key pair for your server:
+### Step 2: Create an X25519 key pair for your server:
 
 ```
 mkdir /usr/local/session-open-group-server
@@ -22,7 +26,7 @@ openssl genpkey -algorithm x25519 -out /usr/local/session-open-group-server/x255
 openssl pkey -in x25519_private_key.pem -pubout -out /usr/local/session-open-group-server/x25519_public_key.pem
 ```
 
-3. Start the server:
+### Step 3: Start your server:
 
 ```
 systemctl enable session-open-group-server.service
