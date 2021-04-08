@@ -32,3 +32,9 @@ openssl pkey -in /usr/local/session-open-group-server/x25519_private_key.pem -pu
 systemctl enable session-open-group-server.service
 systemctl start session-open-group-server.service
 ```
+
+### Step 4: Check that it's running:
+
+```
+systemctl status session-open-group-server.service
+```
