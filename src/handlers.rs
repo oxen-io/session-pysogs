@@ -127,7 +127,7 @@ pub async fn store_file(
     base64_encoded_bytes: &str, auth_token: &str, pool: &storage::DatabaseConnectionPool,
 ) -> Result<Response, Rejection> {
     // It'd be nice to use the UUID crate for the file ID, but clients want an integer ID
-    let now = chrono::Utc::now().timestamp();
+    let now = chrono::Utc::now().timestamp_nanos();
     // Check authorization level
     let (has_authorization_level, _) =
         has_authorization_level(auth_token, AuthorizationLevel::Basic, pool)?;
