@@ -18,22 +18,7 @@ Want to build from source? See [BUILDING.md](https://github.com/nielsandriesse/s
 apt-get session-open-group-server
 ```
 
-### Step 2: Create an X25519 key pair for your server:
-
-```
-mkdir /usr/local/session-open-group-server
-openssl genpkey -algorithm x25519 -out /usr/local/session-open-group-server/x25519_private_key.pem
-openssl pkey -in /usr/local/session-open-group-server/x25519_private_key.pem -pubout -out /usr/local/session-open-group-server/x25519_public_key.pem
-```
-
-### Step 3: Start your server:
-
-```
-systemctl enable session-open-group-server.service
-systemctl start session-open-group-server.service
-```
-
-### Step 4: Check that it's running:
+### Step 2: Check that it's running:
 
 ```
 systemctl status session-open-group-server.service
