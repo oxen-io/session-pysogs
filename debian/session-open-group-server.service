@@ -6,8 +6,8 @@ StartLimitInterval=0
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/session-open-group-server
-WorkingDirectory=/usr/local/session-open-group-server
+ExecStart=/usr/bin/session-open-group-server
+WorkingDirectory=/var/lib/session-open-group-server
 Restart=on-failure
 RestartSec=4
 

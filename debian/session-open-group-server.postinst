@@ -1,0 +1,7 @@
+#!/bin/bash
+
+#DEBHELPER#
+
+mkdir /var/lib/session-open-group-server
+openssl genpkey -algorithm x25519 -out /var/lib/session-open-group-server/x25519_private_key.pem
+openssl pkey -in /var/lib/session-open-group-server/x25519_private_key.pem -pubout -out /var/lib/session-open-group-server/x25519_public_key.pem
