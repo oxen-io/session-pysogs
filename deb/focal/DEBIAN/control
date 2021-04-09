@@ -1,5 +1,0 @@
-Package: session-open-group-server
-Version: 0.1
-Architecture: all
-Maintainer: Oxen <contact@oxen.io>
-Description: The Session open group server. Use this to run a custom open group.

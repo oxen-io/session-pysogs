@@ -3,6 +3,12 @@ name = "session-open-group-server"
 version = "0.1.0"
 authors = ["Niels Andriesse <niels@oxen.io>"]
 edition = "2018"
+description = "The Session open group server. Use this to run a custom open group."
+license = "MIT"
+
+[package.metadata.deb]
+systemd-units = { enable = true, start = true }
+maintainer-scripts = "debian/"
 
 [dependencies]
 aes-gcm = "0.8"
