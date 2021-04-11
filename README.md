@@ -15,7 +15,7 @@ Want to build from source? See [BUILDING.md](https://github.com/nielsandriesse/s
 ### Step 1: Pull in the Session open group server executable:
 
 ```
-apt-get session-open-group-server
+apt install session-open-group-server
 ```
 
 ### Step 2: Check that it's running:
