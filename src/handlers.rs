@@ -430,7 +430,7 @@ pub fn insert_message(
 /// Returns either the last `limit` messages or all messages since `from_server_id, limited to `limit`.
 pub fn get_messages(
     query_params: HashMap<String, String>, auth_token: &str, pool: &storage::DatabaseConnectionPool,
-) -> Result<Response, Rejection> {
+) -> Result<Vec<models::Message>, Rejection> {
     // Check authorization level
     let (has_authorization_level, _) =
         has_authorization_level(auth_token, AuthorizationLevel::Basic, pool)?;
@@ -480,13 +480,7 @@ pub fn get_messages(
     };
     let messages: Vec<models::Message> = rows.filter_map(|result| result.ok()).collect();
     // Return the messages
-    #[derive(Debug, Deserialize, Serialize)]
-    struct Response {
-        status_code: u16,
-        messages: Vec<models::Message>,
-    }
-    let response = Response { status_code: StatusCode::OK.as_u16(), messages };
-    return Ok(warp::reply::json(&response).into_response());
+    return Ok(messages);
 }
 
 // Message deletion
@@ -554,7 +548,7 @@ pub fn delete_message(
 /// Returns either the last `limit` deleted messages or all deleted messages since `from_server_id, limited to `limit`.
 pub fn get_deleted_messages(
     query_params: HashMap<String, String>, auth_token: &str, pool: &storage::DatabaseConnectionPool,
-) -> Result<Response, Rejection> {
+) -> Result<Vec<i64>, Rejection> {
     // Check authorization level
     let (has_authorization_level, _) =
         has_authorization_level(auth_token, AuthorizationLevel::Basic, pool)?;
@@ -599,13 +593,7 @@ pub fn get_deleted_messages(
     };
     let ids: Vec<i64> = rows.filter_map(|result| result.ok()).collect();
     // Return the IDs
-    #[derive(Debug, Deserialize, Serialize)]
-    struct Response {
-        status_code: u16,
-        ids: Vec<i64>,
-    }
-    let response = Response { status_code: StatusCode::OK.as_u16(), ids };
-    return Ok(warp::reply::json(&response).into_response());
+    return Ok(ids);
 }
 
 // Moderation
@@ -657,7 +645,7 @@ pub async fn delete_moderator(
 /// Returns the full list of moderators.
 pub fn get_moderators(
     auth_token: &str, pool: &storage::DatabaseConnectionPool,
-) -> Result<Response, Rejection> {
+) -> Result<Vec<String>, Rejection> {
     // Check authorization level
     let (has_authorization_level, _) =
         has_authorization_level(auth_token, AuthorizationLevel::Basic, pool)?;
@@ -666,13 +654,7 @@ pub fn get_moderators(
     }
     // Return
     let public_keys = get_moderators_vector(pool)?;
-    #[derive(Debug, Deserialize, Serialize)]
-    struct Response {
-        status_code: u16,
-        moderators: Vec<String>,
-    }
-    let response = Response { status_code: StatusCode::OK.as_u16(), moderators: public_keys };
-    return Ok(warp::reply::json(&response).into_response());
+    return Ok(public_keys);
 }
 
 /// Bans the given `public_key` if the requesting user is a moderator.
@@ -802,8 +784,43 @@ pub fn get_member_count(
     return Ok(warp::reply::json(&response).into_response());
 }
 
-pub fn compact_poll(bodies: Vec<models::CompactPollRequestBody>) -> Result<Response, Rejection> {
-    return Ok(warp::reply::reply().into_response());
+pub fn compact_poll(
+    request_bodies: Vec<models::CompactPollRequestBody>,
+) -> Result<Response, Rejection> {
+    let mut response_bodies: Vec<models::CompactPollResponseBody> = vec![];
+    for request_body in request_bodies {
+        // Unwrap the request body
+        let room_id = request_body.room_id;
+        let auth_token = request_body.auth_token;
+        let from_message_server_id = request_body.from_message_server_id;
+        let from_deletion_server_id = request_body.from_deletion_server_id;
+        // Get the database connection pool
+        let pool = storage::pool_by_room_id(&room_id);
+        // Get the new messages
+        let mut get_messages_query_params: HashMap<String, String> = HashMap::new();
+        get_messages_query_params
+            .insert("from_server_id".to_string(), from_message_server_id.to_string());
+        let messages = get_messages(get_messages_query_params, &auth_token, &pool)?;
+        // Get the new deletions
+        let mut get_deletions_query_params: HashMap<String, String> = HashMap::new();
+        get_deletions_query_params
+            .insert("from_server_id".to_string(), from_deletion_server_id.to_string());
+        let deletions = get_deleted_messages(get_deletions_query_params, &auth_token, &pool)?;
+        // Get the moderators
+        let moderators = get_moderators(&auth_token, &pool)?;
+        // Add to the response
+        let response_body =
+            models::CompactPollResponseBody { room_id, deletions, messages, moderators };
+        response_bodies.push(response_body);
+    }
+    // Return
+    #[derive(Debug, Deserialize, Serialize)]
+    struct Response {
+        status_code: u16,
+        results: Vec<models::CompactPollResponseBody>,
+    }
+    let response = Response { status_code: StatusCode::OK.as_u16(), results: response_bodies };
+    return Ok(warp::reply::json(&response).into_response());
 }
 
 // Utilities
