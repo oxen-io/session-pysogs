@@ -121,15 +121,37 @@ async fn handle_get_request(
     match path {
         "messages" => {
             reject_if_file_server_mode(path)?;
-            return handlers::get_messages(query_params, &auth_token, &pool);
+            let messages = handlers::get_messages(query_params, &auth_token, &pool)?;
+            #[derive(Debug, Deserialize, Serialize)]
+            struct Response {
+                status_code: u16,
+                messages: Vec<models::Message>,
+            }
+            let response = Response { status_code: StatusCode::OK.as_u16(), messages };
+            return Ok(warp::reply::json(&response).into_response());
         }
         "deleted_messages" => {
             reject_if_file_server_mode(path)?;
-            return handlers::get_deleted_messages(query_params, &auth_token, &pool);
+            let deletions = handlers::get_deleted_messages(query_params, &auth_token, &pool)?;
+            #[derive(Debug, Deserialize, Serialize)]
+            struct Response {
+                status_code: u16,
+                ids: Vec<i64>,
+            }
+            let response = Response { status_code: StatusCode::OK.as_u16(), ids: deletions };
+            return Ok(warp::reply::json(&response).into_response());
         }
         "moderators" => {
             reject_if_file_server_mode(path)?;
-            return handlers::get_moderators(&auth_token, &pool);
+            let public_keys = handlers::get_moderators(&auth_token, &pool)?;
+            #[derive(Debug, Deserialize, Serialize)]
+            struct Response {
+                status_code: u16,
+                moderators: Vec<String>,
+            }
+            let response =
+                Response { status_code: StatusCode::OK.as_u16(), moderators: public_keys };
+            return Ok(warp::reply::json(&response).into_response());
         }
         "block_list" => {
             reject_if_file_server_mode(path)?;
@@ -150,6 +172,22 @@ async fn handle_post_request(
     rpc_call: RpcCall, path: &str, auth_token: Option<String>,
     pool: &storage::DatabaseConnectionPool,
 ) -> Result<Response, Rejection> {
+    // Handle routes that don't require authorization first
+    if path == "compact_poll" {
+        reject_if_file_server_mode(path)?;
+        let bodies: Vec<models::CompactPollRequestBody> = match serde_json::from_str(&rpc_call.body)
+        {
+            Ok(bodies) => bodies,
+            Err(e) => {
+                warn!(
+                    "Couldn't parse compact poll request bodies from: {} due to error: {}.",
+                    rpc_call.body, e
+                );
+                return Err(warp::reject::custom(Error::InvalidRpcCall));
+            }
+        };
+        return handlers::compact_poll(bodies);
+    }
     // Check that the auth token is present
     let auth_token = auth_token.ok_or(warp::reject::custom(Error::NoAuthToken))?;
     // Switch on the path
