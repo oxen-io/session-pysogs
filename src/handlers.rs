@@ -802,6 +802,10 @@ pub fn get_member_count(
     return Ok(warp::reply::json(&response).into_response());
 }
 
+pub fn compact_poll(bodies: Vec<models::CompactPollRequestBody>) -> Result<Response, Rejection> {
+    return Ok(warp::reply::reply().into_response());
+}
+
 // Utilities
 
 fn get_pending_tokens(

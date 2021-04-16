@@ -150,6 +150,22 @@ async fn handle_post_request(
     rpc_call: RpcCall, path: &str, auth_token: Option<String>,
     pool: &storage::DatabaseConnectionPool,
 ) -> Result<Response, Rejection> {
+    // Handle routes that don't require authorization first
+    if path == "compact_poll" {
+        reject_if_file_server_mode(path)?;
+        let bodies: Vec<models::CompactPollRequestBody> = match serde_json::from_str(&rpc_call.body)
+        {
+            Ok(bodies) => bodies,
+            Err(e) => {
+                warn!(
+                    "Couldn't parse compact poll request bodies from: {} due to error: {}.",
+                    rpc_call.body, e
+                );
+                return Err(warp::reject::custom(Error::InvalidRpcCall));
+            }
+        };
+        return handlers::compact_poll(bodies);
+    }
     // Check that the auth token is present
     let auth_token = auth_token.ok_or(warp::reject::custom(Error::NoAuthToken))?;
     // Switch on the path
