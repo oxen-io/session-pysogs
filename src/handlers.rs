@@ -790,21 +790,27 @@ pub fn compact_poll(
     let mut response_bodies: Vec<models::CompactPollResponseBody> = vec![];
     for request_body in request_bodies {
         // Unwrap the request body
-        let room_id = request_body.room_id;
-        let auth_token = request_body.auth_token;
-        let from_message_server_id = request_body.from_message_server_id;
-        let from_deletion_server_id = request_body.from_deletion_server_id;
+        let models::CompactPollRequestBody {
+            room_id,
+            auth_token,
+            from_message_server_id,
+            from_deletion_server_id,
+        } = request_body;
         // Get the database connection pool
         let pool = storage::pool_by_room_id(&room_id);
         // Get the new messages
         let mut get_messages_query_params: HashMap<String, String> = HashMap::new();
-        get_messages_query_params
-            .insert("from_server_id".to_string(), from_message_server_id.to_string());
+        if let Some(from_message_server_id) = from_message_server_id {
+            get_messages_query_params
+                .insert("from_server_id".to_string(), from_message_server_id.to_string());
+        }
         let messages = get_messages(get_messages_query_params, &auth_token, &pool)?;
         // Get the new deletions
         let mut get_deletions_query_params: HashMap<String, String> = HashMap::new();
-        get_deletions_query_params
-            .insert("from_server_id".to_string(), from_deletion_server_id.to_string());
+        if let Some(from_deletion_server_id) = from_deletion_server_id {
+            get_deletions_query_params
+                .insert("from_server_id".to_string(), from_deletion_server_id.to_string());
+        }
         let deletions = get_deleted_messages(get_deletions_query_params, &auth_token, &pool)?;
         // Get the moderators
         let moderators = get_moderators(&auth_token, &pool)?;

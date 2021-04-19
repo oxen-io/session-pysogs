@@ -31,8 +31,8 @@ pub struct ChangeModeratorRequestBody {
 pub struct CompactPollRequestBody {
     pub room_id: String,
     pub auth_token: String,
-    pub from_deletion_server_id: i64,
-    pub from_message_server_id: i64,
+    pub from_deletion_server_id: Option<i64>,
+    pub from_message_server_id: Option<i64>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
