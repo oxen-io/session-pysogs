@@ -51,10 +51,7 @@ pub async fn handle_rpc_call(rpc_call: RpcCall) -> Result<Response, Rejection> {
     // Switch on the HTTP method
     match rpc_call.method.as_ref() {
         "GET" => return handle_get_request(rpc_call, &path, auth_token, query_params).await,
-        "POST" => {
-            let pool = get_pool_for_room(&rpc_call)?;
-            return handle_post_request(rpc_call, &path, auth_token, &pool).await;
-        }
+        "POST" => return handle_post_request(rpc_call, &path, auth_token).await,
         "DELETE" => {
             let pool = get_pool_for_room(&rpc_call)?;
             return handle_delete_request(&path, auth_token, &pool);
@@ -170,26 +167,29 @@ async fn handle_get_request(
 
 async fn handle_post_request(
     rpc_call: RpcCall, path: &str, auth_token: Option<String>,
-    pool: &storage::DatabaseConnectionPool,
 ) -> Result<Response, Rejection> {
     // Handle routes that don't require authorization first
     if path == "compact_poll" {
         reject_if_file_server_mode(path)?;
-        let bodies: Vec<models::CompactPollRequestBody> = match serde_json::from_str(&rpc_call.body)
-        {
+        #[derive(Debug, Deserialize, Serialize)]
+        struct CompactPollRequestBodyWrapper {
+            requests: Vec<models::CompactPollRequestBody>,
+        }
+        let wrapper: CompactPollRequestBodyWrapper = match serde_json::from_str(&rpc_call.body) {
             Ok(bodies) => bodies,
             Err(e) => {
                 warn!(
-                    "Couldn't parse compact poll request bodies from: {} due to error: {}.",
+                    "Couldn't parse compact poll request body wrapper from: {} due to error: {}.",
                     rpc_call.body, e
                 );
                 return Err(warp::reject::custom(Error::InvalidRpcCall));
             }
         };
-        return handlers::compact_poll(bodies);
+        return handlers::compact_poll(wrapper.requests);
     }
     // Check that the auth token is present
     let auth_token = auth_token.ok_or(warp::reject::custom(Error::NoAuthToken))?;
+    let pool = get_pool_for_room(&rpc_call)?;
     // Switch on the path
     match path {
         "messages" => {
@@ -201,7 +201,7 @@ async fn handle_post_request(
                     return Err(warp::reject::custom(Error::InvalidRpcCall));
                 }
             };
-            return handlers::insert_message(message, &auth_token, pool);
+            return handlers::insert_message(message, &auth_token, &pool);
         }
         "block_list" => {
             reject_if_file_server_mode(path)?;
@@ -216,7 +216,7 @@ async fn handle_post_request(
                     return Err(warp::reject::custom(Error::InvalidRpcCall));
                 }
             };
-            return handlers::ban(&json.public_key, &auth_token, pool);
+            return handlers::ban(&json.public_key, &auth_token, &pool);
         }
         "claim_auth_token" => {
             #[derive(Debug, Deserialize)]
@@ -230,7 +230,7 @@ async fn handle_post_request(
                     return Err(warp::reject::custom(Error::InvalidRpcCall));
                 }
             };
-            return handlers::claim_auth_token(&json.public_key, &auth_token, pool);
+            return handlers::claim_auth_token(&json.public_key, &auth_token, &pool);
         }
         "files" => {
             #[derive(Debug, Deserialize)]
@@ -244,7 +244,7 @@ async fn handle_post_request(
                     return Err(warp::reject::custom(Error::InvalidRpcCall));
                 }
             };
-            return handlers::store_file(&json.file, &auth_token, pool).await;
+            return handlers::store_file(&json.file, &auth_token, &pool).await;
         }
         _ => {
             warn!("Ignoring RPC call with invalid or unused endpoint: {}.", path);
