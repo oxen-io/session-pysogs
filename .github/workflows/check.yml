@@ -1,4 +1,4 @@
-name: Check build, run tests & check formatting
+name: Check
 
 on: [push, pull_request]
 
