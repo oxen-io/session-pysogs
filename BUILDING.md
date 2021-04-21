@@ -54,3 +54,7 @@ If you want to run with TLS enabled:
 | tls-private-key | tls_private_key.pem | Path to TLS private key |
 
 Note that the default is * not * to run in TLS mode. This is because normally the server communicates through [onion requests](https://arxiv.org/pdf/2002.04609.pdf), eliminating the need for TLS.
+
+## Building a DEB
+
+To build a DEB, just run `cargo deb` from the project root directory. If you don't yet have `cargo-deb` installed you can get it by running: `cargo install cargo-deb`.
