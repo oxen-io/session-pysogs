@@ -71,8 +71,9 @@ fn test_authorization() {
     let test_room_id = "test_room";
     let pool = storage::pool_by_room_id(&test_room_id);
     // Get an auth token
-    let (_, hex_user_public_key) = get_auth_token(); // This tests claiming a token internally
-                                                     // Try to claim an incorrect token
+    // This tests claiming a token internally
+    let (_, hex_user_public_key) = get_auth_token(); 
+    // Try to claim an incorrect token
     let mut incorrect_token = [0u8; 48];
     thread_rng().fill(&mut incorrect_token[..]);
     let hex_incorrect_token = hex::encode(incorrect_token);
