@@ -19,13 +19,28 @@ impl Message {
 pub struct Room {
     pub id: String,
     pub name: String,
-    pub image_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct ChangeModeratorRequestBody {
     pub public_key: String,
     pub room_id: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct CompactPollRequestBody {
+    pub room_id: String,
+    pub auth_token: String,
+    pub from_deletion_server_id: Option<i64>,
+    pub from_message_server_id: Option<i64>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct CompactPollResponseBody {
+    pub room_id: String,
+    pub deletions: Vec<i64>,
+    pub messages: Vec<Message>,
+    pub moderators: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

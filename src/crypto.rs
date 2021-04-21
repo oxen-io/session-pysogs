@@ -5,6 +5,7 @@ use std::sync::Mutex;
 use aes_gcm::aead::{generic_array::GenericArray, Aead, NewAead};
 use aes_gcm::Aes256Gcm;
 use hmac::{Hmac, Mac, NewMac};
+use log::{error, warn};
 use rand::{thread_rng, Rng};
 use rand_core::OsRng;
 use sha2::Sha256;
@@ -44,7 +45,7 @@ pub fn get_x25519_symmetric_key(
     public_key: &[u8], private_key: &x25519_dalek::StaticSecret,
 ) -> Result<Vec<u8>, warp::reject::Rejection> {
     if public_key.len() != 32 {
-        println!(
+        error!(
             "Couldn't create symmetric key using public key of invalid length: {}.",
             hex::encode(public_key)
         );
@@ -71,7 +72,7 @@ pub fn encrypt_aes_gcm(
             return Ok(iv_and_ciphertext);
         }
         Err(e) => {
-            println!("Couldn't encrypt ciphertext due to error: {}.", e);
+            error!("Couldn't encrypt ciphertext due to error: {}.", e);
             return Err(warp::reject::custom(Error::DecryptionFailed));
         }
     };
@@ -81,7 +82,7 @@ pub fn decrypt_aes_gcm(
     iv_and_ciphertext: &[u8], symmetric_key: &[u8],
 ) -> Result<Vec<u8>, warp::reject::Rejection> {
     if iv_and_ciphertext.len() < IV_SIZE {
-        println!("Ignoring ciphertext of invalid size: {}.", iv_and_ciphertext.len());
+        warn!("Ignoring ciphertext of invalid size: {}.", iv_and_ciphertext.len());
         return Err(warp::reject::custom(Error::DecryptionFailed));
     }
     let iv: [u8; IV_SIZE] = iv_and_ciphertext[0..IV_SIZE].try_into().unwrap(); // Safe because we know iv_and_ciphertext has a length of at least IV_SIZE bytes
@@ -90,7 +91,7 @@ pub fn decrypt_aes_gcm(
     match cipher.decrypt(GenericArray::from_slice(&iv), &*ciphertext) {
         Ok(plaintext) => return Ok(plaintext),
         Err(e) => {
-            println!("Couldn't decrypt ciphertext due to error: {}.", e);
+            error!("Couldn't decrypt ciphertext due to error: {}.", e);
             return Err(warp::reject::custom(Error::DecryptionFailed));
         }
     };

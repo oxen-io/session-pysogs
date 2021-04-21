@@ -1,13 +1,14 @@
 use std::collections::HashMap;
 use std::convert::TryInto;
-use std::fs;
-use std::io::prelude::*;
 use std::path::Path;
 
 use chrono;
+use log::{error, info, warn};
 use rand::{thread_rng, Rng};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
+use tokio::fs::File;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use warp::{http::StatusCode, reply::Reply, reply::Response, Rejection};
 
 use super::crypto;
@@ -38,14 +39,14 @@ pub async fn create_room(room: models::Room) -> Result<Response, Rejection> {
     match conn.execute(&stmt, params![&room.id, &room.name]) {
         Ok(_) => (),
         Err(e) => {
-            println!("Couldn't create room due to error: {}.", e);
+            error!("Couldn't create room due to error: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     }
     // Set up the database
     storage::create_database_if_needed(&room.id);
     // Return
-    println!("Added room with ID: {}", &room.id);
+    info!("Added room with ID: {}", &room.id);
     let json = models::StatusCode { status_code: StatusCode::OK.as_u16() };
     return Ok(warp::reply::json(&json).into_response());
 }
@@ -60,12 +61,13 @@ pub async fn delete_room(id: String) -> Result<Response, Rejection> {
     match conn.execute(&stmt, params![&id]) {
         Ok(_) => (),
         Err(e) => {
-            println!("Couldn't delete room due to error: {}.", e);
+            error!("Couldn't delete room due to error: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     }
+    // Don't auto-delete the database file (the server operator might want to keep it around)
     // Return
-    println!("Deleted room with ID: {}", &id);
+    info!("Deleted room with ID: {}", &id);
     let json = models::StatusCode { status_code: StatusCode::OK.as_u16() };
     return Ok(warp::reply::json(&json).into_response());
 }
@@ -75,10 +77,9 @@ pub fn get_room(room_id: &str) -> Result<Response, Rejection> {
     let pool = &storage::MAIN_POOL;
     let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     // Get the room info if possible
-    let raw_query =
-        format!("SELECT id, name, image_id FROM {} where id = (?1)", storage::MAIN_TABLE);
+    let raw_query = format!("SELECT id, name FROM {} where id = (?1)", storage::MAIN_TABLE);
     let room = match conn.query_row(&raw_query, params![room_id], |row| {
-        Ok(models::Room { id: row.get(0)?, name: row.get(1)?, image_id: row.get(2).ok() })
+        Ok(models::Room { id: row.get(0)?, name: row.get(1)? })
     }) {
         Ok(info) => info,
         Err(_) => return Err(warp::reject::custom(Error::NoSuchRoom)),
@@ -98,14 +99,14 @@ pub fn get_all_rooms() -> Result<Response, Rejection> {
     let pool = &storage::MAIN_POOL;
     let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     // Get the room info if possible
-    let raw_query = format!("SELECT id, name, image_id FROM {}", storage::MAIN_TABLE);
+    let raw_query = format!("SELECT id, name FROM {}", storage::MAIN_TABLE);
     let mut query = conn.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
-    let rows = match query.query_map(params![], |row| {
-        Ok(models::Room { id: row.get(0)?, name: row.get(1)?, image_id: row.get(2).ok() })
-    }) {
+    let rows = match query
+        .query_map(params![], |row| Ok(models::Room { id: row.get(0)?, name: row.get(1)? }))
+    {
         Ok(rows) => rows,
         Err(e) => {
-            println!("Couldn't get rooms due to error: {}.", e);
+            error!("Couldn't get rooms due to error: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
@@ -122,11 +123,11 @@ pub fn get_all_rooms() -> Result<Response, Rejection> {
 
 // Files
 
-pub fn store_file(
+pub async fn store_file(
     base64_encoded_bytes: &str, auth_token: &str, pool: &storage::DatabaseConnectionPool,
 ) -> Result<Response, Rejection> {
     // It'd be nice to use the UUID crate for the file ID, but clients want an integer ID
-    let now = chrono::Utc::now().timestamp();
+    let now = chrono::Utc::now().timestamp_nanos();
     // Check authorization level
     let (has_authorization_level, _) =
         has_authorization_level(auth_token, AuthorizationLevel::Basic, pool)?;
@@ -137,7 +138,7 @@ pub fn store_file(
     let bytes = match base64::decode(base64_encoded_bytes) {
         Ok(bytes) => bytes,
         Err(e) => {
-            println!("Couldn't parse bytes from invalid base64 encoding due to error: {}.", e);
+            error!("Couldn't parse bytes from invalid base64 encoding due to error: {}.", e);
             return Err(warp::reject::custom(Error::ValidationFailed));
         }
     };
@@ -145,35 +146,33 @@ pub fn store_file(
     // We do this * before * storing the actual file, so that in case something goes
     // wrong we're not left with files that'll never be pruned.
     let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
+    // INSERT rather than REPLACE so that on the off chance there's already a file with this exact
+    // id (i.e. timestamp) we simply error out and get the client to retry.
     let stmt = format!("INSERT INTO {} (id, timestamp) VALUES (?1, ?2)", storage::FILES_TABLE);
     let _ = match conn.execute(&stmt, params![now, now]) {
         Ok(rows) => rows,
         Err(e) => {
-            println!("Couldn't insert file record due to error: {}.", e);
+            error!("Couldn't insert file record due to error: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
     // Write to file
-    let mut pos = 0;
     let raw_path = format!("files/{}", &now);
     let path = Path::new(&raw_path);
-    let mut buffer = match fs::File::create(path) {
-        Ok(buffer) => buffer,
+    let mut file = match File::create(path).await {
+        Ok(file) => file,
         Err(e) => {
-            println!("Couldn't store file due to error: {}.", e);
+            error!("Couldn't store file due to error: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
-    while pos < bytes.len() {
-        let count = match buffer.write(&bytes[pos..]) {
-            Ok(count) => count,
-            Err(e) => {
-                println!("Couldn't store file due to error: {}.", e);
-                return Err(warp::reject::custom(Error::DatabaseFailedInternally));
-            }
-        };
-        pos += count;
-    }
+    match file.write_all(&bytes).await {
+        Ok(_) => (),
+        Err(e) => {
+            error!("Couldn't store file due to error: {}.", e);
+            return Err(warp::reject::custom(Error::DatabaseFailedInternally));
+        }
+    };
     // Return
     #[derive(Debug, Deserialize, Serialize)]
     struct Response {
@@ -184,7 +183,7 @@ pub fn store_file(
     return Ok(warp::reply::json(&response).into_response());
 }
 
-pub fn get_file(
+pub async fn get_file(
     id: i64, auth_token: &str, pool: &storage::DatabaseConnectionPool,
 ) -> Result<GenericStringResponse, Rejection> {
     // Doesn't return a response directly for testing purposes
@@ -195,12 +194,20 @@ pub fn get_file(
         return Err(warp::reject::custom(Error::Unauthorized));
     }
     // Try to read the file
+    let mut bytes = vec![];
     let raw_path = format!("files/{}", id);
     let path = Path::new(&raw_path);
-    let bytes = match fs::read(path) {
-        Ok(bytes) => bytes,
+    let mut file = match File::open(path).await {
+        Ok(file) => file,
         Err(e) => {
-            println!("Couldn't read file due to error: {}.", e);
+            error!("Couldn't read file due to error: {}.", e);
+            return Err(warp::reject::custom(Error::ValidationFailed));
+        }
+    };
+    match file.read_to_end(&mut bytes).await {
+        Ok(_) => (),
+        Err(e) => {
+            error!("Couldn't read file due to error: {}.", e);
             return Err(warp::reject::custom(Error::ValidationFailed));
         }
     };
@@ -214,14 +221,22 @@ pub fn get_file(
     return Ok(json);
 }
 
-pub fn get_group_image(room_id: &str) -> Result<Response, Rejection> {
+pub async fn get_group_image(room_id: &str) -> Result<Response, Rejection> {
     // Try to read the file
+    let mut bytes = vec![];
     let raw_path = format!("files/{}", room_id);
     let path = Path::new(&raw_path);
-    let bytes = match fs::read(path) {
-        Ok(bytes) => bytes,
+    let mut file = match File::open(path).await {
+        Ok(file) => file,
         Err(e) => {
-            println!("Couldn't read file due to error: {}.", e);
+            error!("Couldn't read file due to error: {}.", e);
+            return Err(warp::reject::custom(Error::ValidationFailed));
+        }
+    };
+    match file.read_to_end(&mut bytes).await {
+        Ok(_) => (),
+        Err(e) => {
+            error!("Couldn't read file due to error: {}.", e);
             return Err(warp::reject::custom(Error::ValidationFailed));
         }
     };
@@ -246,7 +261,7 @@ pub fn get_auth_token_challenge(
         query_params.get("public_key").ok_or(warp::reject::custom(Error::InvalidRpcCall))?;
     // Validate the public key
     if !is_valid_public_key(hex_public_key) {
-        println!("Ignoring challenge request for invalid public key: {}.", hex_public_key);
+        warn!("Ignoring challenge request for invalid public key: {}.", hex_public_key);
         return Err(warp::reject::custom(Error::ValidationFailed));
     }
     // Convert the public key to bytes and cut off the version byte
@@ -277,7 +292,7 @@ pub fn get_auth_token_challenge(
     let _ = match conn.execute(&stmt, params![hex_public_key, now, token]) {
         Ok(rows) => rows,
         Err(e) => {
-            println!("Couldn't insert pending token due to error: {}.", e);
+            error!("Couldn't insert pending token due to error: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
@@ -295,12 +310,12 @@ pub fn claim_auth_token(
 ) -> Result<Response, Rejection> {
     // Validate the public key
     if !is_valid_public_key(&public_key) {
-        println!("Ignoring claim token request for invalid public key.");
+        warn!("Ignoring claim token request for invalid public key.");
         return Err(warp::reject::custom(Error::ValidationFailed));
     }
     // Validate the token
     if hex::decode(auth_token).is_err() {
-        println!("Ignoring claim token request for invalid token.");
+        warn!("Ignoring claim token request for invalid token.");
         return Err(warp::reject::custom(Error::ValidationFailed));
     }
     // Get a database connection
@@ -322,7 +337,7 @@ pub fn claim_auth_token(
     match conn.execute(&stmt, params![public_key, hex::encode(token)]) {
         Ok(_) => (),
         Err(e) => {
-            println!("Couldn't insert token due to error: {}.", e);
+            error!("Couldn't insert token due to error: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     }
@@ -330,7 +345,7 @@ pub fn claim_auth_token(
     let stmt = format!("DELETE FROM {} WHERE public_key = (?1)", storage::PENDING_TOKENS_TABLE);
     match conn.execute(&stmt, params![public_key]) {
         Ok(_) => (),
-        Err(e) => println!("Couldn't delete pending tokens due to error: {}.", e), // It's not catastrophic if this fails
+        Err(e) => error!("Couldn't delete pending tokens due to error: {}.", e), // It's not catastrophic if this fails
     };
     // Return
     let json = models::StatusCode { status_code: StatusCode::OK.as_u16() };
@@ -353,7 +368,7 @@ pub fn delete_auth_token(
     match conn.execute(&stmt, params![requesting_public_key]) {
         Ok(_) => (),
         Err(e) => {
-            println!("Couldn't delete token due to error: {}.", e);
+            error!("Couldn't delete token due to error: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
@@ -370,7 +385,7 @@ pub fn insert_message(
 ) -> Result<Response, Rejection> {
     // Validate the message
     if !message.is_valid() {
-        println!("Ignoring invalid message.");
+        warn!("Ignoring invalid message.");
         return Err(warp::reject::custom(Error::ValidationFailed));
     }
     // Check authorization level
@@ -393,7 +408,7 @@ pub fn insert_message(
     ) {
         Ok(_) => (),
         Err(e) => {
-            println!("Couldn't insert message due to error: {}.", e);
+            error!("Couldn't insert message due to error: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     }
@@ -415,7 +430,7 @@ pub fn insert_message(
 /// Returns either the last `limit` messages or all messages since `from_server_id, limited to `limit`.
 pub fn get_messages(
     query_params: HashMap<String, String>, auth_token: &str, pool: &storage::DatabaseConnectionPool,
-) -> Result<Response, Rejection> {
+) -> Result<Vec<models::Message>, Rejection> {
     // Check authorization level
     let (has_authorization_level, _) =
         has_authorization_level(auth_token, AuthorizationLevel::Basic, pool)?;
@@ -459,19 +474,13 @@ pub fn get_messages(
     }) {
         Ok(rows) => rows,
         Err(e) => {
-            println!("Couldn't get messages due to error: {}.", e);
+            error!("Couldn't get messages due to error: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
     let messages: Vec<models::Message> = rows.filter_map(|result| result.ok()).collect();
     // Return the messages
-    #[derive(Debug, Deserialize, Serialize)]
-    struct Response {
-        status_code: u16,
-        messages: Vec<models::Message>,
-    }
-    let response = Response { status_code: StatusCode::OK.as_u16(), messages };
-    return Ok(warp::reply::json(&response).into_response());
+    return Ok(messages);
 }
 
 // Message deletion
@@ -495,7 +504,7 @@ pub fn delete_message(
         let rows = match query.query_map(params![row_id], |row| Ok(row.get(0)?)) {
             Ok(rows) => rows,
             Err(e) => {
-                println!("Couldn't delete message due to error: {}.", e);
+                error!("Couldn't delete message due to error: {}.", e);
                 return Err(warp::reject::custom(Error::DatabaseFailedInternally));
             }
         };
@@ -514,7 +523,7 @@ pub fn delete_message(
     let count = match tx.execute(&stmt, params![row_id]) {
         Ok(count) => count,
         Err(e) => {
-            println!("Couldn't delete message due to error: {}.", e);
+            error!("Couldn't delete message due to error: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
@@ -524,7 +533,7 @@ pub fn delete_message(
         match tx.execute(&stmt, params![row_id]) {
             Ok(_) => (),
             Err(e) => {
-                println!("Couldn't delete message due to error: {}.", e);
+                error!("Couldn't delete message due to error: {}.", e);
                 return Err(warp::reject::custom(Error::DatabaseFailedInternally));
             }
         };
@@ -539,7 +548,7 @@ pub fn delete_message(
 /// Returns either the last `limit` deleted messages or all deleted messages since `from_server_id, limited to `limit`.
 pub fn get_deleted_messages(
     query_params: HashMap<String, String>, auth_token: &str, pool: &storage::DatabaseConnectionPool,
-) -> Result<Response, Rejection> {
+) -> Result<Vec<i64>, Rejection> {
     // Check authorization level
     let (has_authorization_level, _) =
         has_authorization_level(auth_token, AuthorizationLevel::Basic, pool)?;
@@ -578,19 +587,13 @@ pub fn get_deleted_messages(
     let rows = match query.query_map(params![from_server_id, limit], |row| Ok(row.get(0)?)) {
         Ok(rows) => rows,
         Err(e) => {
-            println!("Couldn't query database due to error: {}.", e);
+            error!("Couldn't query database due to error: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
     let ids: Vec<i64> = rows.filter_map(|result| result.ok()).collect();
     // Return the IDs
-    #[derive(Debug, Deserialize, Serialize)]
-    struct Response {
-        status_code: u16,
-        ids: Vec<i64>,
-    }
-    let response = Response { status_code: StatusCode::OK.as_u16(), ids };
-    return Ok(warp::reply::json(&response).into_response());
+    return Ok(ids);
 }
 
 // Moderation
@@ -607,12 +610,12 @@ pub async fn add_moderator(
     match conn.execute(&stmt, params![&body.public_key]) {
         Ok(_) => (),
         Err(e) => {
-            println!("Couldn't make public key moderator due to error: {}.", e);
+            error!("Couldn't make public key moderator due to error: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     }
     // Return
-    println!("Added moderator: {} to room with ID: {}", &body.public_key, &body.room_id);
+    info!("Added moderator: {} to room with ID: {}", &body.public_key, &body.room_id);
     let json = models::StatusCode { status_code: StatusCode::OK.as_u16() };
     return Ok(warp::reply::json(&json).into_response());
 }
@@ -629,12 +632,12 @@ pub async fn delete_moderator(
     match conn.execute(&stmt, params![&body.public_key]) {
         Ok(_) => (),
         Err(e) => {
-            println!("Couldn't delete moderator due to error: {}.", e);
+            error!("Couldn't delete moderator due to error: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     }
     // Return
-    println!("Deleted moderator: {} from room with ID: {}", &body.public_key, &body.room_id);
+    info!("Deleted moderator: {} from room with ID: {}", &body.public_key, &body.room_id);
     let json = models::StatusCode { status_code: StatusCode::OK.as_u16() };
     return Ok(warp::reply::json(&json).into_response());
 }
@@ -642,7 +645,7 @@ pub async fn delete_moderator(
 /// Returns the full list of moderators.
 pub fn get_moderators(
     auth_token: &str, pool: &storage::DatabaseConnectionPool,
-) -> Result<Response, Rejection> {
+) -> Result<Vec<String>, Rejection> {
     // Check authorization level
     let (has_authorization_level, _) =
         has_authorization_level(auth_token, AuthorizationLevel::Basic, pool)?;
@@ -651,13 +654,7 @@ pub fn get_moderators(
     }
     // Return
     let public_keys = get_moderators_vector(pool)?;
-    #[derive(Debug, Deserialize, Serialize)]
-    struct Response {
-        status_code: u16,
-        moderators: Vec<String>,
-    }
-    let response = Response { status_code: StatusCode::OK.as_u16(), moderators: public_keys };
-    return Ok(warp::reply::json(&response).into_response());
+    return Ok(public_keys);
 }
 
 /// Bans the given `public_key` if the requesting user is a moderator.
@@ -666,7 +663,7 @@ pub fn ban(
 ) -> Result<Response, Rejection> {
     // Validate the public key
     if !is_valid_public_key(&public_key) {
-        println!("Ignoring ban request for invalid public key.");
+        warn!("Ignoring ban request for invalid public key.");
         return Err(warp::reject::custom(Error::ValidationFailed));
     }
     // Check authorization level
@@ -686,7 +683,7 @@ pub fn ban(
     match conn.execute(&stmt, params![public_key]) {
         Ok(_) => (),
         Err(e) => {
-            println!("Couldn't ban public key due to error: {}.", e);
+            error!("Couldn't ban public key due to error: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
@@ -701,7 +698,7 @@ pub fn unban(
 ) -> Result<Response, Rejection> {
     // Validate the public key
     if !is_valid_public_key(&public_key) {
-        println!("Ignoring unban request for invalid public key.");
+        warn!("Ignoring unban request for invalid public key.");
         return Err(warp::reject::custom(Error::ValidationFailed));
     }
     // Check authorization level
@@ -721,7 +718,7 @@ pub fn unban(
     match conn.execute(&stmt, params![public_key]) {
         Ok(_) => (),
         Err(e) => {
-            println!("Couldn't unban public key due to error: {}.", e);
+            error!("Couldn't unban public key due to error: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
@@ -770,7 +767,7 @@ pub fn get_member_count(
     let rows = match query.query_map(params![], |row| Ok(row.get(0)?)) {
         Ok(rows) => rows,
         Err(e) => {
-            println!("Couldn't query database due to error: {}.", e);
+            error!("Couldn't query database due to error: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
@@ -784,6 +781,51 @@ pub fn get_member_count(
     }
     let response =
         Response { status_code: StatusCode::OK.as_u16(), member_count: public_key_count };
+    return Ok(warp::reply::json(&response).into_response());
+}
+
+pub fn compact_poll(
+    request_bodies: Vec<models::CompactPollRequestBody>,
+) -> Result<Response, Rejection> {
+    let mut response_bodies: Vec<models::CompactPollResponseBody> = vec![];
+    for request_body in request_bodies {
+        // Unwrap the request body
+        let models::CompactPollRequestBody {
+            room_id,
+            auth_token,
+            from_message_server_id,
+            from_deletion_server_id,
+        } = request_body;
+        // Get the database connection pool
+        let pool = storage::pool_by_room_id(&room_id);
+        // Get the new messages
+        let mut get_messages_query_params: HashMap<String, String> = HashMap::new();
+        if let Some(from_message_server_id) = from_message_server_id {
+            get_messages_query_params
+                .insert("from_server_id".to_string(), from_message_server_id.to_string());
+        }
+        let messages = get_messages(get_messages_query_params, &auth_token, &pool)?;
+        // Get the new deletions
+        let mut get_deletions_query_params: HashMap<String, String> = HashMap::new();
+        if let Some(from_deletion_server_id) = from_deletion_server_id {
+            get_deletions_query_params
+                .insert("from_server_id".to_string(), from_deletion_server_id.to_string());
+        }
+        let deletions = get_deleted_messages(get_deletions_query_params, &auth_token, &pool)?;
+        // Get the moderators
+        let moderators = get_moderators(&auth_token, &pool)?;
+        // Add to the response
+        let response_body =
+            models::CompactPollResponseBody { room_id, deletions, messages, moderators };
+        response_bodies.push(response_body);
+    }
+    // Return
+    #[derive(Debug, Deserialize, Serialize)]
+    struct Response {
+        status_code: u16,
+        results: Vec<models::CompactPollResponseBody>,
+    }
+    let response = Response { status_code: StatusCode::OK.as_u16(), results: response_bodies };
     return Ok(warp::reply::json(&response).into_response());
 }
 
@@ -805,7 +847,7 @@ fn get_pending_tokens(
     {
         Ok(rows) => rows,
         Err(e) => {
-            println!("Couldn't get pending tokens due to error: {}.", e);
+            error!("Couldn't get pending tokens due to error: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
@@ -822,7 +864,7 @@ fn get_moderators_vector(pool: &storage::DatabaseConnectionPool) -> Result<Vec<S
     let rows = match query.query_map(params![], |row| Ok(row.get(0)?)) {
         Ok(rows) => rows,
         Err(e) => {
-            println!("Couldn't query database due to error: {}.", e);
+            error!("Couldn't query database due to error: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
@@ -848,7 +890,7 @@ fn get_banned_public_keys_vector(
     let rows = match query.query_map(params![], |row| Ok(row.get(0)?)) {
         Ok(rows) => rows,
         Err(e) => {
-            println!("Couldn't query database due to error: {}.", e);
+            error!("Couldn't query database due to error: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
@@ -885,7 +927,7 @@ fn get_public_key_for_auth_token(
     let rows = match query.query_map(params![auth_token], |row| Ok(row.get(0)?)) {
         Ok(rows) => rows,
         Err(e) => {
-            println!("Couldn't query database due to error: {}.", e);
+            error!("Couldn't query database due to error: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };

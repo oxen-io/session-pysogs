@@ -51,5 +51,5 @@ pub fn init(log_file: Option<String>) {
 
     let config = config_builder.build(root).unwrap();
 
-    let _ = log4rs::init_config(config).expect("Error initializing log configuration.");
+    let _ = log4rs::init_config(config).expect("Couldn't initialize log configuration.");
 }

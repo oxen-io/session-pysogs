@@ -1,5 +1,6 @@
 use std::convert::TryInto;
 
+use log::warn;
 use serde::{Deserialize, Serialize};
 use warp::{http::StatusCode, reply::Reply, reply::Response, Rejection};
 
@@ -40,12 +41,13 @@ async fn handle_decrypted_onion_request(
     let rpc_call = match serde_json::from_slice(plaintext) {
         Ok(rpc_call) => rpc_call,
         Err(e) => {
-            println!("Couldn't parse RPC call from JSON due to error: {}.", e);
+            warn!("Couldn't parse RPC call from JSON due to error: {}.", e);
             return Err(warp::reject::custom(Error::InvalidOnionRequest));
         }
     };
     // Perform the RPC call
     let result = rpc::handle_rpc_call(rpc_call)
+        .await
         // Turn any error that occurred into an HTTP response
         // Unwrapping is safe because at this point any error should be caught and turned into an HTTP response (i.e. an OK result)
         .or_else(super::errors::into_response)?;
@@ -58,7 +60,7 @@ fn parse_onion_request_payload(
 ) -> Result<OnionRequestPayload, Rejection> {
     // The encoding of an onion request looks like: | 4 bytes: size N of ciphertext | N bytes: ciphertext | json as utf8 |
     if blob.len() < 4 {
-        println!("Ignoring blob of invalid size.");
+        warn!("Ignoring blob of invalid size.");
         return Err(warp::reject::custom(Error::InvalidOnionRequest));
     }
     // Extract the different components
@@ -70,7 +72,7 @@ fn parse_onion_request_payload(
     let json = match String::from_utf8(utf8_json) {
         Ok(json) => json,
         Err(e) => {
-            println!("Couldn't parse onion request payload metadata due to error: {}.", e);
+            warn!("Couldn't parse onion request payload metadata due to error: {}.", e);
             return Err(warp::reject::custom(Error::InvalidOnionRequest));
         }
     };
@@ -78,13 +80,13 @@ fn parse_onion_request_payload(
     let metadata: OnionRequestPayloadMetadata = match serde_json::from_str(&json) {
         Ok(metadata) => metadata,
         Err(e) => {
-            println!("Couldn't parse onion request payload metadata due to error: {}.", e);
+            warn!("Couldn't parse onion request payload metadata due to error: {}.", e);
             return Err(warp::reject::custom(Error::InvalidOnionRequest));
         }
     };
     // Check that the ephemeral public key is valid hex
     if hex::decode(&metadata.ephemeral_key).is_err() {
-        println!("Ignoring non hex encoded onion request payload ephemeral key.");
+        warn!("Ignoring non hex encoded onion request payload ephemeral key.");
         return Err(warp::reject::custom(Error::InvalidOnionRequest));
     };
     // Return

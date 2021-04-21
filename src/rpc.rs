@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use log::warn;
 use serde::{Deserialize, Serialize};
 use warp::{http::StatusCode, reply::Reply, reply::Response, Rejection};
 
@@ -24,7 +25,7 @@ pub struct RpcCall {
 
 const MODE: Mode = Mode::OpenGroupServer;
 
-pub fn handle_rpc_call(rpc_call: RpcCall) -> Result<Response, Rejection> {
+pub async fn handle_rpc_call(rpc_call: RpcCall) -> Result<Response, Rejection> {
     // Check that the endpoint is a valid URI and deconstruct it into a path
     // and query parameters.
     // Adding "http://placeholder.io" in front of the endpoint is a workaround
@@ -34,14 +35,14 @@ pub fn handle_rpc_call(rpc_call: RpcCall) -> Result<Response, Rejection> {
     let path: String = match raw_uri.parse::<http::Uri>() {
         Ok(uri) => uri.path().trim_start_matches("/").to_string(),
         Err(e) => {
-            println!("Couldn't parse URI from: {} due to error: {}.", &raw_uri, e);
+            warn!("Couldn't parse URI from: {} due to error: {}.", &raw_uri, e);
             return Err(warp::reject::custom(Error::InvalidRpcCall));
         }
     };
     let query_params: HashMap<String, String> = match url::Url::parse(&raw_uri) {
         Ok(url) => url.query_pairs().into_owned().collect(),
         Err(e) => {
-            println!("Couldn't parse URL from: {} due to error: {}.", &raw_uri, e);
+            warn!("Couldn't parse URL from: {} due to error: {}.", &raw_uri, e);
             return Err(warp::reject::custom(Error::InvalidRpcCall));
         }
     };
@@ -49,23 +50,20 @@ pub fn handle_rpc_call(rpc_call: RpcCall) -> Result<Response, Rejection> {
     let auth_token = get_auth_token(&rpc_call);
     // Switch on the HTTP method
     match rpc_call.method.as_ref() {
-        "GET" => return handle_get_request(rpc_call, &path, auth_token, query_params),
-        "POST" => {
-            let pool = get_pool_for_room(&rpc_call)?;
-            return handle_post_request(rpc_call, &path, auth_token, &pool);
-        }
+        "GET" => return handle_get_request(rpc_call, &path, auth_token, query_params).await,
+        "POST" => return handle_post_request(rpc_call, &path, auth_token).await,
         "DELETE" => {
             let pool = get_pool_for_room(&rpc_call)?;
             return handle_delete_request(&path, auth_token, &pool);
         }
         _ => {
-            println!("Ignoring RPC call with invalid or unused HTTP method: {}.", rpc_call.method);
+            warn!("Ignoring RPC call with invalid or unused HTTP method: {}.", rpc_call.method);
             return Err(warp::reject::custom(Error::InvalidRpcCall));
         }
     }
 }
 
-fn handle_get_request(
+async fn handle_get_request(
     rpc_call: RpcCall, path: &str, auth_token: Option<String>,
     query_params: HashMap<String, String>,
 ) -> Result<Response, Rejection> {
@@ -90,9 +88,9 @@ fn handle_get_request(
             return handlers::get_room(&room_id);
         } else if components.len() == 3 && components[2] == "image" {
             let room_id = components[1];
-            return handlers::get_group_image(&room_id);
+            return handlers::get_group_image(&room_id).await;
         } else {
-            println!("Invalid endpoint: {}.", rpc_call.endpoint);
+            warn!("Invalid endpoint: {}.", rpc_call.endpoint);
             return Err(warp::reject::custom(Error::InvalidRpcCall));
         }
     }
@@ -103,31 +101,54 @@ fn handle_get_request(
     if path.starts_with("files") {
         let components: Vec<&str> = path.split("/").collect(); // Split on subsequent slashes
         if components.len() != 2 {
-            println!("Invalid endpoint: {}.", rpc_call.endpoint);
+            warn!("Invalid endpoint: {}.", rpc_call.endpoint);
             return Err(warp::reject::custom(Error::InvalidRpcCall));
         }
         let file_id: i64 = match components[1].parse() {
             Ok(file_id) => file_id,
             Err(_) => {
-                println!("Invalid endpoint: {}.", rpc_call.endpoint);
+                warn!("Invalid endpoint: {}.", rpc_call.endpoint);
                 return Err(warp::reject::custom(Error::InvalidRpcCall));
             }
         };
         return handlers::get_file(file_id, &auth_token, &pool)
+            .await
             .map(|json| warp::reply::json(&json).into_response());
     }
     match path {
         "messages" => {
             reject_if_file_server_mode(path)?;
-            return handlers::get_messages(query_params, &auth_token, &pool);
+            let messages = handlers::get_messages(query_params, &auth_token, &pool)?;
+            #[derive(Debug, Deserialize, Serialize)]
+            struct Response {
+                status_code: u16,
+                messages: Vec<models::Message>,
+            }
+            let response = Response { status_code: StatusCode::OK.as_u16(), messages };
+            return Ok(warp::reply::json(&response).into_response());
         }
         "deleted_messages" => {
             reject_if_file_server_mode(path)?;
-            return handlers::get_deleted_messages(query_params, &auth_token, &pool);
+            let deletions = handlers::get_deleted_messages(query_params, &auth_token, &pool)?;
+            #[derive(Debug, Deserialize, Serialize)]
+            struct Response {
+                status_code: u16,
+                ids: Vec<i64>,
+            }
+            let response = Response { status_code: StatusCode::OK.as_u16(), ids: deletions };
+            return Ok(warp::reply::json(&response).into_response());
         }
         "moderators" => {
             reject_if_file_server_mode(path)?;
-            return handlers::get_moderators(&auth_token, &pool);
+            let public_keys = handlers::get_moderators(&auth_token, &pool)?;
+            #[derive(Debug, Deserialize, Serialize)]
+            struct Response {
+                status_code: u16,
+                moderators: Vec<String>,
+            }
+            let response =
+                Response { status_code: StatusCode::OK.as_u16(), moderators: public_keys };
+            return Ok(warp::reply::json(&response).into_response());
         }
         "block_list" => {
             reject_if_file_server_mode(path)?;
@@ -137,29 +158,38 @@ fn handle_get_request(
             reject_if_file_server_mode(path)?;
             return handlers::get_member_count(&auth_token, &pool);
         }
-        "auth_token_challenge" => {
-            let challenge = handlers::get_auth_token_challenge(query_params, &pool)?;
-            #[derive(Debug, Deserialize, Serialize)]
-            struct Response {
-                status_code: u16,
-                challenge: models::Challenge,
-            }
-            let response = Response { status_code: StatusCode::OK.as_u16(), challenge };
-            return Ok(warp::reply::json(&response).into_response());
-        }
         _ => {
-            println!("Ignoring RPC call with invalid or unused endpoint: {}.", rpc_call.endpoint);
+            warn!("Ignoring RPC call with invalid or unused endpoint: {}.", rpc_call.endpoint);
             return Err(warp::reject::custom(Error::InvalidRpcCall));
         }
     }
 }
 
-fn handle_post_request(
+async fn handle_post_request(
     rpc_call: RpcCall, path: &str, auth_token: Option<String>,
-    pool: &storage::DatabaseConnectionPool,
 ) -> Result<Response, Rejection> {
+    // Handle routes that don't require authorization first
+    if path == "compact_poll" {
+        reject_if_file_server_mode(path)?;
+        #[derive(Debug, Deserialize, Serialize)]
+        struct CompactPollRequestBodyWrapper {
+            requests: Vec<models::CompactPollRequestBody>,
+        }
+        let wrapper: CompactPollRequestBodyWrapper = match serde_json::from_str(&rpc_call.body) {
+            Ok(bodies) => bodies,
+            Err(e) => {
+                warn!(
+                    "Couldn't parse compact poll request body wrapper from: {} due to error: {}.",
+                    rpc_call.body, e
+                );
+                return Err(warp::reject::custom(Error::InvalidRpcCall));
+            }
+        };
+        return handlers::compact_poll(wrapper.requests);
+    }
     // Check that the auth token is present
     let auth_token = auth_token.ok_or(warp::reject::custom(Error::NoAuthToken))?;
+    let pool = get_pool_for_room(&rpc_call)?;
     // Switch on the path
     match path {
         "messages" => {
@@ -167,11 +197,11 @@ fn handle_post_request(
             let message = match serde_json::from_str(&rpc_call.body) {
                 Ok(message) => message,
                 Err(e) => {
-                    println!("Couldn't parse message from: {} due to error: {}.", rpc_call.body, e);
+                    warn!("Couldn't parse message from: {} due to error: {}.", rpc_call.body, e);
                     return Err(warp::reject::custom(Error::InvalidRpcCall));
                 }
             };
-            return handlers::insert_message(message, &auth_token, pool);
+            return handlers::insert_message(message, &auth_token, &pool);
         }
         "block_list" => {
             reject_if_file_server_mode(path)?;
@@ -182,11 +212,11 @@ fn handle_post_request(
             let json: JSON = match serde_json::from_str(&rpc_call.body) {
                 Ok(message) => message,
                 Err(e) => {
-                    println!("Couldn't parse JSON from: {} due to error: {}.", rpc_call.body, e);
+                    warn!("Couldn't parse JSON from: {} due to error: {}.", rpc_call.body, e);
                     return Err(warp::reject::custom(Error::InvalidRpcCall));
                 }
             };
-            return handlers::ban(&json.public_key, &auth_token, pool);
+            return handlers::ban(&json.public_key, &auth_token, &pool);
         }
         "claim_auth_token" => {
             #[derive(Debug, Deserialize)]
@@ -196,11 +226,11 @@ fn handle_post_request(
             let json: JSON = match serde_json::from_str(&rpc_call.body) {
                 Ok(message) => message,
                 Err(e) => {
-                    println!("Couldn't parse JSON from: {} due to error: {}.", rpc_call.body, e);
+                    warn!("Couldn't parse JSON from: {} due to error: {}.", rpc_call.body, e);
                     return Err(warp::reject::custom(Error::InvalidRpcCall));
                 }
             };
-            return handlers::claim_auth_token(&json.public_key, &auth_token, pool);
+            return handlers::claim_auth_token(&json.public_key, &auth_token, &pool);
         }
         "files" => {
             #[derive(Debug, Deserialize)]
@@ -210,14 +240,14 @@ fn handle_post_request(
             let json: JSON = match serde_json::from_str(&rpc_call.body) {
                 Ok(message) => message,
                 Err(e) => {
-                    println!("Couldn't parse JSON from: {} due to error: {}.", rpc_call.body, e);
+                    warn!("Couldn't parse JSON from: {} due to error: {}.", rpc_call.body, e);
                     return Err(warp::reject::custom(Error::InvalidRpcCall));
                 }
             };
-            return handlers::store_file(&json.file, &auth_token, pool);
+            return handlers::store_file(&json.file, &auth_token, &pool).await;
         }
         _ => {
-            println!("Ignoring RPC call with invalid or unused endpoint: {}.", path);
+            warn!("Ignoring RPC call with invalid or unused endpoint: {}.", path);
             return Err(warp::reject::custom(Error::InvalidRpcCall));
         }
     }
@@ -233,13 +263,13 @@ fn handle_delete_request(
         reject_if_file_server_mode(path)?;
         let components: Vec<&str> = path.split("/").collect(); // Split on subsequent slashes
         if components.len() != 2 {
-            println!("Invalid endpoint: {}.", path);
+            warn!("Invalid endpoint: {}.", path);
             return Err(warp::reject::custom(Error::InvalidRpcCall));
         }
         let server_id: i64 = match components[1].parse() {
             Ok(server_id) => server_id,
             Err(_) => {
-                println!("Invalid endpoint: {}.", path);
+                warn!("Invalid endpoint: {}.", path);
                 return Err(warp::reject::custom(Error::InvalidRpcCall));
             }
         };
@@ -250,7 +280,7 @@ fn handle_delete_request(
         reject_if_file_server_mode(path)?;
         let components: Vec<&str> = path.split("/").collect(); // Split on subsequent slashes
         if components.len() != 2 {
-            println!("Invalid endpoint: {}.", path);
+            warn!("Invalid endpoint: {}.", path);
             return Err(warp::reject::custom(Error::InvalidRpcCall));
         }
         let public_key = components[1].to_string();
@@ -261,7 +291,7 @@ fn handle_delete_request(
         return handlers::delete_auth_token(&auth_token, pool);
     }
     // Unrecognized endpoint
-    println!("Ignoring RPC call with invalid or unused endpoint: {}.", path);
+    warn!("Ignoring RPC call with invalid or unused endpoint: {}.", path);
     return Err(warp::reject::custom(Error::InvalidRpcCall));
 }
 
@@ -277,7 +307,7 @@ fn get_pool_for_room(rpc_call: &RpcCall) -> Result<storage::DatabaseConnectionPo
             room_id = match get_room_id(&rpc_call) {
                 Some(room_id) => room_id,
                 None => {
-                    println!("Missing room ID.");
+                    warn!("Missing room ID.");
                     return Err(warp::reject::custom(Error::InvalidRpcCall));
                 }
             };
@@ -303,7 +333,7 @@ fn get_room_id(rpc_call: &RpcCall) -> Option<String> {
 fn reject_if_file_server_mode(path: &str) -> Result<(), Rejection> {
     match MODE {
         Mode::FileServer => {
-            println!("Ignoring RPC call with invalid or unused endpoint: {}.", path);
+            warn!("Ignoring RPC call with invalid or unused endpoint: {}.", path);
             return Err(warp::reject::custom(Error::InvalidRpcCall));
         }
         Mode::OpenGroupServer => return Ok(()),
