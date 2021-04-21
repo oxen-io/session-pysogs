@@ -1,4 +1,4 @@
-![example workflow](https://github.com/nielsandriesse/session-open-group-server/actions/workflows/build.yml/badge.svg)
+![example workflow](https://github.com/nielsandriesse/session-open-group-server/actions/workflows/check.yml/badge.svg)
 
 [API Documentation](https://github.com/nielsandriesse/session-open-group-server/wiki/API-Documentation)
 
