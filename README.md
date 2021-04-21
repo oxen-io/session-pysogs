@@ -15,7 +15,10 @@ Want to build from source? See [BUILDING.md](https://github.com/nielsandriesse/s
 ### Step 1: Pull in the Session open group server executable:
 
 ```
-apt install session-open-group-server
+sudo curl -so /etc/apt/trusted.gpg.d/oxen.gpg https://deb.oxen.io/pub.gpg
+echo "deb https://deb.oxen.io $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/oxen.list
+sudo apt update
+sudo apt install session-open-group-server
 ```
 
 ### Step 2: Check that it's running:
