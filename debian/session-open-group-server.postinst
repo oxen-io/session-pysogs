@@ -2,6 +2,28 @@
 
 #DEBHELPER#
 
-mkdir -p /var/lib/session-open-group-server
-openssl genpkey -algorithm x25519 -out /var/lib/session-open-group-server/x25519_private_key.pem
-openssl pkey -in /var/lib/session-open-group-server/x25519_private_key.pem -pubout -out /var/lib/session-open-group-server/x25519_public_key.pem
+if [ "$1" = configure ]; then
+    # Create _loki user if it doesn't yet exist
+    if ! getent passwd _loki >/dev/null; then
+        adduser --force-badname --system --quiet --home /var/lib/oxen --group --gecos "Oxen daemons" _loki
+    fi
+    # Make sure the group gets created (in case _loki was pre-existing)
+    if ! getent group _loki >/dev/null; then
+        addgroup --force-badname --system --quiet _loki
+    fi
+    # Make sure the _loki user is part of the _loki group
+    if ! id -Gn _loki | grep -qw _loki; then
+       adduser --force-badname --quiet _loki _loki
+    fi
+    # Create the SOGS folder
+    SOGS=/var/lib/session-open-group-server
+    mkdir -p $SOGS
+    # Generate the key pair if needed
+    if ! [ -f $SOGS/x25519_private_key.pem ]; then
+        openssl genpkey -algorithm x25519 -out $SOGS/x25519_private_key.pem
+        rm -f $SOGS/x25519_public_key.pem
+    fi
+    if ! [ -f $SOGS/x25519_public_key.pem ]; then
+        openssl pkey -in $SOGS/x25519_private_key.pem -pubout -out $SOGS/x25519_public_key.pem
+    fi
+fi
