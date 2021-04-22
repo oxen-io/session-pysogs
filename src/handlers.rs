@@ -876,6 +876,12 @@ pub fn compact_poll(
     return Ok(warp::reply::json(&response).into_response());
 }
 
+// Not publicly exposed.
+pub async fn get_url() -> Result<Response, Rejection> {
+    let url = super::get_url();
+    return Ok(warp::reply::json(&url).into_response());
+}
+
 // Utilities
 
 fn get_pending_tokens(
