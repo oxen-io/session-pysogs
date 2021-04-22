@@ -804,19 +804,66 @@ pub fn compact_poll(
             get_messages_query_params
                 .insert("from_server_id".to_string(), from_message_server_id.to_string());
         }
-        let messages = get_messages(get_messages_query_params, &auth_token, &pool)?;
+        let messages = match get_messages(get_messages_query_params, &auth_token, &pool) {
+            Ok(messages) => messages,
+            Err(e) => {
+                let status_code = super::errors::status_code(e);
+                let response_body = models::CompactPollResponseBody {
+                    room_id,
+                    status_code: status_code.as_u16(),
+                    messages: vec![],
+                    deletions: vec![],
+                    moderators: vec![],
+                };
+                response_bodies.push(response_body);
+                continue;
+            }
+        };
         // Get the new deletions
         let mut get_deletions_query_params: HashMap<String, String> = HashMap::new();
         if let Some(from_deletion_server_id) = from_deletion_server_id {
             get_deletions_query_params
                 .insert("from_server_id".to_string(), from_deletion_server_id.to_string());
         }
-        let deletions = get_deleted_messages(get_deletions_query_params, &auth_token, &pool)?;
+        let deletions = match get_deleted_messages(get_deletions_query_params, &auth_token, &pool) {
+            Ok(deletions) => deletions,
+            Err(e) => {
+                let status_code = super::errors::status_code(e);
+                let response_body = models::CompactPollResponseBody {
+                    room_id,
+                    status_code: status_code.as_u16(),
+                    messages: vec![],
+                    deletions: vec![],
+                    moderators: vec![],
+                };
+                response_bodies.push(response_body);
+                continue;
+            }
+        };
         // Get the moderators
-        let moderators = get_moderators(&auth_token, &pool)?;
+        let moderators = match get_moderators(&auth_token, &pool) {
+            Ok(moderators) => moderators,
+            Err(e) => {
+                let status_code = super::errors::status_code(e);
+                let response_body = models::CompactPollResponseBody {
+                    room_id,
+                    status_code: status_code.as_u16(),
+                    messages: vec![],
+                    deletions: vec![],
+                    moderators: vec![],
+                };
+                response_bodies.push(response_body);
+                continue;
+            }
+        };
         // Add to the response
-        let response_body =
-            models::CompactPollResponseBody { room_id, deletions, messages, moderators };
+        let response_body = models::CompactPollResponseBody {
+            room_id,
+            status_code: StatusCode::OK.as_u16(),
+            deletions,
+            messages,
+            moderators,
+        };
         response_bodies.push(response_body);
     }
     // Return
