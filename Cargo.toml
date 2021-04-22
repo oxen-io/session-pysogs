@@ -9,7 +9,7 @@ license = "MIT"
 [package.metadata.deb]
 systemd-units = { enable = true, start = true }
 maintainer-scripts = "debian/"
-depends = "$auto"
+depends = "$auto openssl"
 
 [dependencies]
 aes-gcm = "0.8"
