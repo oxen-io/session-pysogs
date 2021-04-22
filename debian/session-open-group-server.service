@@ -5,6 +5,7 @@ Wants=network-online.target
 StartLimitInterval=0
 
 [Service]
+User=_loki
 Type=simple
 ExecStart=/usr/bin/session-open-group-server
 WorkingDirectory=/var/lib/session-open-group-server
