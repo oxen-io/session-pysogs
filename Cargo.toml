@@ -10,6 +10,7 @@ license = "MIT"
 systemd-units = { enable = true, start = true }
 maintainer-scripts = "debian/"
 depends = "libssl1.1, openssl"
+section = "net"
 
 [dependencies]
 aes-gcm = "0.8"
