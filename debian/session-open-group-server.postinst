@@ -2,6 +2,14 @@
 
 #DEBHELPER#
 
-mkdir -p /var/lib/session-open-group-server
-openssl genpkey -algorithm x25519 -out /var/lib/session-open-group-server/x25519_private_key.pem
-openssl pkey -in /var/lib/session-open-group-server/x25519_private_key.pem -pubout -out /var/lib/session-open-group-server/x25519_public_key.pem
+if [ "$1" = configure ]; then
+    SOGS=/var/lib/session-open-group-server
+    mkdir -p $SOGS
+    if ! [ -f $SOGS/x25519_private_key.pem ]; then
+        openssl genpkey -algorithm x25519 -out $SOGS/x25519_private_key.pem
+        rm -f $SOGS/x25519_public_key.pem
+    fi
+    if ! [ -f $SOGS/x25519_public_key.pem ]; then
+        openssl pkey -in $SOGS/x25519_private_key.pem -pubout -out $SOGS/x25519_public_key.pem
+    fi
+fi
