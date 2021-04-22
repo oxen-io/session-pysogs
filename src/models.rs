@@ -38,6 +38,7 @@ pub struct CompactPollRequestBody {
 #[derive(Debug, Deserialize, Serialize)]
 pub struct CompactPollResponseBody {
     pub room_id: String,
+    pub status_code: u16,
     pub deletions: Vec<i64>,
     pub messages: Vec<Message>,
     pub moderators: Vec<String>,
