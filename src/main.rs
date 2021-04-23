@@ -40,6 +40,7 @@ async fn main() {
         || opt.delete_room.is_some()
         || opt.add_moderator.is_some()
         || opt.delete_moderator.is_some()
+        || opt.print_url.is_some()
     {
         // Run in command mode
         execute_commands(opt).await;
@@ -56,8 +57,8 @@ async fn main() {
         // Print the server URL
         let hex_public_key = hex::encode(crypto::PUBLIC_KEY.as_bytes());
         *HEX_PUBLIC_KEY.lock().unwrap() = hex_public_key;
-        print!("Users can join rooms on this open group server using the following URL format:");
-        print!("{}", get_url());
+        info!("Users can join rooms on this open group server using the following URL format:");
+        info!("{}", get_url());
         // Create the main database
         storage::create_main_database_if_needed();
         // Create required folders
@@ -117,12 +118,12 @@ async fn execute_commands(opt: options::Opt) {
         params.insert("id", &args[0]);
         params.insert("name", &args[1]);
         client.post(format!("{}/rooms", localhost)).json(&params).send().await.unwrap();
-        info!("Added room with ID: {}", &args[0]);
+        println!("Added room with ID: {}", &args[0]);
     }
     // Delete a room
     if let Some(args) = opt.delete_room {
         client.delete(format!("{}/rooms/{}", localhost, args)).send().await.unwrap();
-        info!("Deleted room with ID: {}", &args);
+        println!("Deleted room with ID: {}", &args);
     }
     // Add a moderator
     if let Some(args) = opt.add_moderator {
@@ -130,7 +131,7 @@ async fn execute_commands(opt: options::Opt) {
         params.insert("public_key", &args[0]);
         params.insert("room_id", &args[1]);
         client.post(format!("{}/moderators", localhost)).json(&params).send().await.unwrap();
-        info!("Added moderator: {} to room with ID: {}", &args[0], &args[1]);
+        println!("Added moderator: {} to room with ID: {}", &args[0], &args[1]);
     }
     // Delete a moderator
     if let Some(args) = opt.delete_moderator {
@@ -138,14 +139,14 @@ async fn execute_commands(opt: options::Opt) {
         params.insert("public_key", &args[0]);
         params.insert("room_id", &args[1]);
         client.post(format!("{}/delete_moderator", localhost)).json(&params).send().await.unwrap();
-        info!("Deleted moderator: {} from room with ID: {}", &args[0], &args[1]);
+        println!("Deleted moderator: {} from room with ID: {}", &args[0], &args[1]);
     }
     // Print URL
     if let Some(_) = opt.print_url {
         let response =
             client.get(format!("{}/url", localhost)).send().await.unwrap().text().await.unwrap();
-        print!("Users can join rooms on this open group server using the following URL format:");
-        info!("{}", response);
+        println!("Users can join rooms on this open group server using the following URL format:");
+        println!("{}", response);
     }
 }
 
