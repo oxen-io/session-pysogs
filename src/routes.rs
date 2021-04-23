@@ -61,6 +61,13 @@ pub fn delete_moderator() -> impl Filter<Extract = impl warp::Reply, Error = Rej
         .and_then(handlers::delete_moderator);
 }
 
+/// GET /url
+///
+/// Not publicly exposed.
+pub fn get_url() -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+    return warp::get().and(warp::path("url")).and_then(handlers::get_url);
+}
+
 pub async fn root_html() -> Result<Response, Rejection> {
     let body = r#"
     <html>

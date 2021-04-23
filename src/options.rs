@@ -55,4 +55,8 @@ pub struct Opt {
     /// Removes moderator permission for the given public key in the room with the given ID.
     #[structopt(long = "delete-moderator")]
     pub delete_moderator: Option<Vec<String>>,
+
+    /// Prints the URL format users can use to join rooms on this open group server.
+    #[structopt(long = "print-url")]
+    pub print_url: bool,
 }
