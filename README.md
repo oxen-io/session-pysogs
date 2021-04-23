@@ -1,8 +1,8 @@
 ![example workflow](https://github.com/nielsandriesse/session-open-group-server/actions/workflows/check.yml/badge.svg)
 
-[API Documentation](https://github.com/nielsandriesse/session-open-group-server/wiki/API-Documentation)
+[API Documentation](https://github.com/nielsandriesse/session-open-group-server/blob/main/DOCUMENTATION.md)
 
-[CLI Reference](https://github.com/nielsandriesse/session-open-group-server/wiki/CLI-Reference)
+[CLI Reference](https://github.com/nielsandriesse/session-open-group-server/blob/main/CLI.md)
 
 Want to build from source? See [BUILDING.md](https://github.com/nielsandriesse/session-open-group-server/blob/main/BUILDING.md).
 
