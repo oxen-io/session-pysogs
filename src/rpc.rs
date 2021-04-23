@@ -191,6 +191,28 @@ async fn handle_post_request(
     let auth_token = auth_token.ok_or(warp::reject::custom(Error::NoAuthToken))?;
     let pool = get_pool_for_room(&rpc_call)?;
     // Switch on the path
+    if path.starts_with("rooms") {
+        reject_if_file_server_mode(path)?;
+        let components: Vec<&str> = path.split("/").collect(); // Split on subsequent slashes
+        if components.len() == 3 && components[2] == "image" {
+            #[derive(Debug, Deserialize)]
+            struct JSON {
+                file: String,
+            }
+            let json: JSON = match serde_json::from_str(&rpc_call.body) {
+                Ok(message) => message,
+                Err(e) => {
+                    warn!("Couldn't parse JSON from: {} due to error: {}.", rpc_call.body, e);
+                    return Err(warp::reject::custom(Error::InvalidRpcCall));
+                }
+            };
+            let room_id = components[1];
+            return handlers::set_group_image(&json.file, &room_id, &auth_token, &pool).await;
+        } else {
+            warn!("Invalid endpoint: {}.", rpc_call.endpoint);
+            return Err(warp::reject::custom(Error::InvalidRpcCall));
+        }
+    }
     match path {
         "messages" => {
             reject_if_file_server_mode(path)?;
