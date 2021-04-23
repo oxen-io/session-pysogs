@@ -1,7 +1,11 @@
-use std::collections::HashMap;
+use parking_lot::RwLock;
 use std::fs;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Mutex;
+use std::{
+    collections::HashMap,
+    sync::atomic::{AtomicBool, AtomicU16, Ordering},
+};
 
 use futures::join;
 use log::info;
@@ -27,9 +31,9 @@ const LOCALHOST_PORT: u16 = 3030;
 
 lazy_static::lazy_static! {
 
-    pub static ref USES_TLS: Mutex<bool> = Mutex::new(false);
-    pub static ref PORT: Mutex<u16> = Mutex::new(0);
-    pub static ref HEX_PUBLIC_KEY: Mutex<String> = Mutex::new("".to_string());
+    pub static ref USES_TLS: AtomicBool = AtomicBool::new(false);
+    pub static ref PORT: AtomicU16 = AtomicU16::new(0);
+    pub static ref HEX_PUBLIC_KEY: RwLock<String> = RwLock::new("".to_string());
 }
 
 #[tokio::main]
@@ -46,8 +50,8 @@ async fn main() {
         execute_commands(opt).await;
     } else {
         // Store the port and TLS mode
-        *PORT.lock().unwrap() = opt.port;
-        *USES_TLS.lock().unwrap() = opt.tls;
+        PORT.store(opt.port, Ordering::SeqCst);
+        USES_TLS.store(opt.tls, Ordering::SeqCst);
         // Run in server mode
         logging::init(opt.log_file);
         let addr = SocketAddr::new(IpAddr::V4(opt.host), opt.port);
@@ -56,7 +60,7 @@ async fn main() {
         *crypto::PUBLIC_KEY_PATH.lock().unwrap() = opt.x25519_public_key;
         // Print the server URL
         let hex_public_key = hex::encode(crypto::PUBLIC_KEY.as_bytes());
-        *HEX_PUBLIC_KEY.lock().unwrap() = hex_public_key;
+        *HEX_PUBLIC_KEY.write() = hex_public_key;
         info!("Users can join rooms on this open group server using the following URL format:");
         info!("{}", get_url());
         // Create the main database
@@ -151,9 +155,9 @@ async fn execute_commands(opt: options::Opt) {
 }
 
 fn get_url() -> String {
-    let uses_tls: bool = *USES_TLS.lock().unwrap();
-    let port: u16 = *PORT.lock().unwrap();
-    let hex_public_key: &str = &*HEX_PUBLIC_KEY.lock().unwrap();
+    let uses_tls: bool = USES_TLS.load(Ordering::SeqCst);
+    let port: u16 = PORT.load(Ordering::SeqCst);
+    let hex_public_key: &str = &*HEX_PUBLIC_KEY.read();
     let protocol = if uses_tls { "https" } else { "http" };
     let is_port_implicit = (port == 80 && !uses_tls) || (port == 443 && uses_tls);
     return format!(
