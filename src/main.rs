@@ -1,7 +1,6 @@
 use parking_lot::RwLock;
 use std::fs;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::sync::Mutex;
 use std::{
     collections::HashMap,
     sync::atomic::{AtomicBool, AtomicU16, Ordering},
