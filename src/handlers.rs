@@ -250,6 +250,51 @@ pub async fn get_group_image(room_id: &str) -> Result<Response, Rejection> {
     return Ok(warp::reply::json(&json).into_response());
 }
 
+pub async fn set_group_image(
+    base64_encoded_bytes: &str, room_id: &str, auth_token: &str,
+    pool: &storage::DatabaseConnectionPool,
+) -> Result<Response, Rejection> {
+    // Check authorization level
+    let (has_authorization_level, _) =
+        has_authorization_level(auth_token, AuthorizationLevel::Moderator, pool)?;
+    if !has_authorization_level {
+        return Err(warp::reject::custom(Error::Unauthorized));
+    }
+    // Parse bytes
+    let bytes = match base64::decode(base64_encoded_bytes) {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            error!("Couldn't parse bytes from invalid base64 encoding due to error: {}.", e);
+            return Err(warp::reject::custom(Error::ValidationFailed));
+        }
+    };
+    // Write to file
+    let raw_path = format!("files/{}", room_id);
+    let path = Path::new(&raw_path);
+    let mut file = match File::create(path).await {
+        Ok(file) => file,
+        Err(e) => {
+            error!("Couldn't set group image due to error: {}.", e);
+            return Err(warp::reject::custom(Error::DatabaseFailedInternally));
+        }
+    };
+    match file.write_all(&bytes).await {
+        Ok(_) => (),
+        Err(e) => {
+            error!("Couldn't set group image due to error: {}.", e);
+            return Err(warp::reject::custom(Error::DatabaseFailedInternally));
+        }
+    };
+    // Return
+    #[derive(Debug, Deserialize, Serialize)]
+    struct Response {
+        status_code: u16,
+        room_id: String,
+    }
+    let response = Response { status_code: StatusCode::OK.as_u16(), room_id: room_id.to_string() };
+    return Ok(warp::reply::json(&response).into_response());
+}
+
 // Authentication
 
 pub fn get_auth_token_challenge(
