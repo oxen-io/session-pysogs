@@ -21,8 +21,20 @@ sudo apt update
 sudo apt install session-open-group-server
 ```
 
-### Step 2: Check that it's running:
+### Step 2: Add a room
+
+Add a room of your choice with the following command:
 
 ```
-systemctl status session-open-group-server.service
+/usr/bin/session-open-group-server --add-room {room_id} {room_name}
+```
+
+`room_id` must be lowercase and consist of only letters, numbers and underscores.
+
+### Step 3: Print your server's URL
+
+Print the URL users can use to join rooms on your open group server by running:
+
+```
+/usr/bin/session-open-group-server --print-url
 ```
