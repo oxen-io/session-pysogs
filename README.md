@@ -8,10 +8,6 @@ Want to build from source? See [BUILDING.md](https://github.com/nielsandriesse/s
 
 ## Installation Instructions
 
-| Dependency    | Version       |
-| ------------- |:-------------:|
-| openssl       | 1.1.1         |
-
 ### Step 1: Pull in the Session open group server executable:
 
 ```
@@ -52,3 +48,11 @@ Or
 - Upload a JPG to your VPS
 - Put it in `/var/lib/session-open-group-server/files`
 - Rename it to `{room_id}` (no file extension)
+
+## Customization
+
+The default options the Session open group server runs with should be fine in most cases, but if you like you can run on a custom port or host, specify the path to the X25519 key pair you want to use, etc. To do this, simply add [the right arguments](https://github.com/nielsandriesse/session-open-group-server/blob/main/BUILDING.md#step-3-run-it) to the `ExecStart` line in your systemd service file (normally located under `/etc/systemd/system`) and restart your service using:
+
+```
+systemctl restart session-open-group-server.service
+```
