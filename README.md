@@ -43,12 +43,12 @@ Print the URL users can use to join rooms on your open group server by running:
 
 There are two ways to do this. Either:
 
-• add your room on Session desktop using the URL printed earlier
-• make yourself a moderator using the following command: `/usr/bin/session-open-group-server --add-moderator {public_key} {room_id}`
-• use Session desktop to upload a picture for your room
+- add your room on Session desktop using the URL printed earlier
+- make yourself a moderator using the following command: `/usr/bin/session-open-group-server --add-moderator {public_key} {room_id}`
+- use Session desktop to upload a picture for your room
 
 Or
 
-• Upload a JPG to your VPS
-• Put it in `/var/lib/session-open-group-server/files`
-• Rename it to `{room_id}` (no file extension)
+- Upload a JPG to your VPS
+- Put it in `/var/lib/session-open-group-server/files`
+- Rename it to `{room_id}` (no file extension)
