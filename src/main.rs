@@ -40,7 +40,7 @@ async fn main() {
         || opt.delete_room.is_some()
         || opt.add_moderator.is_some()
         || opt.delete_moderator.is_some()
-        || opt.print_url.is_some()
+        || opt.print_url
     {
         // Run in command mode
         execute_commands(opt).await;
@@ -142,7 +142,7 @@ async fn execute_commands(opt: options::Opt) {
         println!("Deleted moderator: {} from room with ID: {}", &args[0], &args[1]);
     }
     // Print URL
-    if let Some(_) = opt.print_url {
+    if opt.print_url {
         let response =
             client.get(format!("{}/url", localhost)).send().await.unwrap().text().await.unwrap();
         println!("Users can join rooms on this open group server using the following URL format:");

@@ -58,5 +58,5 @@ pub struct Opt {
 
     /// Prints the URL format users can use to join rooms on this open group server.
     #[structopt(long = "print-url")]
-    pub print_url: Option<String>, // FIXME: This is just a dummy argument (the command doesn't actually need any arguments). There's probably a better way to do this.
+    pub print_url: bool, // FIXME: This is just a dummy argument (the command doesn't actually need any arguments). There's probably a better way to do this.
 }
