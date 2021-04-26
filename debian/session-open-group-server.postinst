@@ -18,8 +18,6 @@ if [ "$1" = configure ]; then
     # Create the SOGS folder
     SOGS=/var/lib/session-open-group-server
     mkdir -p $SOGS
-    su -s /bin/sh _loki -c "test -O $SOGS && test -G $SOGS" || \
-        chown _loki:_loki $SOGS
     # Generate the key pair if needed
     if ! [ -f $SOGS/x25519_private_key.pem ]; then
         openssl genpkey -algorithm x25519 -out $SOGS/x25519_private_key.pem
@@ -28,4 +26,7 @@ if [ "$1" = configure ]; then
     if ! [ -f $SOGS/x25519_public_key.pem ]; then
         openssl pkey -in $SOGS/x25519_private_key.pem -pubout -out $SOGS/x25519_public_key.pem
     fi
+    # Set permissions
+    su -s /bin/sh _loki -c "test -O $SOGS && test -G $SOGS" || \
+        chown _loki:_loki $SOGS
 fi
