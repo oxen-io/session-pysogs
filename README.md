@@ -17,6 +17,8 @@ sudo apt update
 sudo apt install session-open-group-server
 ```
 
+You can check that the service is running by doing `systemctl status session-open-group-server`. If the service didn't start and gives you the error: `error creating server listener`, you can fix this by doing: `setcap CAP_NET_BIND_SERVICE=+eip /usr/bin/session-open-group-server`.
+
 ### Step 2: Add a room
 
 Add a room of your choice with the following command:
