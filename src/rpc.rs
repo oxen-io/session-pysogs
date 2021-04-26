@@ -10,7 +10,7 @@ use super::models;
 use super::storage;
 
 #[allow(dead_code)]
-enum Mode {
+pub enum Mode {
     FileServer,
     OpenGroupServer,
 }
@@ -23,7 +23,7 @@ pub struct RpcCall {
     pub headers: HashMap<String, String>,
 }
 
-const MODE: Mode = Mode::OpenGroupServer;
+pub const MODE: Mode = Mode::OpenGroupServer;
 
 pub async fn handle_rpc_call(rpc_call: RpcCall) -> Result<Response, Rejection> {
     // Check that the endpoint is a valid URI and deconstruct it into a path
@@ -69,6 +69,7 @@ async fn handle_get_request(
 ) -> Result<Response, Rejection> {
     // Handle routes that don't require authorization first
     if path == "auth_token_challenge" {
+        reject_if_file_server_mode(path)?;
         let pool = get_pool_for_room(&rpc_call)?;
         let challenge = handlers::get_auth_token_challenge(query_params, &pool)?;
         #[derive(Debug, Deserialize, Serialize)]
@@ -94,9 +95,7 @@ async fn handle_get_request(
             return Err(warp::reject::custom(Error::InvalidRpcCall));
         }
     }
-    // Check that the auth token is present
-    let auth_token = auth_token.ok_or(warp::reject::custom(Error::NoAuthToken))?;
-    // Switch on the path
+    // This route requires auth in open group server mode, but not in file server mode
     let pool = get_pool_for_room(&rpc_call)?;
     if path.starts_with("files") {
         let components: Vec<&str> = path.split("/").collect(); // Split on subsequent slashes
@@ -111,10 +110,13 @@ async fn handle_get_request(
                 return Err(warp::reject::custom(Error::InvalidRpcCall));
             }
         };
-        return handlers::get_file(file_id, &auth_token, &pool)
+        return handlers::get_file(file_id, auth_token, &pool)
             .await
             .map(|json| warp::reply::json(&json).into_response());
     }
+    // Check that the auth token is present
+    let auth_token = auth_token.ok_or(warp::reject::custom(Error::NoAuthToken))?;
+    // Switch on the path
     match path {
         "messages" => {
             reject_if_file_server_mode(path)?;
@@ -187,9 +189,24 @@ async fn handle_post_request(
         };
         return handlers::compact_poll(wrapper.requests);
     }
+    // This route requires auth in open group server mode, but not in file server mode
+    let pool = get_pool_for_room(&rpc_call)?;
+    if path == "files" {
+        #[derive(Debug, Deserialize)]
+        struct JSON {
+            file: String,
+        }
+        let json: JSON = match serde_json::from_str(&rpc_call.body) {
+            Ok(message) => message,
+            Err(e) => {
+                warn!("Couldn't parse JSON from: {} due to error: {}.", rpc_call.body, e);
+                return Err(warp::reject::custom(Error::InvalidRpcCall));
+            }
+        };
+        return handlers::store_file(&json.file, auth_token, &pool).await;
+    }
     // Check that the auth token is present
     let auth_token = auth_token.ok_or(warp::reject::custom(Error::NoAuthToken))?;
-    let pool = get_pool_for_room(&rpc_call)?;
     // Switch on the path
     if path.starts_with("rooms") {
         reject_if_file_server_mode(path)?;
@@ -241,6 +258,7 @@ async fn handle_post_request(
             return handlers::ban(&json.public_key, &auth_token, &pool);
         }
         "claim_auth_token" => {
+            reject_if_file_server_mode(path)?;
             #[derive(Debug, Deserialize)]
             struct JSON {
                 public_key: String,
@@ -253,20 +271,6 @@ async fn handle_post_request(
                 }
             };
             return handlers::claim_auth_token(&json.public_key, &auth_token, &pool);
-        }
-        "files" => {
-            #[derive(Debug, Deserialize)]
-            struct JSON {
-                file: String,
-            }
-            let json: JSON = match serde_json::from_str(&rpc_call.body) {
-                Ok(message) => message,
-                Err(e) => {
-                    warn!("Couldn't parse JSON from: {} due to error: {}.", rpc_call.body, e);
-                    return Err(warp::reject::custom(Error::InvalidRpcCall));
-                }
-            };
-            return handlers::store_file(&json.file, &auth_token, &pool).await;
         }
         _ => {
             warn!("Ignoring RPC call with invalid or unused endpoint: {}.", path);
@@ -310,6 +314,7 @@ fn handle_delete_request(
     }
     // DELETE /auth_token
     if path == "auth_token" {
+        reject_if_file_server_mode(path)?;
         return handlers::delete_auth_token(&auth_token, pool);
     }
     // Unrecognized endpoint

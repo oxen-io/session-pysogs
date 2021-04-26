@@ -14,6 +14,7 @@ use warp::{http::StatusCode, reply::Reply, reply::Response, Rejection};
 use super::crypto;
 use super::errors::Error;
 use super::models;
+use super::rpc;
 use super::storage;
 
 enum AuthorizationLevel {
@@ -124,15 +125,21 @@ pub fn get_all_rooms() -> Result<Response, Rejection> {
 // Files
 
 pub async fn store_file(
-    base64_encoded_bytes: &str, auth_token: &str, pool: &storage::DatabaseConnectionPool,
+    base64_encoded_bytes: &str, auth_token: Option<String>, pool: &storage::DatabaseConnectionPool,
 ) -> Result<Response, Rejection> {
     // It'd be nice to use the UUID crate for the file ID, but clients want an integer ID
     let now = chrono::Utc::now().timestamp_nanos();
-    // Check authorization level
-    let (has_authorization_level, _) =
-        has_authorization_level(auth_token, AuthorizationLevel::Basic, pool)?;
-    if !has_authorization_level {
-        return Err(warp::reject::custom(Error::Unauthorized));
+    // Check authorization level if needed
+    match rpc::MODE {
+        rpc::Mode::OpenGroupServer => {
+            let auth_token = auth_token.ok_or(warp::reject::custom(Error::NoAuthToken))?;
+            let (has_authorization_level, _) =
+                has_authorization_level(&auth_token, AuthorizationLevel::Basic, pool)?;
+            if !has_authorization_level {
+                return Err(warp::reject::custom(Error::Unauthorized));
+            }
+        }
+        rpc::Mode::FileServer => { /* Do nothing */ }
     }
     // Parse bytes
     let bytes = match base64::decode(base64_encoded_bytes) {
@@ -184,14 +191,20 @@ pub async fn store_file(
 }
 
 pub async fn get_file(
-    id: i64, auth_token: &str, pool: &storage::DatabaseConnectionPool,
+    id: i64, auth_token: Option<String>, pool: &storage::DatabaseConnectionPool,
 ) -> Result<GenericStringResponse, Rejection> {
     // Doesn't return a response directly for testing purposes
-    // Check authorization level
-    let (has_authorization_level, _) =
-        has_authorization_level(auth_token, AuthorizationLevel::Basic, pool)?;
-    if !has_authorization_level {
-        return Err(warp::reject::custom(Error::Unauthorized));
+    // Check authorization level if needed
+    match rpc::MODE {
+        rpc::Mode::OpenGroupServer => {
+            let auth_token = auth_token.ok_or(warp::reject::custom(Error::NoAuthToken))?;
+            let (has_authorization_level, _) =
+                has_authorization_level(&auth_token, AuthorizationLevel::Basic, pool)?;
+            if !has_authorization_level {
+                return Err(warp::reject::custom(Error::Unauthorized));
+            }
+        }
+        rpc::Mode::FileServer => { /* Do nothing */ }
     }
     // Try to read the file
     let mut bytes = vec![];
