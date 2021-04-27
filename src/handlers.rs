@@ -158,7 +158,7 @@ pub async fn store_file(
     // INSERT rather than REPLACE so that on the off chance there's already a file with this exact
     // id (i.e. timestamp) we simply error out and get the client to retry.
     let stmt = format!("INSERT INTO {} (id, timestamp) VALUES (?1, ?2)", storage::FILES_TABLE);
-    let _ = match conn.execute(&stmt, params![id as i64, now]) {
+    let _ = match conn.execute(&stmt, params![id.to_string(), now]) {
         Ok(rows) => rows,
         Err(e) => {
             error!("Couldn't insert file record due to error: {}.", e);

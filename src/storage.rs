@@ -126,7 +126,7 @@ fn create_room_tables_if_needed(conn: &DatabaseConnection) {
     // Note that a given public key can have multiple pending tokens
     let pending_tokens_table_cmd = format!(
         "CREATE TABLE IF NOT EXISTS {} (
-        public_key STRING,
+        public_key TEXT,
         timestamp INTEGER,
         token BLOB
     )",
@@ -138,7 +138,7 @@ fn create_room_tables_if_needed(conn: &DatabaseConnection) {
     // The token is stored as hex here (rather than as bytes) because it's more convenient for lookup
     let tokens_table_cmd = format!(
         "CREATE TABLE IF NOT EXISTS {} (
-        public_key STRING PRIMARY KEY,
+        public_key TEXT PRIMARY KEY,
         timestamp INTEGER,
         token TEXT
     )",
@@ -148,7 +148,7 @@ fn create_room_tables_if_needed(conn: &DatabaseConnection) {
     // Files
     let files_table_cmd = format!(
         "CREATE TABLE IF NOT EXISTS {} (
-        id INTEGER PRIMARY KEY,
+        id TEXT PRIMARY KEY,
         timestamp INTEGER
     )",
         FILES_TABLE
@@ -262,10 +262,10 @@ pub async fn prune_files(file_expiration: i64) {
                 return error!("Couldn't prune files due to error: {}.", e);
             }
         };
-        let ids: Vec<i64> = rows.filter_map(|result| result.ok()).collect();
+        let ids: Vec<String> = rows.filter_map(|result| result.ok()).collect();
         if !ids.is_empty() {
             // Delete the files
-            let mut deleted_ids: Vec<i64> = vec![];
+            let mut deleted_ids: Vec<String> = vec![];
             for id in ids {
                 match fs::remove_file(format!("files/{}", id)) {
                     Ok(_) => deleted_ids.push(id),
