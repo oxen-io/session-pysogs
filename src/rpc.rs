@@ -54,7 +54,7 @@ pub async fn handle_rpc_call(rpc_call: RpcCall) -> Result<Response, Rejection> {
         "POST" => return handle_post_request(rpc_call, &path, auth_token).await,
         "DELETE" => {
             let pool = get_pool_for_room(&rpc_call)?;
-            return handle_delete_request(&path, auth_token, &pool);
+            return handle_delete_request(rpc_call, &path, auth_token, &pool).await;
         }
         _ => {
             warn!("Ignoring RPC call with invalid or unused HTTP method: {}.", rpc_call.method);
@@ -272,6 +272,18 @@ async fn handle_post_request(
             };
             return handlers::claim_auth_token(&json.public_key, &auth_token, &pool);
         }
+        "moderators" => {
+            reject_if_file_server_mode(path)?;
+            let body: models::ChangeModeratorRequestBody =
+                match serde_json::from_str(&rpc_call.body) {
+                    Ok(message) => message,
+                    Err(e) => {
+                        warn!("Couldn't parse JSON from: {} due to error: {}.", rpc_call.body, e);
+                        return Err(warp::reject::custom(Error::InvalidRpcCall));
+                    }
+                };
+            return handlers::add_moderator_public(body, &auth_token).await;
+        }
         _ => {
             warn!("Ignoring RPC call with invalid or unused endpoint: {}.", path);
             return Err(warp::reject::custom(Error::InvalidRpcCall));
@@ -279,8 +291,9 @@ async fn handle_post_request(
     }
 }
 
-fn handle_delete_request(
-    path: &str, auth_token: Option<String>, pool: &storage::DatabaseConnectionPool,
+async fn handle_delete_request(
+    rpc_call: RpcCall, path: &str, auth_token: Option<String>,
+    pool: &storage::DatabaseConnectionPool,
 ) -> Result<Response, Rejection> {
     // Check that the auth token is present
     let auth_token = auth_token.ok_or(warp::reject::custom(Error::NoAuthToken))?;
@@ -316,6 +329,25 @@ fn handle_delete_request(
     if path == "auth_token" {
         reject_if_file_server_mode(path)?;
         return handlers::delete_auth_token(&auth_token, pool);
+    }
+    // DELETE /moderators/:public_key
+    if path == "moderators" {
+        reject_if_file_server_mode(path)?;
+        let components: Vec<&str> = path.split("/").collect(); // Split on subsequent slashes
+        if components.len() != 2 {
+            warn!("Invalid endpoint: {}.", path);
+            return Err(warp::reject::custom(Error::InvalidRpcCall));
+        }
+        let public_key = components[1].to_string();
+        let room_id = match get_room_id(&rpc_call) {
+            Some(room_id) => room_id,
+            None => {
+                warn!("Missing room ID.");
+                return Err(warp::reject::custom(Error::InvalidRpcCall));
+            }
+        };
+        let body = models::ChangeModeratorRequestBody { public_key, room_id };
+        return handlers::delete_moderator_public(body, &auth_token).await;
     }
     // Unrecognized endpoint
     warn!("Ignoring RPC call with invalid or unused endpoint: {}.", path);

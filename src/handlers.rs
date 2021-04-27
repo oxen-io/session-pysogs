@@ -658,6 +658,18 @@ pub fn get_deleted_messages(
 
 // Moderation
 
+pub async fn add_moderator_public(
+    body: models::ChangeModeratorRequestBody, auth_token: &str,
+) -> Result<Response, Rejection> {
+    let pool = storage::pool_by_room_id(&body.room_id);
+    let (has_authorization_level, _) =
+        has_authorization_level(auth_token, AuthorizationLevel::Moderator, &pool)?;
+    if !has_authorization_level {
+        return Err(warp::reject::custom(Error::Unauthorized));
+    }
+    return add_moderator(body).await;
+}
+
 // Not publicly exposed.
 pub async fn add_moderator(
     body: models::ChangeModeratorRequestBody,
@@ -678,6 +690,18 @@ pub async fn add_moderator(
     info!("Added moderator: {} to room with ID: {}", &body.public_key, &body.room_id);
     let json = models::StatusCode { status_code: StatusCode::OK.as_u16() };
     return Ok(warp::reply::json(&json).into_response());
+}
+
+pub async fn delete_moderator_public(
+    body: models::ChangeModeratorRequestBody, auth_token: &str,
+) -> Result<Response, Rejection> {
+    let pool = storage::pool_by_room_id(&body.room_id);
+    let (has_authorization_level, _) =
+        has_authorization_level(auth_token, AuthorizationLevel::Moderator, &pool)?;
+    if !has_authorization_level {
+        return Err(warp::reject::custom(Error::Unauthorized));
+    }
+    return delete_moderator(body).await;
 }
 
 // Not publicly exposed.
