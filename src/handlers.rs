@@ -125,7 +125,8 @@ pub fn get_all_rooms() -> Result<Response, Rejection> {
 // Files
 
 pub async fn store_file(
-    base64_encoded_bytes: &str, auth_token: Option<String>, pool: &storage::DatabaseConnectionPool,
+    room_id: Option<String>, base64_encoded_bytes: &str, auth_token: Option<String>,
+    pool: &storage::DatabaseConnectionPool,
 ) -> Result<Response, Rejection> {
     // It'd be nice to use the UUID crate for the file ID, but clients want an integer ID
     const UPPER_BOUND: u64 = 2u64.pow(53); // JS has trouble if we go higher than this
@@ -166,7 +167,17 @@ pub async fn store_file(
         }
     };
     // Write to file
-    let raw_path = format!("files/{}", &id);
+    // room_id is guaranteed to be present at this point
+    let room_id = room_id.unwrap();
+    match std::fs::create_dir(format!("files/{}", &room_id)) {
+        Ok(_) => (),
+        Err(e) => {
+            error!("Couldn't store file due to error: {}.", e);
+            return Err(warp::reject::custom(Error::DatabaseFailedInternally));
+        }
+    };
+    let raw_path = format!("files/{}/{}", &room_id, &id);
+    println!("mmmyess");
     let path = Path::new(&raw_path);
     let mut file = match File::create(path).await {
         Ok(file) => file,
@@ -193,7 +204,8 @@ pub async fn store_file(
 }
 
 pub async fn get_file(
-    id: u64, auth_token: Option<String>, pool: &storage::DatabaseConnectionPool,
+    room_id: Option<String>, id: u64, auth_token: Option<String>,
+    pool: &storage::DatabaseConnectionPool,
 ) -> Result<GenericStringResponse, Rejection> {
     // Doesn't return a response directly for testing purposes
     // Check authorization level if needed
@@ -210,7 +222,8 @@ pub async fn get_file(
     }
     // Try to read the file
     let mut bytes = vec![];
-    let raw_path = format!("files/{}", id);
+    // room_id is guaranteed to be present at this point
+    let raw_path = format!("files/{}/{}", room_id.unwrap(), id);
     let path = Path::new(&raw_path);
     let mut file = match File::open(path).await {
         Ok(file) => file,

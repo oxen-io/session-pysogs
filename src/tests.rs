@@ -82,7 +82,14 @@ async fn test_file_handling() {
     // Get an auth token
     let (auth_token, _) = get_auth_token();
     // Store the test file
-    handlers::store_file(TEST_FILE, Some(auth_token.clone()), &pool).await.unwrap();
+    handlers::store_file(
+        Some(test_room_id.to_string()),
+        TEST_FILE,
+        Some(auth_token.clone()),
+        &pool,
+    )
+    .await
+    .unwrap();
     // Check that there's a file record
     let conn = pool.get().unwrap();
     let raw_query = format!("SELECT id FROM {}", storage::FILES_TABLE);
@@ -91,13 +98,16 @@ async fn test_file_handling() {
     let id = id_as_string.parse::<u64>().unwrap();
     // Retrieve the file and check the content
     let base64_encoded_file =
-        handlers::get_file(id, Some(auth_token.clone()), &pool).await.unwrap().result;
+        handlers::get_file(Some(test_room_id.to_string()), id, Some(auth_token.clone()), &pool)
+            .await
+            .unwrap()
+            .result;
     assert_eq!(base64_encoded_file, TEST_FILE);
     // Prune the file and check that it's gone
     // Will evaluate to now + 60
     storage::prune_files(-60).await;
     // It should be gone now
-    fs::read(format!("files/{}", id)).unwrap_err();
+    fs::read(format!("files/{}/{}", test_room_id, id)).unwrap_err();
     // Check that the file record is also gone
     let conn = pool.get().unwrap();
     let raw_query = format!("SELECT id FROM {}", storage::FILES_TABLE);

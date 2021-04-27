@@ -48,10 +48,14 @@ pub async fn handle_rpc_call(rpc_call: RpcCall) -> Result<Response, Rejection> {
     };
     // Get the auth token if possible
     let auth_token = get_auth_token(&rpc_call);
+    // Get the room ID
+    let room_id = get_room_id(&rpc_call);
     // Switch on the HTTP method
     match rpc_call.method.as_ref() {
-        "GET" => return handle_get_request(rpc_call, &path, auth_token, query_params).await,
-        "POST" => return handle_post_request(rpc_call, &path, auth_token).await,
+        "GET" => {
+            return handle_get_request(room_id, rpc_call, &path, auth_token, query_params).await
+        }
+        "POST" => return handle_post_request(room_id, rpc_call, &path, auth_token).await,
         "DELETE" => {
             let pool = get_pool_for_room(&rpc_call)?;
             return handle_delete_request(rpc_call, &path, auth_token, &pool).await;
@@ -64,7 +68,7 @@ pub async fn handle_rpc_call(rpc_call: RpcCall) -> Result<Response, Rejection> {
 }
 
 async fn handle_get_request(
-    rpc_call: RpcCall, path: &str, auth_token: Option<String>,
+    room_id: Option<String>, rpc_call: RpcCall, path: &str, auth_token: Option<String>,
     query_params: HashMap<String, String>,
 ) -> Result<Response, Rejection> {
     // Handle routes that don't require authorization first
@@ -110,7 +114,7 @@ async fn handle_get_request(
                 return Err(warp::reject::custom(Error::InvalidRpcCall));
             }
         };
-        return handlers::get_file(file_id, auth_token, &pool)
+        return handlers::get_file(room_id, file_id, auth_token, &pool)
             .await
             .map(|json| warp::reply::json(&json).into_response());
     }
@@ -168,7 +172,7 @@ async fn handle_get_request(
 }
 
 async fn handle_post_request(
-    rpc_call: RpcCall, path: &str, auth_token: Option<String>,
+    room_id: Option<String>, rpc_call: RpcCall, path: &str, auth_token: Option<String>,
 ) -> Result<Response, Rejection> {
     // Handle routes that don't require authorization first
     if path == "compact_poll" {
@@ -203,7 +207,7 @@ async fn handle_post_request(
                 return Err(warp::reject::custom(Error::InvalidRpcCall));
             }
         };
-        return handlers::store_file(&json.file, auth_token, &pool).await;
+        return handlers::store_file(room_id, &json.file, auth_token, &pool).await;
     }
     // Check that the auth token is present
     let auth_token = auth_token.ok_or(warp::reject::custom(Error::NoAuthToken))?;
@@ -357,21 +361,13 @@ async fn handle_delete_request(
 // Utilities
 
 fn get_pool_for_room(rpc_call: &RpcCall) -> Result<storage::DatabaseConnectionPool, Rejection> {
-    let room_id: String;
-    match MODE {
-        // In file server mode we don't have a concept of rooms, but for convenience (i.e. so
-        // we can use the same database structure) we just always use the main room
-        Mode::FileServer => room_id = "main".to_string(),
-        Mode::OpenGroupServer => {
-            room_id = match get_room_id(&rpc_call) {
-                Some(room_id) => room_id,
-                None => {
-                    warn!("Missing room ID.");
-                    return Err(warp::reject::custom(Error::InvalidRpcCall));
-                }
-            };
+    let room_id = match get_room_id(&rpc_call) {
+        Some(room_id) => room_id,
+        None => {
+            warn!("Missing room ID.");
+            return Err(warp::reject::custom(Error::InvalidRpcCall));
         }
-    }
+    };
     return Ok(storage::pool_by_room_id(&room_id));
 }
 
@@ -383,10 +379,17 @@ fn get_auth_token(rpc_call: &RpcCall) -> Option<String> {
 }
 
 fn get_room_id(rpc_call: &RpcCall) -> Option<String> {
-    if rpc_call.headers.is_empty() {
-        return None;
+    match MODE {
+        // In file server mode we don't have a concept of rooms, but for convenience (i.e. so
+        // we can use the same database structure) we just always use the main room
+        Mode::FileServer => return Some("main".to_string()),
+        Mode::OpenGroupServer => {
+            if rpc_call.headers.is_empty() {
+                return None;
+            }
+            return rpc_call.headers.get("Room").map(|s| s.to_string());
+        }
     }
-    return rpc_call.headers.get("Room").map(|s| s.to_string());
 }
 
 fn reject_if_file_server_mode(path: &str) -> Result<(), Rejection> {
