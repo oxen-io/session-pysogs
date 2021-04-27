@@ -232,7 +232,15 @@ Poll for new messages, new deletions and the current moderator list for multiple
         {
             room_id: String,
             status_code: u16,
-            deletions: [ 0, 1, 2, ... ]
+            deletions: [ 
+                {
+                    deletion_server_id: i64,
+                    deleted_message_id: i64
+                },
+                {
+                    ...
+                }
+            ]
             messages: [
                 {
                     server_id: i64,
@@ -347,7 +355,15 @@ Get deleted messages from the server. If `from_server_id` is set only deletions 
 ```
 {
     status_code: u16,
-    ids: [ 0, 1, 2, ... ] // the server IDs of the deleted messages
+    ids: [
+        {
+            deletion_server_id: i64,
+            deleted_message_id: i64
+        },
+        {
+            ...
+        }
+    ]
 }
 ```
 
