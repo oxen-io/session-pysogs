@@ -128,8 +128,8 @@ pub async fn store_file(
     base64_encoded_bytes: &str, auth_token: Option<String>, pool: &storage::DatabaseConnectionPool,
 ) -> Result<Response, Rejection> {
     // It'd be nice to use the UUID crate for the file ID, but clients want an integer ID
-    let upper_bound = 2u64.pow(53); // JS has trouble if we go higher than this
-    let id: u64 = thread_rng().gen_range(0..upper_bound);
+    const UPPER_BOUND: u64 = 2u64.pow(53); // JS has trouble if we go higher than this
+    let id: u64 = thread_rng().gen_range(0..UPPER_BOUND);
     let now = chrono::Utc::now().timestamp_nanos();
     // Check authorization level if needed
     match rpc::MODE {
