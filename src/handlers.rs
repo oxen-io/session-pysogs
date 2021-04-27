@@ -169,15 +169,11 @@ pub async fn store_file(
     // Write to file
     // room_id is guaranteed to be present at this point
     let room_id = room_id.unwrap();
-    match std::fs::create_dir_all(format!("files/{}", &room_id)) {
+    match std::fs::create_dir_all(format!("files/{}_files", &room_id)) {
         Ok(_) => (),
-        Err(e) => {
-            error!("Couldn't store file due to error: {}.", e);
-            return Err(warp::reject::custom(Error::DatabaseFailedInternally));
-        }
+        Err(_) => (),
     };
-    let raw_path = format!("files/{}/{}", &room_id, &id);
-    println!("mmmyess");
+    let raw_path = format!("files/{}_files/{}", &room_id, &id);
     let path = Path::new(&raw_path);
     let mut file = match File::create(path).await {
         Ok(file) => file,
@@ -223,7 +219,7 @@ pub async fn get_file(
     // Try to read the file
     let mut bytes = vec![];
     // room_id is guaranteed to be present at this point
-    let raw_path = format!("files/{}/{}", room_id.unwrap(), id);
+    let raw_path = format!("files/{}_files/{}", room_id.unwrap(), id);
     let path = Path::new(&raw_path);
     let mut file = match File::open(path).await {
         Ok(file) => file,

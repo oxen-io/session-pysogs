@@ -267,7 +267,7 @@ pub async fn prune_files(file_expiration: i64) {
             // Delete the files
             let mut deleted_ids: Vec<String> = vec![];
             for id in ids {
-                match fs::remove_file(format!("files/{}/{}", room, id)) {
+                match fs::remove_file(format!("files/{}_files/{}", room, id)) {
                     Ok(_) => deleted_ids.push(id),
                     Err(e) => error!("Couldn't delete file due to error: {}.", e),
                 }

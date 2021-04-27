@@ -107,7 +107,7 @@ async fn test_file_handling() {
     // Will evaluate to now + 60
     storage::prune_files(-60).await;
     // It should be gone now
-    fs::read(format!("files/{}/{}", test_room_id, id)).unwrap_err();
+    fs::read(format!("files/{}_files/{}", test_room_id, id)).unwrap_err();
     // Check that the file record is also gone
     let conn = pool.get().unwrap();
     let raw_query = format!("SELECT id FROM {}", storage::FILES_TABLE);
