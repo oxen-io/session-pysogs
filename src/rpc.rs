@@ -139,7 +139,7 @@ async fn handle_get_request(
             #[derive(Debug, Deserialize, Serialize)]
             struct Response {
                 status_code: u16,
-                ids: Vec<i64>,
+                ids: Vec<models::DeletedMessage>,
             }
             let response = Response { status_code: StatusCode::OK.as_u16(), ids: deletions };
             return Ok(warp::reply::json(&response).into_response());

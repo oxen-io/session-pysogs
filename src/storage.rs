@@ -100,7 +100,8 @@ fn create_room_tables_if_needed(conn: &DatabaseConnection) {
     // Deleted messages
     let deleted_messages_table_cmd = format!(
         "CREATE TABLE IF NOT EXISTS {} (
-        id INTEGER PRIMARY KEY
+        id INTEGER PRIMARY KEY,
+        deleted_message_id INTEGER
     )",
         DELETED_MESSAGES_TABLE
     );

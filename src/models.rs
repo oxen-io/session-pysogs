@@ -16,6 +16,12 @@ impl Message {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
+pub struct DeletedMessage {
+    pub id: i64,
+    pub deleted_message_id: i64,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Room {
     pub id: String,
     pub name: String,
@@ -39,7 +45,7 @@ pub struct CompactPollRequestBody {
 pub struct CompactPollResponseBody {
     pub room_id: String,
     pub status_code: u16,
-    pub deletions: Vec<i64>,
+    pub deletions: Vec<DeletedMessage>,
     pub messages: Vec<Message>,
     pub moderators: Vec<String>,
 }

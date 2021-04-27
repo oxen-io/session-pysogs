@@ -554,9 +554,9 @@ pub fn get_messages(
 
 // Message deletion
 
-/// Deletes the message with the given `row_id` from the database, if it's present.
+/// Deletes the message with the given `id` from the database, if it's present.
 pub fn delete_message(
-    row_id: i64, auth_token: &str, pool: &storage::DatabaseConnectionPool,
+    id: i64, auth_token: &str, pool: &storage::DatabaseConnectionPool,
 ) -> Result<Response, Rejection> {
     // Check authorization level
     let (has_authorization_level, requesting_public_key) =
@@ -568,9 +568,9 @@ pub fn delete_message(
     let sender_option: Option<String> = {
         let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
         let raw_query =
-            format!("SELECT public_key FROM {} WHERE rowid = (?1)", storage::MESSAGES_TABLE);
+            format!("SELECT public_key FROM {} WHERE id = (?1)", storage::MESSAGES_TABLE);
         let mut query = conn.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
-        let rows = match query.query_map(params![row_id], |row| Ok(row.get(0)?)) {
+        let rows = match query.query_map(params![id], |row| Ok(row.get(0)?)) {
             Ok(rows) => rows,
             Err(e) => {
                 error!("Couldn't delete message due to error: {}.", e);
@@ -588,8 +588,8 @@ pub fn delete_message(
     let mut conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     let tx = conn.transaction().map_err(|_| Error::DatabaseFailedInternally)?;
     // Delete the message if it's present
-    let stmt = format!("DELETE FROM {} WHERE rowid = (?1)", storage::MESSAGES_TABLE);
-    let count = match tx.execute(&stmt, params![row_id]) {
+    let stmt = format!("DELETE FROM {} WHERE id = (?1)", storage::MESSAGES_TABLE);
+    let count = match tx.execute(&stmt, params![id]) {
         Ok(count) => count,
         Err(e) => {
             error!("Couldn't delete message due to error: {}.", e);
@@ -598,8 +598,11 @@ pub fn delete_message(
     };
     // Update the deletions table if needed
     if count > 0 {
-        let stmt = format!("INSERT INTO {} (id) VALUES (?1)", storage::DELETED_MESSAGES_TABLE);
-        match tx.execute(&stmt, params![row_id]) {
+        let stmt = format!(
+            "INSERT INTO {} (deleted_message_id) VALUES (?1)",
+            storage::DELETED_MESSAGES_TABLE
+        );
+        match tx.execute(&stmt, params![id]) {
             Ok(_) => (),
             Err(e) => {
                 error!("Couldn't delete message due to error: {}.", e);
@@ -617,7 +620,7 @@ pub fn delete_message(
 /// Returns either the last `limit` deleted messages or all deleted messages since `from_server_id, limited to `limit`.
 pub fn get_deleted_messages(
     query_params: HashMap<String, String>, auth_token: &str, pool: &storage::DatabaseConnectionPool,
-) -> Result<Vec<i64>, Rejection> {
+) -> Result<Vec<models::DeletedMessage>, Rejection> {
     // Check authorization level
     let (has_authorization_level, _) =
         has_authorization_level(auth_token, AuthorizationLevel::Basic, pool)?;
@@ -643,26 +646,29 @@ pub fn get_deleted_messages(
     let raw_query: String;
     if query_params.get("from_server_id").is_some() {
         raw_query = format!(
-            "SELECT id FROM {} WHERE rowid > (?1) ORDER BY rowid ASC LIMIT (?2)",
+            "SELECT (id, deleted_message_id) FROM {} WHERE id > (?1) ORDER BY id ASC LIMIT (?2)",
             storage::DELETED_MESSAGES_TABLE
         );
     } else {
         raw_query = format!(
-            "SELECT id FROM {} ORDER BY rowid DESC LIMIT (?2)",
+            "SELECT (id, deleted_message_id) FROM {} ORDER BY id DESC LIMIT (?2)",
             storage::DELETED_MESSAGES_TABLE
         );
     }
     let mut query = conn.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
-    let rows = match query.query_map(params![from_server_id, limit], |row| Ok(row.get(0)?)) {
+    let rows = match query.query_map(params![from_server_id, limit], |row| {
+        Ok(models::DeletedMessage { id: row.get(0)?, deleted_message_id: row.get(1)? })
+    }) {
         Ok(rows) => rows,
         Err(e) => {
-            error!("Couldn't query database due to error: {}.", e);
+            error!("Couldn't get deleted messages due to error: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
-    let ids: Vec<i64> = rows.filter_map(|result| result.ok()).collect();
+    let deleted_messages: Vec<models::DeletedMessage> =
+        rows.filter_map(|result| result.ok()).collect();
     // Return the IDs
-    return Ok(ids);
+    return Ok(deleted_messages);
 }
 
 // Moderation
