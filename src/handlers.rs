@@ -128,6 +128,8 @@ pub async fn store_file(
     base64_encoded_bytes: &str, auth_token: Option<String>, pool: &storage::DatabaseConnectionPool,
 ) -> Result<Response, Rejection> {
     // It'd be nice to use the UUID crate for the file ID, but clients want an integer ID
+    let upper_bound = 2e53 as u64; // JS has trouble if we go higher than this
+    let id: u64 = thread_rng().gen_range(0..upper_bound);
     let now = chrono::Utc::now().timestamp_nanos();
     // Check authorization level if needed
     match rpc::MODE {
@@ -156,7 +158,7 @@ pub async fn store_file(
     // INSERT rather than REPLACE so that on the off chance there's already a file with this exact
     // id (i.e. timestamp) we simply error out and get the client to retry.
     let stmt = format!("INSERT INTO {} (id, timestamp) VALUES (?1, ?2)", storage::FILES_TABLE);
-    let _ = match conn.execute(&stmt, params![now, now]) {
+    let _ = match conn.execute(&stmt, params![id as i64, now]) {
         Ok(rows) => rows,
         Err(e) => {
             error!("Couldn't insert file record due to error: {}.", e);
@@ -164,7 +166,7 @@ pub async fn store_file(
         }
     };
     // Write to file
-    let raw_path = format!("files/{}", &now);
+    let raw_path = format!("files/{}", &id);
     let path = Path::new(&raw_path);
     let mut file = match File::create(path).await {
         Ok(file) => file,
@@ -184,14 +186,14 @@ pub async fn store_file(
     #[derive(Debug, Deserialize, Serialize)]
     struct Response {
         status_code: u16,
-        result: i64,
+        result: u64,
     }
-    let response = Response { status_code: StatusCode::OK.as_u16(), result: now };
+    let response = Response { status_code: StatusCode::OK.as_u16(), result: id };
     return Ok(warp::reply::json(&response).into_response());
 }
 
 pub async fn get_file(
-    id: i64, auth_token: Option<String>, pool: &storage::DatabaseConnectionPool,
+    id: u64, auth_token: Option<String>, pool: &storage::DatabaseConnectionPool,
 ) -> Result<GenericStringResponse, Rejection> {
     // Doesn't return a response directly for testing purposes
     // Check authorization level if needed

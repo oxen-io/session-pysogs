@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::convert::TryFrom;
 use std::fs;
 use std::path::Path;
 
@@ -86,7 +87,8 @@ async fn test_file_handling() {
     // Check that there's a file record
     let conn = pool.get().unwrap();
     let raw_query = format!("SELECT id FROM {}", storage::FILES_TABLE);
-    let id: i64 = conn.query_row(&raw_query, params![], |row| Ok(row.get(0)?)).unwrap();
+    let _id: i64 = conn.query_row(&raw_query, params![], |row| Ok(row.get(0)?)).unwrap();
+    let id = u64::try_from(_id).unwrap();
     // Retrieve the file and check the content
     let base64_encoded_file =
         handlers::get_file(id, Some(auth_token.clone()), &pool).await.unwrap().result;

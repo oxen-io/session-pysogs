@@ -103,7 +103,7 @@ async fn handle_get_request(
             warn!("Invalid endpoint: {}.", rpc_call.endpoint);
             return Err(warp::reject::custom(Error::InvalidRpcCall));
         }
-        let file_id: i64 = match components[1].parse() {
+        let file_id: u64 = match components[1].parse() {
             Ok(file_id) => file_id,
             Err(_) => {
                 warn!("Invalid endpoint: {}.", rpc_call.endpoint);
