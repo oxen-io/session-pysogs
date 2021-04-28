@@ -118,9 +118,8 @@ async fn handle_get_request(
             .await
             .map(|json| warp::reply::json(&json).into_response());
     }
-    // Check that the auth token is present
+    // Handle routes that require authorization
     let auth_token = auth_token.ok_or(warp::reject::custom(Error::NoAuthToken))?;
-    // Switch on the path
     match path {
         "messages" => {
             reject_if_file_server_mode(path)?;
@@ -175,6 +174,8 @@ async fn handle_post_request(
     room_id: Option<String>, rpc_call: RpcCall, path: &str, auth_token: Option<String>,
 ) -> Result<Response, Rejection> {
     // Handle routes that don't require authorization first
+    // The compact poll endpoint expects the auth token to be in the request body; not
+    // in the headers.
     if path == "compact_poll" {
         reject_if_file_server_mode(path)?;
         #[derive(Debug, Deserialize, Serialize)]
@@ -209,9 +210,8 @@ async fn handle_post_request(
         };
         return handlers::store_file(room_id, &json.file, auth_token, &pool).await;
     }
-    // Check that the auth token is present
+    // Handle routes that require authorization
     let auth_token = auth_token.ok_or(warp::reject::custom(Error::NoAuthToken))?;
-    // Switch on the path
     if path.starts_with("rooms") {
         reject_if_file_server_mode(path)?;
         let components: Vec<&str> = path.split("/").collect(); // Split on subsequent slashes

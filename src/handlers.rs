@@ -167,7 +167,8 @@ pub async fn store_file(
         }
     };
     // Write to file
-    // room_id is guaranteed to be present at this point
+    // room_id is guaranteed to be present at this point because we checked the auth
+    // token (the auth token will have been rejected if room_id is missing).
     let room_id = room_id.unwrap();
     match std::fs::create_dir_all(format!("files/{}_files", &room_id)) {
         Ok(_) => (),
@@ -218,7 +219,8 @@ pub async fn get_file(
     }
     // Try to read the file
     let mut bytes = vec![];
-    // room_id is guaranteed to be present at this point
+    // room_id is guaranteed to be present at this point because we checked the auth
+    // token (the auth token will have been rejected if room_id is missing).
     let raw_path = format!("files/{}_files/{}", room_id.unwrap(), id);
     let path = Path::new(&raw_path);
     let mut file = match File::open(path).await {
