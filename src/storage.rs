@@ -279,9 +279,10 @@ pub async fn prune_files(file_expiration: i64) {
                 Ok(_) => (),
                 Err(e) => return error!("Couldn't prune files due to error: {}.", e),
             };
+            // Log the result
+            info!("Pruned files for room: {}.", room);
         }
     }
-    info!("Pruned files.");
 }
 
 fn get_all_room_ids() -> Result<Vec<String>, Error> {
