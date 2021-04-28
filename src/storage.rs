@@ -244,7 +244,7 @@ pub async fn prune_files(file_expiration: i64) {
     for room in rooms {
         // It's not catastrophic if we fail to prune the database for a given room
         let pool = pool_by_room_id(&room);
-        let now = chrono::Utc::now().timestamp_nanos();
+        let now = chrono::Utc::now().timestamp();
         let expiration = now - file_expiration;
         // Get a database connection and open a transaction
         let conn = match pool.get() {
