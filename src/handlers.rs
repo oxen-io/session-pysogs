@@ -648,12 +648,12 @@ pub fn get_deleted_messages(
     let raw_query: String;
     if query_params.get("from_server_id").is_some() {
         raw_query = format!(
-            "SELECT (id, deleted_message_id) FROM {} WHERE id > (?1) ORDER BY id ASC LIMIT (?2)",
+            "SELECT id, deleted_message_id FROM {} WHERE id > (?1) ORDER BY id ASC LIMIT (?2)",
             storage::DELETED_MESSAGES_TABLE
         );
     } else {
         raw_query = format!(
-            "SELECT (id, deleted_message_id) FROM {} ORDER BY id DESC LIMIT (?2)",
+            "SELECT id, deleted_message_id FROM {} ORDER BY id DESC LIMIT (?2)",
             storage::DELETED_MESSAGES_TABLE
         );
     }
