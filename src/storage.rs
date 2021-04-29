@@ -92,7 +92,8 @@ fn create_room_tables_if_needed(conn: &DatabaseConnection) {
         public_key TEXT,
         timestamp INTEGER,
         data TEXT,
-        signature TEXT
+        signature TEXT,
+        is_deleted INTEGER
     )",
         MESSAGES_TABLE
     );
@@ -284,6 +285,14 @@ pub async fn prune_files(file_expiration: i64) {
         }
     }
 }
+
+// Migration
+
+pub fn perform_migration() {
+    // Do nothing
+}
+
+// Utilities
 
 fn get_all_room_ids() -> Result<Vec<String>, Error> {
     // Get a database connection
