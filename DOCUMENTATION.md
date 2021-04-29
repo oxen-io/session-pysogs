@@ -324,6 +324,31 @@ Get messages from the server. If `from_server_id` is set only messages stored af
 }
 ```
 
+### POST /delete_messages
+
+| Header        | Required | Notes              |
+| ------------- | -------- | ------------------ |
+| Authorization | Yes      | Basic OR Moderator |
+| Room          | Yes      |                    |
+
+Deletes the messages with the given IDs from the server. The requesting user must either be the sender of the messages or have moderation permission.
+
+**Expected body:**
+
+```
+{
+    ids: [ 0, 1, 2, ... ], // the server IDs of the messages to delete
+}
+```
+
+**Response:**
+
+```
+{
+    status_code: u16
+}
+```
+
 ### DELETE /messages/:message_id
 
 | Header        | Required | Notes              |
