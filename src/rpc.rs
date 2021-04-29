@@ -350,7 +350,7 @@ async fn handle_delete_request(
         return handlers::delete_auth_token(&auth_token, pool);
     }
     // DELETE /moderators/:public_key
-    if path == "moderators" {
+    if path.starts_with("moderators") {
         reject_if_file_server_mode(path)?;
         let components: Vec<&str> = path.split("/").collect(); // Split on subsequent slashes
         if components.len() != 2 {
