@@ -286,6 +286,31 @@ pub async fn prune_files(file_expiration: i64) {
     }
 }
 
+// Migration
+
+pub fn perform_migration() {
+    let rooms = match get_all_room_ids() {
+        Ok(rooms) => rooms,
+        Err(_) => return,
+    };
+    for room in rooms {
+        let pool = pool_by_room_id(&room);
+        let conn = match pool.get() {
+            Ok(conn) => conn,
+            Err(e) => return error!("Couldn't perform migration due to error: {}.", e),
+        };
+        let stmt = format!("ALTER TABLE {} ADD is_deleted INTEGER", MESSAGES_TABLE);
+        match conn.execute(&stmt, params![]) {
+            Ok(_) => (),
+            Err(e) => return error!("Couldn't perform migration due to error: {}.", e),
+        };
+        // Log the result
+        info!("Successfully performed migration for room: {}.", room);
+    }
+}
+
+// Utilities
+
 fn get_all_room_ids() -> Result<Vec<String>, Error> {
     // Get a database connection
     let conn = MAIN_POOL.get().map_err(|_| Error::DatabaseFailedInternally)?;

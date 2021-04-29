@@ -69,6 +69,8 @@ async fn main() {
         fs::create_dir_all("./files").unwrap();
         // Create default rooms
         create_default_rooms().await;
+        // Perform migration
+        storage::perform_migration();
         // Set up pruning jobs
         let prune_pending_tokens_future = storage::prune_pending_tokens_periodically();
         let prune_tokens_future = storage::prune_tokens_periodically();
