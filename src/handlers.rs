@@ -470,12 +470,12 @@ pub fn insert_message(
     let tx = conn.transaction().map_err(|_| Error::DatabaseFailedInternally)?;
     // Insert the message
     let stmt = format!(
-        "INSERT INTO {} (public_key, timestamp, data, signature) VALUES (?1, ?2, ?3, ?4)",
+        "INSERT INTO {} (public_key, timestamp, data, signature, is_deleted) VALUES (?1, ?2, ?3, ?4, ?5)",
         storage::MESSAGES_TABLE
     );
     match tx.execute(
         &stmt,
-        params![&requesting_public_key, message.timestamp, message.data, message.signature],
+        params![&requesting_public_key, message.timestamp, message.data, message.signature, 0],
     ) {
         Ok(_) => (),
         Err(e) => {
@@ -526,10 +526,10 @@ pub fn get_messages(
     // Query the database
     let raw_query: String;
     if query_params.get("from_server_id").is_some() {
-        raw_query = format!("SELECT id, public_key, timestamp, data, signature FROM {} WHERE rowid > (?1) ORDER BY rowid ASC LIMIT (?2)", storage::MESSAGES_TABLE);
+        raw_query = format!("SELECT id, public_key, timestamp, data, signature FROM {} WHERE id > (?1) AND is_deleted = 0 ORDER BY id ASC LIMIT (?2)", storage::MESSAGES_TABLE);
     } else {
         raw_query = format!(
-            "SELECT id, public_key, timestamp, data, signature FROM {} ORDER BY rowid DESC LIMIT (?2)",
+            "SELECT id, public_key, timestamp, data, signature FROM {} WHERE is_deleted = 0 ORDER BY id DESC LIMIT (?2)",
             storage::MESSAGES_TABLE
         );
     }
@@ -608,7 +608,7 @@ pub fn delete_message(
     let mut conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     let tx = conn.transaction().map_err(|_| Error::DatabaseFailedInternally)?;
     // Delete the message if it's present
-    let stmt = format!("DELETE FROM {} WHERE id = (?1)", storage::MESSAGES_TABLE);
+    let stmt = format!("UPDATE {} SET public_key = 'deleted', timestamp = 0, data = 'deleted', signature = 'deleted', is_deleted = 1 WHERE id = (?1)", storage::MESSAGES_TABLE);
     let count = match tx.execute(&stmt, params![id]) {
         Ok(count) => count,
         Err(e) => {

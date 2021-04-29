@@ -92,7 +92,8 @@ fn create_room_tables_if_needed(conn: &DatabaseConnection) {
         public_key TEXT,
         timestamp INTEGER,
         data TEXT,
-        signature TEXT
+        signature TEXT,
+        is_deleted INTEGER
     )",
         MESSAGES_TABLE
     );
