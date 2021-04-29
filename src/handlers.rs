@@ -560,6 +560,13 @@ pub fn get_messages(
 pub fn delete_messages(
     ids: Vec<i64>, auth_token: &str, pool: &storage::DatabaseConnectionPool,
 ) -> Result<Response, Rejection> {
+    // FIXME: Right now a situation can occur where a non-moderator user selects multiple
+    // messages, some of which are their own and some of which aren't, and then hits this endpoint.
+    // When they do, some of the messages would be deleted but an error status code would be
+    // returned, prompting the client to roll back the deletions they made locally. The only thing
+    // preventing this scenario from occurring right now is that we don't allow users to make such
+    // a selection in the Session UI. In the future we should take a better approach to make it
+    // impossible.
     for id in ids {
         delete_message(id, auth_token, pool)?;
     }
