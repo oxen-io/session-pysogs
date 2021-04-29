@@ -556,6 +556,17 @@ pub fn get_messages(
 
 // Message deletion
 
+/// Deletes the messages with the given `ids` from the database, if present.
+pub fn delete_messages(
+    ids: Vec<i64>, auth_token: &str, pool: &storage::DatabaseConnectionPool,
+) -> Result<Response, Rejection> {
+    for id in ids {
+        delete_message(id, auth_token, pool)?;
+    }
+    let json = models::StatusCode { status_code: StatusCode::OK.as_u16() };
+    return Ok(warp::reply::json(&json).into_response());
+}
+
 /// Deletes the message with the given `id` from the database, if it's present.
 pub fn delete_message(
     id: i64, auth_token: &str, pool: &storage::DatabaseConnectionPool,
