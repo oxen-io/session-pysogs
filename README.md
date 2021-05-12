@@ -47,7 +47,7 @@ session-open-group-server --print-url
 This will output a result similar to
 
 ```
-http://[host_name_or_ip]/[room_id]?public_key=2054fa3271f27ec9e55492c85d022f958                                                2cb4aa2f457e4b885147fb913b9c131
+http://[host_name_or_ip]/[room_id]?public_key=2054fa3271f27ec9e55492c85d022f9582cb4aa2f457e4b885147fb913b9c131
 ```
 
 You will need to replace the hostname with the IP address of your VPS or the domain mapping to your IP address, and the room_id with the id of one of the room_id's you generated earlier. 
@@ -55,7 +55,7 @@ You will need to replace the hostname with the IP address of your VPS or the dom
 As an **example** 
 
 ```
-http://116.203.217.101/fish?public_key=2054fa3271f27ec9e55492c85d022f958                                                2cb4aa2f457e4b885147fb913b9c131
+http://116.203.217.101/fish?public_key=2054fa3271f27ec9e55492c85d022f9582cb4aa2f457e4b885147fb913b9c131
 ```
 
 This URL can then be used to join the group inside the Session app
