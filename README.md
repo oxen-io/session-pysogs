@@ -8,6 +8,8 @@ Want to build from source? See [BUILDING.md](https://github.com/nielsandriesse/s
 
 ## Installation Instructions
 
+**Note:** .debs for the Session Open Group Server are currently only available for Ubuntu version 20.04
+
 ### Step 1: Pull in the Session open group server executable:
 
 ```
@@ -15,35 +17,67 @@ sudo curl -so /etc/apt/trusted.gpg.d/oxen.gpg https://deb.oxen.io/pub.gpg
 echo "deb https://deb.oxen.io $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/oxen.list
 sudo apt update
 sudo apt install session-open-group-server
+sudo chown _loki /var/lib/session-open-group-server -R
 ```
-
-You can check that the service is running by doing `systemctl status session-open-group-server`. If the service didn't start and gives you the error: `error creating server listener`, you can fix this by doing: `setcap CAP_NET_BIND_SERVICE=+eip /usr/bin/session-open-group-server`.
 
 ### Step 2: Add a room
 
 Add a room of your choice with the following command:
 
 ```
-/usr/bin/session-open-group-server --add-room {room_id} {room_name}
+session-open-group-server --add-room {room_id} {room_name}
 ```
 
-`room_id` must be lowercase and consist of only letters, numbers and underscores.
+`room_id` must be lowercase and consist of only letters, numbers and underscores. 
+
+As an **example**
+
+```
+session-open-group-server --add-room fish FishingAustralia
+```
 
 ### Step 3: Print your server's URL
 
 Print the URL users can use to join rooms on your open group server by running:
 
 ```
-/usr/bin/session-open-group-server --print-url
+session-open-group-server --print-url
 ```
 
-### Step 4: Add an image for your new room
+This will output a result similar to
 
-There are two ways to do this. Either:
+```
+http://[host_name_or_ip]/[room_id]?public_key=2054fa3271f27ec9e55492c85d022f958                                                2cb4aa2f457e4b885147fb913b9c131
+```
 
-- make yourself a moderator using the following command: `/usr/bin/session-open-group-server --add-moderator {public_key} {room_id}`
-- add your room on Session desktop using the URL printed earlier
-- use Session desktop to upload a picture for your room
+You will need to replace the hostname with the IP address of your VPS or the domain mapping to your IP address, and the room_id with the id of one of the room_id's you generated earlier. 
+
+As an **example** 
+
+```
+http://116.203.217.101/fish?public_key=2054fa3271f27ec9e55492c85d022f958                                                2cb4aa2f457e4b885147fb913b9c131
+```
+
+This URL can then be used to join the group inside the Session app
+
+### Step 4: Make yourself a moderator
+
+make yourself a moderator using the following command: 
+```
+session-open-group-server --add-moderator {your_session_id} {room_id}
+```
+
+As an **example**  
+
+```
+session-open-group-server --add-moderator 05d871fc80ca007eed9b2f4df72853e2a2d5465a92fcb1889fb5c84aa2833b3b40 fish
+``` 
+
+
+### Step 5: Add an image for your new room (Optional)
+
+- Add your room on Session desktop using the URL printed earlier
+- Use Session desktop to upload a picture for your room
 
 Or
 
