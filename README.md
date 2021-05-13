@@ -50,7 +50,7 @@ This will output a result similar to:
 http://[host_name_or_ip]/[room_id]?public_key=2054fa3271f27ec9e55492c85d022f9582cb4aa2f457e4b885147fb913b9c131
 ```
 
-You will need to replace `[host_name_or_ip]` with the IP address of your VPS or the domain mapping to your IP address, and `room_id` with the ID of one of the rooms you created earlier.
+You will need to replace `[host_name_or_ip]` with the IP address of your VPS or the domain mapping to your IP address, and `[room_id]` with the ID of one of the rooms you created earlier.
 
 For **example**:
 
