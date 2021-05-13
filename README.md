@@ -8,7 +8,7 @@ Want to build from source? See [BUILDING.md](https://github.com/nielsandriesse/s
 
 ## Installation Instructions
 
-**Note:** .debs for the Session Open Group Server are currently only available for Ubuntu version 20.04
+**Note:** .debs for the Session Open Group server are currently only available for Ubuntu 20.04.
 
 ### Step 1: Pull in the Session open group server executable:
 
@@ -28,9 +28,9 @@ Add a room of your choice with the following command:
 session-open-group-server --add-room {room_id} {room_name}
 ```
 
-`room_id` must be lowercase and consist of only letters, numbers and underscores. 
+`room_id` must be lowercase and consist of only letters, numbers and underscores.
 
-As an **example**
+For **example**:
 
 ```
 session-open-group-server --add-room fish FishingAustralia
@@ -44,30 +44,31 @@ Print the URL users can use to join rooms on your open group server by running:
 session-open-group-server --print-url
 ```
 
-This will output a result similar to
+This will output a result similar to:
 
 ```
 http://[host_name_or_ip]/[room_id]?public_key=2054fa3271f27ec9e55492c85d022f9582cb4aa2f457e4b885147fb913b9c131
 ```
 
-You will need to replace the hostname with the IP address of your VPS or the domain mapping to your IP address, and the room_id with the id of one of the room_id's you generated earlier. 
+You will need to replace `[host_name_or_ip]` with the IP address of your VPS or the domain mapping to your IP address, and `room_id` with the ID of one of the rooms you created earlier.
 
-As an **example** 
+For **example**:
 
 ```
 http://116.203.217.101/fish?public_key=2054fa3271f27ec9e55492c85d022f9582cb4aa2f457e4b885147fb913b9c131
 ```
 
-This URL can then be used to join the group inside the Session app
+This URL can then be used to join the group inside the Session app.
 
 ### Step 4: Make yourself a moderator
 
-make yourself a moderator using the following command: 
+Make yourself a moderator using the following command: 
+
 ```
 session-open-group-server --add-moderator {your_session_id} {room_id}
 ```
 
-As an **example**  
+For **example**:
 
 ```
 session-open-group-server --add-moderator 05d871fc80ca007eed9b2f4df72853e2a2d5465a92fcb1889fb5c84aa2833b3b40 fish
