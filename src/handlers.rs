@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::convert::TryInto;
 use std::path::Path;
 
-use chrono;
 use log::{error, info, warn};
 use rand::{thread_rng, Rng};
 use rusqlite::params;
@@ -135,7 +134,7 @@ pub async fn store_file(
     // Check authorization level if needed
     match rpc::MODE {
         rpc::Mode::OpenGroupServer => {
-            let auth_token = auth_token.ok_or(warp::reject::custom(Error::NoAuthToken))?;
+            let auth_token = auth_token.ok_or_else(|| warp::reject::custom(Error::NoAuthToken))?;
             let (has_authorization_level, _) =
                 has_authorization_level(&auth_token, AuthorizationLevel::Basic, pool)?;
             if !has_authorization_level {
@@ -170,10 +169,7 @@ pub async fn store_file(
     // room_id is guaranteed to be present at this point because we checked the auth
     // token (the auth token will have been rejected if room_id is missing).
     let room_id = room_id.unwrap();
-    match std::fs::create_dir_all(format!("files/{}_files", &room_id)) {
-        Ok(_) => (),
-        Err(_) => (),
-    };
+    let _ = std::fs::create_dir_all(format!("files/{}_files", &room_id));
     let raw_path = format!("files/{}_files/{}", &room_id, &id);
     let path = Path::new(&raw_path);
     let mut file = match File::create(path).await {
@@ -208,7 +204,7 @@ pub async fn get_file(
     // Check authorization level if needed
     match rpc::MODE {
         rpc::Mode::OpenGroupServer => {
-            let auth_token = auth_token.ok_or(warp::reject::custom(Error::NoAuthToken))?;
+            let auth_token = auth_token.ok_or_else(|| warp::reject::custom(Error::NoAuthToken))?;
             let (has_authorization_level, _) =
                 has_authorization_level(&auth_token, AuthorizationLevel::Basic, pool)?;
             if !has_authorization_level {
@@ -328,8 +324,9 @@ pub fn get_auth_token_challenge(
 ) -> Result<models::Challenge, Rejection> {
     // Doesn't return a response directly for testing purposes
     // Get the public key
-    let hex_public_key =
-        query_params.get("public_key").ok_or(warp::reject::custom(Error::InvalidRpcCall))?;
+    let hex_public_key = query_params
+        .get("public_key")
+        .ok_or_else(|| warp::reject::custom(Error::InvalidRpcCall))?;
     // Validate the public key
     if !is_valid_public_key(hex_public_key) {
         warn!("Ignoring challenge request for invalid public key: {}.", hex_public_key);
@@ -398,7 +395,7 @@ pub fn claim_auth_token(
     let index = pending_tokens
         .iter()
         .position(|(_, pending_token)| *pending_token == claim)
-        .ok_or_else(|| Error::Unauthorized)?;
+        .ok_or(Error::Unauthorized)?;
     let token = &pending_tokens[index].1;
     // Store the claimed token
     let stmt = format!(
@@ -590,7 +587,7 @@ pub fn delete_message(
         let raw_query =
             format!("SELECT public_key FROM {} WHERE id = (?1)", storage::MESSAGES_TABLE);
         let mut query = conn.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
-        let rows = match query.query_map(params![id], |row| Ok(row.get(0)?)) {
+        let rows = match query.query_map(params![id], |row| row.get(0)) {
             Ok(rows) => rows,
             Err(e) => {
                 error!("Couldn't delete message due to error: {}.", e);
@@ -600,7 +597,8 @@ pub fn delete_message(
         let public_keys: Vec<String> = rows.filter_map(|result| result.ok()).collect();
         public_keys.get(0).map(|s| s.to_string())
     };
-    let sender = sender_option.ok_or(warp::reject::custom(Error::DatabaseFailedInternally))?;
+    let sender =
+        sender_option.ok_or_else(|| warp::reject::custom(Error::DatabaseFailedInternally))?;
     if !is_moderator(&requesting_public_key, pool)? && requesting_public_key != sender {
         return Err(warp::reject::custom(Error::Unauthorized));
     }
@@ -883,7 +881,7 @@ pub fn get_member_count(
     // Query the database
     let raw_query = format!("SELECT public_key FROM {}", storage::TOKENS_TABLE);
     let mut query = conn.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
-    let rows = match query.query_map(params![], |row| Ok(row.get(0)?)) {
+    let rows = match query.query_map(params![], |row| row.get(0)) {
         Ok(rows) => rows,
         Err(e) => {
             error!("Couldn't query database due to error: {}.", e);
@@ -1033,7 +1031,7 @@ fn get_moderators_vector(pool: &storage::DatabaseConnectionPool) -> Result<Vec<S
     // Query the database
     let raw_query = format!("SELECT public_key FROM {}", storage::MODERATORS_TABLE);
     let mut query = conn.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
-    let rows = match query.query_map(params![], |row| Ok(row.get(0)?)) {
+    let rows = match query.query_map(params![], |row| row.get(0)) {
         Ok(rows) => rows,
         Err(e) => {
             error!("Couldn't query database due to error: {}.", e);
@@ -1059,7 +1057,7 @@ fn get_banned_public_keys_vector(
     // Query the database
     let raw_query = format!("SELECT public_key FROM {}", storage::BLOCK_LIST_TABLE);
     let mut query = conn.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
-    let rows = match query.query_map(params![], |row| Ok(row.get(0)?)) {
+    let rows = match query.query_map(params![], |row| row.get(0)) {
         Ok(rows) => rows,
         Err(e) => {
             error!("Couldn't query database due to error: {}.", e);
@@ -1096,7 +1094,7 @@ fn get_public_key_for_auth_token(
     // Query the database
     let raw_query = format!("SELECT public_key FROM {} WHERE token = (?1)", storage::TOKENS_TABLE);
     let mut query = conn.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
-    let rows = match query.query_map(params![auth_token], |row| Ok(row.get(0)?)) {
+    let rows = match query.query_map(params![auth_token], |row| row.get(0)) {
         Ok(rows) => rows,
         Err(e) => {
             error!("Couldn't query database due to error: {}.", e);
@@ -1113,7 +1111,7 @@ fn has_authorization_level(
 ) -> Result<(bool, String), Rejection> {
     // Check that we have a public key associated with the given auth token
     let public_key_option = get_public_key_for_auth_token(auth_token, pool)?;
-    let public_key = public_key_option.ok_or(warp::reject::custom(Error::NoAuthToken))?;
+    let public_key = public_key_option.ok_or_else(|| warp::reject::custom(Error::NoAuthToken))?;
     // Check that the given public key isn't banned
     if is_banned(&public_key, pool)? {
         return Err(warp::reject::custom(Error::Unauthorized));

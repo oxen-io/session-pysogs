@@ -1,3 +1,5 @@
+#![allow(clippy::needless_return, clippy::upper_case_acronyms)]
+
 use parking_lot::RwLock;
 use std::fs;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -9,7 +11,6 @@ use std::{
 use futures::join;
 use log::info;
 use structopt::StructOpt;
-use tokio;
 use warp::Filter;
 
 mod crypto;
