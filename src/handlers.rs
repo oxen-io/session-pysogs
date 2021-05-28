@@ -889,7 +889,7 @@ pub fn get_member_count(
     // Get a database connection
     let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     // Query the database
-    let raw_query = format!("SELECT public_key FROM {}", storage::TOKENS_TABLE);
+    let raw_query = format!("SELECT COUNT(public_key) FROM {}", storage::TOKENS_TABLE);
     let mut query = conn.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
     let rows = match query.query_map(params![], |row| Ok(row.get(0)?)) {
         Ok(rows) => rows,
@@ -898,13 +898,13 @@ pub fn get_member_count(
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
-    let public_keys: Vec<String> = rows.filter_map(|result| result.ok()).collect();
-    let public_key_count = public_keys.len();
+    let public_key_sizes: Vec<u32> = rows.filter_map(|result| result.ok()).collect();
+    let public_key_count = public_key_sizes[0];
     // Return
     #[derive(Debug, Deserialize, Serialize)]
     struct Response {
         status_code: u16,
-        member_count: usize,
+        member_count: u32,
     }
     let response =
         Response { status_code: StatusCode::OK.as_u16(), member_count: public_key_count };
@@ -1101,8 +1101,24 @@ fn get_banned_public_keys_vector(
 }
 
 fn is_banned(public_key: &str, pool: &storage::DatabaseConnectionPool) -> Result<bool, Rejection> {
-    let public_keys = get_banned_public_keys_vector(&pool)?;
-    return Ok(public_keys.contains(&public_key.to_owned()));
+    // Get a database connection
+    let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
+    // Query the database
+    let raw_query = format!(
+        "SELECT COUNT(public_key) FROM {} WHERE public_key = (?1)",
+        storage::BLOCK_LIST_TABLE
+    );
+    let mut query = conn.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
+    let rows = match query.query_map(params![public_key], |row| Ok(row.get(0)?)) {
+        Ok(rows) => rows,
+        Err(e) => {
+            error!("Couldn't query database due to error: {}.", e);
+            return Err(warp::reject::custom(Error::DatabaseFailedInternally));
+        }
+    };
+    let public_key_sizes: Vec<u32> = rows.filter_map(|result| result.ok()).collect();
+    let public_key_count = public_key_sizes[0];
+    return Ok(public_key_count != 0);
 }
 
 fn is_valid_public_key(public_key: &str) -> bool {
