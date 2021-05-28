@@ -258,7 +258,7 @@ pub async fn prune_files(file_expiration: i64) {
             Ok(query) => query,
             Err(e) => return error!("Couldn't prune files due to error: {}.", e),
         };
-        let rows = match query.query_map(params![expiration], |row| Ok(row.get(0)?)) {
+        let rows = match query.query_map(params![expiration], |row| row.get(0)) {
             Ok(rows) => rows,
             Err(e) => {
                 return error!("Couldn't prune files due to error: {}.", e);
@@ -300,7 +300,7 @@ fn get_all_room_ids() -> Result<Vec<String>, Error> {
     // Query the database
     let raw_query = format!("SELECT id FROM {}", MAIN_TABLE);
     let mut query = conn.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
-    let rows = match query.query_map(params![], |row| Ok(row.get(0)?)) {
+    let rows = match query.query_map(params![], |row| row.get(0)) {
         Ok(rows) => rows,
         Err(e) => {
             error!("Couldn't query database due to error: {}.", e);
