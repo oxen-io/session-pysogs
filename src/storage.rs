@@ -57,6 +57,8 @@ pub const PENDING_TOKENS_TABLE: &str = "pending_tokens";
 pub const TOKENS_TABLE: &str = "tokens";
 pub const FILES_TABLE: &str = "files";
 
+pub const USER_ACTIVITY_TABLE: &str = "user_activity";
+
 lazy_static::lazy_static! {
 
     static ref POOLS: Mutex<HashMap<String, DatabaseConnectionPool>> = Mutex::new(HashMap::new());
@@ -156,6 +158,15 @@ fn create_room_tables_if_needed(conn: &DatabaseConnection) {
         FILES_TABLE
     );
     conn.execute(&files_table_cmd, params![]).expect("Couldn't create files table.");
+
+    let user_activity_table_cmd = format!(
+        "CREATE TABLE IF NOT EXISTS {} (
+        public_key TEXT PRIMARY KEY,
+        last_active INTEGER NOT NULL
+    )",
+        USER_ACTIVITY_TABLE,
+    );
+    conn.execute(&user_activity_table_cmd, params![]).expect("Couldn't create user activty table.");
 }
 
 // Pruning
@@ -289,7 +300,17 @@ pub async fn prune_files(file_expiration: i64) {
 // Migration
 
 pub fn perform_migration() {
-    // Do nothing
+    // ensure all rooms schemas are up to date
+    let rooms = match get_all_room_ids() {
+        Ok(ids) => ids,
+        Err(_e) => {
+            error!("could not get all room ids");
+            return;
+        }
+    };
+    for room in rooms {
+        create_database_if_needed(&room);
+    }
 }
 
 // Utilities

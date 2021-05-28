@@ -82,6 +82,7 @@ async fn main() {
             .or(routes::delete_room())
             .or(routes::add_moderator())
             .or(routes::delete_moderator())
+            .or(routes::get_room_stats())
             .or(routes::get_url());
         if opt.tls {
             info!("Running on {} with TLS.", addr);
