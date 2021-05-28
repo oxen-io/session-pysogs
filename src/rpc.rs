@@ -31,9 +31,9 @@ pub async fn handle_rpc_call(rpc_call: RpcCall) -> Result<Response, Rejection> {
     // Adding "http://placeholder.io" in front of the endpoint is a workaround
     // for the fact that the URL crate doesn't accept relative URLs. There are
     // other (cleaner) ways to fix this but they tend to be much more complex.
-    let raw_uri = format!("http://placeholder.io/{}", rpc_call.endpoint.trim_start_matches("/"));
+    let raw_uri = format!("http://placeholder.io/{}", rpc_call.endpoint.trim_start_matches('/'));
     let path: String = match raw_uri.parse::<http::Uri>() {
-        Ok(uri) => uri.path().trim_start_matches("/").to_string(),
+        Ok(uri) => uri.path().trim_start_matches('/').to_string(),
         Err(e) => {
             warn!("Couldn't parse URI from: {} due to error: {}.", &raw_uri, e);
             return Err(warp::reject::custom(Error::InvalidRpcCall));
@@ -85,7 +85,7 @@ async fn handle_get_request(
         return Ok(warp::reply::json(&response).into_response());
     } else if path.starts_with("rooms") {
         reject_if_file_server_mode(path)?;
-        let components: Vec<&str> = path.split("/").collect(); // Split on subsequent slashes
+        let components: Vec<&str> = path.split('/').collect(); // Split on subsequent slashes
         if components.len() == 1 {
             return handlers::get_all_rooms();
         } else if components.len() == 2 {
@@ -118,7 +118,7 @@ async fn handle_get_request(
     // This route requires auth in open group server mode, but not in file server mode
     let pool = get_pool_for_room(&rpc_call)?;
     if path.starts_with("files") {
-        let components: Vec<&str> = path.split("/").collect(); // Split on subsequent slashes
+        let components: Vec<&str> = path.split('/').collect(); // Split on subsequent slashes
         if components.len() != 2 {
             warn!("Invalid endpoint: {}.", rpc_call.endpoint);
             return Err(warp::reject::custom(Error::InvalidRpcCall));
@@ -135,7 +135,7 @@ async fn handle_get_request(
             .map(|json| warp::reply::json(&json).into_response());
     }
     // Handle routes that require authorization
-    let auth_token = auth_token.ok_or(warp::reject::custom(Error::NoAuthToken))?;
+    let auth_token = auth_token.ok_or_else(|| warp::reject::custom(Error::NoAuthToken))?;
     match path {
         "messages" => {
             reject_if_file_server_mode(path)?;
@@ -227,10 +227,10 @@ async fn handle_post_request(
         return handlers::store_file(room_id, &json.file, auth_token, &pool).await;
     }
     // Handle routes that require authorization
-    let auth_token = auth_token.ok_or(warp::reject::custom(Error::NoAuthToken))?;
+    let auth_token = auth_token.ok_or_else(|| warp::reject::custom(Error::NoAuthToken))?;
     if path.starts_with("rooms") {
         reject_if_file_server_mode(path)?;
-        let components: Vec<&str> = path.split("/").collect(); // Split on subsequent slashes
+        let components: Vec<&str> = path.split('/').collect(); // Split on subsequent slashes
         if components.len() == 3 && components[2] == "image" {
             #[derive(Debug, Deserialize)]
             struct JSON {
@@ -331,11 +331,11 @@ async fn handle_delete_request(
     pool: &storage::DatabaseConnectionPool,
 ) -> Result<Response, Rejection> {
     // Check that the auth token is present
-    let auth_token = auth_token.ok_or(warp::reject::custom(Error::NoAuthToken))?;
+    let auth_token = auth_token.ok_or_else(|| warp::reject::custom(Error::NoAuthToken))?;
     // DELETE /messages/:server_id
     if path.starts_with("messages") {
         reject_if_file_server_mode(path)?;
-        let components: Vec<&str> = path.split("/").collect(); // Split on subsequent slashes
+        let components: Vec<&str> = path.split('/').collect(); // Split on subsequent slashes
         if components.len() != 2 {
             warn!("Invalid endpoint: {}.", path);
             return Err(warp::reject::custom(Error::InvalidRpcCall));
@@ -352,7 +352,7 @@ async fn handle_delete_request(
     // DELETE /block_list/:public_key
     if path.starts_with("block_list") {
         reject_if_file_server_mode(path)?;
-        let components: Vec<&str> = path.split("/").collect(); // Split on subsequent slashes
+        let components: Vec<&str> = path.split('/').collect(); // Split on subsequent slashes
         if components.len() != 2 {
             warn!("Invalid endpoint: {}.", path);
             return Err(warp::reject::custom(Error::InvalidRpcCall));
@@ -368,7 +368,7 @@ async fn handle_delete_request(
     // DELETE /moderators/:public_key
     if path.starts_with("moderators") {
         reject_if_file_server_mode(path)?;
-        let components: Vec<&str> = path.split("/").collect(); // Split on subsequent slashes
+        let components: Vec<&str> = path.split('/').collect(); // Split on subsequent slashes
         if components.len() != 2 {
             warn!("Invalid endpoint: {}.", path);
             return Err(warp::reject::custom(Error::InvalidRpcCall));

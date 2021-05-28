@@ -65,7 +65,7 @@ fn parse_onion_request_payload(
     }
     // Extract the different components
     // This is safe because we know blob has a length of at least 4 bytes
-    let size = as_le_u32(&blob[0..4].try_into().unwrap()) as usize;
+    let size = u32::from_le_bytes(blob[0..4].try_into().unwrap()) as usize;
     let ciphertext: Vec<u8> = blob[4..(4 + size)].try_into().unwrap();
     let utf8_json: Vec<u8> = blob[(4 + size)..].try_into().unwrap();
     // Parse JSON
@@ -117,13 +117,4 @@ async fn encrypt_response(response: Response, symmetric_key: &[u8]) -> Result<Re
     let response =
         warp::http::Response::builder().status(StatusCode::OK.as_u16()).body(json).into_response();
     return Ok(response);
-}
-
-// Utilities
-
-fn as_le_u32(array: &[u8; 4]) -> u32 {
-    ((array[0] as u32) << 00)
-        + ((array[1] as u32) << 08)
-        + ((array[2] as u32) << 16)
-        + ((array[3] as u32) << 24)
 }
