@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::path::Path;
+use std::sync::Mutex;
 
 use chrono;
 use log::{error, info, warn};
@@ -26,6 +27,13 @@ enum AuthorizationLevel {
 pub struct GenericStringResponse {
     pub status_code: u16,
     pub result: String,
+}
+
+pub const SESSION_VERSION_UPDATE_INTERVAL: i64 = 30 * 60;
+
+lazy_static::lazy_static! {
+
+    pub static ref SESSION_VERSIONS: Mutex<HashMap<String, (i64, String)>> = Mutex::new(HashMap::new());
 }
 
 // Rooms
@@ -999,6 +1007,28 @@ pub fn compact_poll(
 pub async fn get_url() -> Result<Response, Rejection> {
     let url = super::get_url();
     return Ok(warp::reply::json(&url).into_response());
+}
+
+pub async fn get_session_version(platform: &str) -> Result<String, Rejection> {
+    let mut session_versions = SESSION_VERSIONS.lock().unwrap().clone();
+    let now = chrono::Utc::now().timestamp();
+    if let Some(version_info) = session_versions.get(platform) {
+        let last_updated = version_info.0;
+        if now - last_updated < SESSION_VERSION_UPDATE_INTERVAL {
+            let tag = version_info.1.to_string();
+            println!("Returning cached value: {}", tag);
+            return Ok(tag);
+        }
+    }
+    let octocrab = octocrab::instance();
+    let repo = format!("session-{}", platform);
+    let handler = octocrab.repos("oxen-io", repo);
+    let release = handler.releases().get_latest().await.unwrap();
+    let tag = release.tag_name;
+    let tuple = (now, tag.clone());
+    session_versions.insert(platform.to_string(), tuple);
+    *SESSION_VERSIONS.lock().unwrap() = session_versions.clone();
+    return Ok(tag.clone());
 }
 
 // Utilities

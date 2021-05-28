@@ -98,6 +98,27 @@ async fn handle_get_request(
             warn!("Invalid endpoint: {}.", rpc_call.endpoint);
             return Err(warp::reject::custom(Error::InvalidRpcCall));
         }
+    } else if path.starts_with("session_version") {
+        match MODE {
+            Mode::OpenGroupServer => {
+                warn!("Ignoring RPC call with invalid or unused endpoint: {}.", path);
+                return Err(warp::reject::custom(Error::InvalidRpcCall));
+            }
+            Mode::FileServer => (),
+        }
+        let components: Vec<&str> = path.split("/").collect(); // Split on subsequent slashes
+        if components.len() == 2 {
+            let platform = components[1];
+            let version = handlers::get_session_version(platform).await?;
+            let response = handlers::GenericStringResponse {
+                status_code: StatusCode::OK.as_u16(),
+                result: version,
+            };
+            return Ok(warp::reply::json(&response).into_response());
+        } else {
+            warn!("Invalid endpoint: {}.", rpc_call.endpoint);
+            return Err(warp::reject::custom(Error::InvalidRpcCall));
+        }
     }
     // This route requires auth in open group server mode, but not in file server mode
     let pool = get_pool_for_room(&rpc_call)?;
