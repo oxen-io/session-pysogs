@@ -474,6 +474,8 @@ pub fn insert_message(
     let mut conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     let tx = conn.transaction().map_err(|_| Error::DatabaseFailedInternally)?;
     // Insert the message
+    let timestamp = chrono::Utc::now().timestamp_millis();
+    message.timestamp = timestamp;
     let stmt = format!(
         "INSERT INTO {} (public_key, timestamp, data, signature, is_deleted) VALUES (?1, ?2, ?3, ?4, ?5)",
         storage::MESSAGES_TABLE
