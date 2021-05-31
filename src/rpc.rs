@@ -106,8 +106,9 @@ async fn handle_get_request(
             }
             Mode::FileServer => (),
         }
-        let platform =
-            query_params.get("platform").ok_or(warp::reject::custom(Error::InvalidRpcCall))?;
+        let platform = query_params
+            .get("platform")
+            .ok_or_else(|| warp::reject::custom(Error::InvalidRpcCall))?;
         let version = handlers::get_session_version(platform).await?;
         let response = handlers::GenericStringResponse {
             status_code: StatusCode::OK.as_u16(),
