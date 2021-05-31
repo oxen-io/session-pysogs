@@ -475,13 +475,14 @@ pub fn insert_message(
     let tx = conn.transaction().map_err(|_| Error::DatabaseFailedInternally)?;
     // Insert the message
     let timestamp = chrono::Utc::now().timestamp_millis();
+    message.timestamp = timestamp;
     let stmt = format!(
         "INSERT INTO {} (public_key, timestamp, data, signature, is_deleted) VALUES (?1, ?2, ?3, ?4, ?5)",
         storage::MESSAGES_TABLE
     );
     match tx.execute(
         &stmt,
-        params![&requesting_public_key, timestamp, message.data, message.signature, 0],
+        params![&requesting_public_key, message.timestamp, message.data, message.signature, 0],
     ) {
         Ok(_) => (),
         Err(e) => {
