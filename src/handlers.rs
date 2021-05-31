@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::path::Path;
-use std::sync::Mutex;
 
 use log::{error, info, warn};
+use parking_lot::RwLock;
 use rand::{thread_rng, Rng};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
@@ -32,7 +32,7 @@ pub const SESSION_VERSION_UPDATE_INTERVAL: i64 = 30 * 60;
 
 lazy_static::lazy_static! {
 
-    pub static ref SESSION_VERSIONS: Mutex<HashMap<String, (i64, String)>> = Mutex::new(HashMap::new());
+    pub static ref SESSION_VERSIONS: RwLock<HashMap<String, (i64, String)>> = RwLock::new(HashMap::new());
 }
 
 // Rooms
@@ -1008,7 +1008,7 @@ pub async fn get_url() -> Result<Response, Rejection> {
 }
 
 pub async fn get_session_version(platform: &str) -> Result<String, Rejection> {
-    let mut session_versions = SESSION_VERSIONS.lock().unwrap().clone();
+    let mut session_versions = SESSION_VERSIONS.read().clone();
     let now = chrono::Utc::now().timestamp();
     if let Some(version_info) = session_versions.get(platform) {
         let last_updated = version_info.0;
@@ -1025,8 +1025,8 @@ pub async fn get_session_version(platform: &str) -> Result<String, Rejection> {
     let tag = release.tag_name;
     let tuple = (now, tag.clone());
     session_versions.insert(platform.to_string(), tuple);
-    *SESSION_VERSIONS.lock().unwrap() = session_versions.clone();
-    return Ok(tag.clone());
+    *SESSION_VERSIONS.write() = session_versions.clone();
+    return Ok(tag);
 }
 
 // Utilities
