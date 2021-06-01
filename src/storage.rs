@@ -47,7 +47,7 @@ fn create_main_tables_if_needed(conn: &DatabaseConnection) {
 
 pub const PENDING_TOKEN_EXPIRATION: i64 = 10 * 60;
 pub const TOKEN_EXPIRATION: i64 = 7 * 24 * 60 * 60;
-pub const FILE_EXPIRATION: i64 = 60 * 24 * 60 * 60;
+pub const FILE_EXPIRATION: i64 = 15 * 24 * 60 * 60;
 
 pub const MESSAGES_TABLE: &str = "messages";
 pub const DELETED_MESSAGES_TABLE: &str = "deleted_messages";
