@@ -250,13 +250,13 @@ pub async fn prune_files(file_expiration: i64) {
         // Get a database connection and open a transaction
         let conn = match pool.get() {
             Ok(conn) => conn,
-            Err(e) => return error!("Couldn't prune files due to error: {}.", e),
+            Err(e) => return error!("Couldn't get database connection to prune files due to error: {}.", e),
         };
         // Get the IDs of the files to delete
         let raw_query = format!("SELECT id FROM {} WHERE timestamp < (?1)", FILES_TABLE);
         let mut query = match conn.prepare(&raw_query) {
             Ok(query) => query,
-            Err(e) => return error!("Couldn't prune files due to error: {}.", e),
+            Err(e) => return error!("Couldn't prepare query to prune files due to error: {}.", e),
         };
         let rows = match query.query_map(params![expiration], |row| row.get(0)) {
             Ok(rows) => rows,
