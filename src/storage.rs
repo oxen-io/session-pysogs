@@ -261,7 +261,7 @@ pub async fn prune_files(file_expiration: i64) {
         let rows = match query.query_map(params![expiration], |row| row.get(0)) {
             Ok(rows) => rows,
             Err(e) => {
-                return error!("Couldn't prune files due to error: {}.", e);
+                return error!("Couldn't prune files due to error: {} (expiration = {}).", e, expiration);
             }
         };
         let ids: Vec<String> = rows.filter_map(|result| result.ok()).collect();
@@ -271,7 +271,7 @@ pub async fn prune_files(file_expiration: i64) {
             for id in ids {
                 match fs::remove_file(format!("files/{}_files/{}", room, id)) {
                     Ok(_) => deleted_ids.push(id),
-                    Err(e) => error!("Couldn't delete file due to error: {}.", e),
+                    Err(e) => error!("Couldn't delete file: {} from room: {} due to error: {}.", id, room, e),
                 }
             }
             // Remove the file records from the database (only for the files that were successfully deleted)
