@@ -604,8 +604,8 @@ pub fn delete_message(
                 return Err(warp::reject::custom(Error::DatabaseFailedInternally));
             }
         };
-        let public_keys: Vec<String> = rows.filter_map(|result| result.ok()).collect();
-        public_keys.get(0).map(|s| s.to_string())
+        let public_key = rows.filter_map(|result| result.ok()).next();
+        public_key
     };
     let sender =
         sender_option.ok_or_else(|| warp::reject::custom(Error::DatabaseFailedInternally))?;
@@ -898,8 +898,10 @@ pub fn get_member_count(
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
-    let public_key_sizes: Vec<u32> = rows.filter_map(|result| result.ok()).collect();
-    let public_key_count = public_key_sizes[0];
+    let public_key_count: u32 = rows
+        .filter_map(|result| result.ok())
+        .next()
+        .ok_or_else(|| warp::reject::custom(Error::DatabaseFailedInternally))?;
     // Return
     #[derive(Debug, Deserialize, Serialize)]
     struct Response {
@@ -1028,7 +1030,7 @@ pub async fn get_session_version(platform: &str) -> Result<String, Rejection> {
     let tuple = (now, tag.clone());
     session_versions.insert(platform.to_string(), tuple);
     *SESSION_VERSIONS.lock().unwrap() = session_versions.clone();
-    return Ok(tag.clone());
+    return Ok(tag);
 }
 
 // Utilities
@@ -1109,15 +1111,17 @@ fn is_banned(public_key: &str, pool: &storage::DatabaseConnectionPool) -> Result
         storage::BLOCK_LIST_TABLE
     );
     let mut query = conn.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
-    let rows = match query.query_map(params![public_key], |row| Ok(row.get(0)?)) {
+    let rows = match query.query_map(params![public_key], |row| row.get(0)) {
         Ok(rows) => rows,
         Err(e) => {
             error!("Couldn't query database due to error: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
-    let public_key_sizes: Vec<u32> = rows.filter_map(|result| result.ok()).collect();
-    let public_key_count = public_key_sizes[0];
+    let public_key_count: u32 = rows
+        .filter_map(|result| result.ok())
+        .next()
+        .ok_or_else(|| warp::reject::custom(Error::DatabaseFailedInternally))?;
     return Ok(public_key_count != 0);
 }
 
@@ -1149,9 +1153,9 @@ fn get_public_key_for_auth_token(
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
-    let public_keys: Vec<String> = rows.filter_map(|result| result.ok()).collect();
+    let public_key: Option<String> = rows.filter_map(|result| result.ok()).next();
     // Return
-    return Ok(public_keys.get(0).map(|s| s.to_string()));
+    return Ok(public_key);
 }
 
 fn has_authorization_level(
