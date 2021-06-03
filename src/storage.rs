@@ -250,7 +250,12 @@ pub async fn prune_files(file_expiration: i64) {
         // Get a database connection and open a transaction
         let conn = match pool.get() {
             Ok(conn) => conn,
-            Err(e) => return error!("Couldn't get database connection to prune files due to error: {}.", e),
+            Err(e) => {
+                return error!(
+                    "Couldn't get database connection to prune files due to error: {}.",
+                    e
+                )
+            }
         };
         // Get the IDs of the files to delete
         let raw_query = format!("SELECT id FROM {} WHERE timestamp < (?1)", FILES_TABLE);
@@ -261,7 +266,10 @@ pub async fn prune_files(file_expiration: i64) {
         let rows = match query.query_map(params![expiration], |row| row.get(0)) {
             Ok(rows) => rows,
             Err(e) => {
-                return error!("Couldn't prune files due to error: {} (expiration = {}).", e, expiration);
+                return error!(
+                    "Couldn't prune files due to error: {} (expiration = {}).",
+                    e, expiration
+                );
             }
         };
         let ids: Vec<String> = rows.filter_map(|result| result.ok()).collect();
@@ -272,7 +280,10 @@ pub async fn prune_files(file_expiration: i64) {
                 match fs::remove_file(format!("files/{}_files/{}", room, id)) {
                     Ok(_) => deleted_ids.push(id),
                     Err(e) => {
-                        error!("Couldn't delete file: {} from room: {} due to error: {}.", id, room, e);
+                        error!(
+                            "Couldn't delete file: {} from room: {} due to error: {}.",
+                            id, room, e
+                        );
                         deleted_ids.push(id);
                     }
                 }
@@ -283,7 +294,9 @@ pub async fn prune_files(file_expiration: i64) {
                 let stmt = format!("DELETE FROM {} WHERE id = (?1)", FILES_TABLE);
                 match conn.execute(&stmt, params![id]) {
                     Ok(_) => (),
-                    Err(e) => return error!("Couldn't prune file with ID: {} due to error: {}.", id, e),
+                    Err(e) => {
+                        return error!("Couldn't prune file with ID: {} due to error: {}.", id, e)
+                    }
                 };
             }
             // Log the result
