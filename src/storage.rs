@@ -271,15 +271,21 @@ pub async fn prune_files(file_expiration: i64) {
             for id in ids {
                 match fs::remove_file(format!("files/{}_files/{}", room, id)) {
                     Ok(_) => deleted_ids.push(id),
-                    Err(e) => error!("Couldn't delete file: {} from room: {} due to error: {}.", id, room, e),
+                    Err(e) => {
+                        error!("Couldn't delete file: {} from room: {} due to error: {}.", id, room, e);
+                        deleted_ids.push(id);
+                    }
                 }
             }
-            // Remove the file records from the database (only for the files that were successfully deleted)
-            let stmt = format!("DELETE FROM {} WHERE id IN (?1)", FILES_TABLE);
-            match conn.execute(&stmt, deleted_ids) {
-                Ok(_) => (),
-                Err(e) => return error!("Couldn't prune files due to error: {}.", e),
-            };
+            // Remove the file records from the database
+            // FIXME: It'd be great to do this in a single statement, but apparently this is not supported very well
+            for id in deleted_ids {
+                let stmt = format!("DELETE FROM {} WHERE id = (?1)", FILES_TABLE);
+                match conn.execute(&stmt, params![id]) {
+                    Ok(_) => (),
+                    Err(e) => return error!("Couldn't prune file with ID: {} due to error: {}.", id, e),
+                };
+            }
             // Log the result
             info!("Pruned files for room: {}.", room);
         }
