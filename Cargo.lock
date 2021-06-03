@@ -1735,7 +1735,7 @@ dependencies = [
 
 [[package]]
 name = "session-open-group-server"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "aes-gcm",
  "base64",

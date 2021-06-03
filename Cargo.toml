@@ -1,6 +1,6 @@
 [package]
 name = "session-open-group-server"
-version = "0.1.5"
+version = "0.1.6"
 authors = ["Niels Andriesse <niels@oxen.io>"]
 edition = "2018"
 description = "The Session open group server. Use this to run a custom open group."
