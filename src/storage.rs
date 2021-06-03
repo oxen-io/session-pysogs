@@ -47,7 +47,7 @@ fn create_main_tables_if_needed(conn: &DatabaseConnection) {
 
 pub const PENDING_TOKEN_EXPIRATION: i64 = 10 * 60;
 pub const TOKEN_EXPIRATION: i64 = 7 * 24 * 60 * 60;
-pub const FILE_EXPIRATION: i64 = 60 * 24 * 60 * 60;
+pub const FILE_EXPIRATION: i64 = 15 * 24 * 60 * 60;
 
 pub const MESSAGES_TABLE: &str = "messages";
 pub const DELETED_MESSAGES_TABLE: &str = "deleted_messages";
@@ -250,18 +250,18 @@ pub async fn prune_files(file_expiration: i64) {
         // Get a database connection and open a transaction
         let conn = match pool.get() {
             Ok(conn) => conn,
-            Err(e) => return error!("Couldn't prune files due to error: {}.", e),
+            Err(e) => return error!("Couldn't get database connection to prune files due to error: {}.", e),
         };
         // Get the IDs of the files to delete
         let raw_query = format!("SELECT id FROM {} WHERE timestamp < (?1)", FILES_TABLE);
         let mut query = match conn.prepare(&raw_query) {
             Ok(query) => query,
-            Err(e) => return error!("Couldn't prune files due to error: {}.", e),
+            Err(e) => return error!("Couldn't prepare query to prune files due to error: {}.", e),
         };
         let rows = match query.query_map(params![expiration], |row| row.get(0)) {
             Ok(rows) => rows,
             Err(e) => {
-                return error!("Couldn't prune files due to error: {}.", e);
+                return error!("Couldn't prune files due to error: {} (expiration = {}).", e, expiration);
             }
         };
         let ids: Vec<String> = rows.filter_map(|result| result.ok()).collect();
@@ -271,15 +271,21 @@ pub async fn prune_files(file_expiration: i64) {
             for id in ids {
                 match fs::remove_file(format!("files/{}_files/{}", room, id)) {
                     Ok(_) => deleted_ids.push(id),
-                    Err(e) => error!("Couldn't delete file due to error: {}.", e),
+                    Err(e) => {
+                        error!("Couldn't delete file: {} from room: {} due to error: {}.", id, room, e);
+                        deleted_ids.push(id);
+                    }
                 }
             }
-            // Remove the file records from the database (only for the files that were successfully deleted)
-            let stmt = format!("DELETE FROM {} WHERE id IN (?1)", FILES_TABLE);
-            match conn.execute(&stmt, deleted_ids) {
-                Ok(_) => (),
-                Err(e) => return error!("Couldn't prune files due to error: {}.", e),
-            };
+            // Remove the file records from the database
+            // FIXME: It'd be great to do this in a single statement, but apparently this is not supported very well
+            for id in deleted_ids {
+                let stmt = format!("DELETE FROM {} WHERE id = (?1)", FILES_TABLE);
+                match conn.execute(&stmt, params![id]) {
+                    Ok(_) => (),
+                    Err(e) => return error!("Couldn't prune file with ID: {} due to error: {}.", id, e),
+                };
+            }
             // Log the result
             info!("Pruned files for room: {}.", room);
         }
