@@ -945,6 +945,29 @@ pub fn compact_poll(
             from_message_server_id,
             from_deletion_server_id,
         } = request_body;
+        // Get a connection to the main database
+        let pool = &storage::MAIN_POOL;
+        let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
+        // Get the room info if possible, just to check the room was not deleted
+        let raw_query = format!("SELECT id, name FROM {} where id = (?1)", storage::MAIN_TABLE);
+        match conn.query_row(&raw_query, params![room_id], |row| {
+            Ok(models::Room { id: row.get(0)?, name: row.get(1)? })
+        }) {
+            Ok(info) => info,
+            Err(_e) => {
+                let status_code: u16 = 404; // a deleted room returns a 404
+                let response_body = models::CompactPollResponseBody {
+                    room_id,
+                    status_code,
+                    messages: vec![],
+                    deletions: vec![],
+                    moderators: vec![],
+                };
+                response_bodies.push(response_body);
+                continue;
+            }
+        };
+
         // Get the database connection pool
         let pool = storage::pool_by_room_id(&room_id);
         // Get the new messages
