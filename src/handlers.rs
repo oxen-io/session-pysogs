@@ -556,38 +556,29 @@ pub fn get_messages(
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
-
     let messages: Vec<models::Message> = rows.filter_map(|result| result.ok()).collect();
-    // record activity sample for statistics
-    // let it fail as that isn't a big deal
-    {
-        let pubkey = match get_public_key_for_auth_token(auth_token, pool) {
-            Ok(pubkey) => pubkey,
-            Err(_) => None,
-        };
-        match pubkey {
-            Some(pubkey) => {
-                let mut conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
-                let now = chrono::Utc::now().timestamp();
-                let raw_stats_stmt = format!(
-                    "INSERT OR REPLACE INTO {}(public_key, last_active) VALUES(?1, ?2)",
-                    storage::USER_ACTIVITY_TABLE
-                );
-                let tx = conn.transaction().map_err(|_| Error::DatabaseFailedInternally)?;
-                match tx.execute(&raw_stats_stmt, params![pubkey, now]) {
-                    Ok(_) => (),
-                    Err(e) => {
-                        println!("failed to update stats: {}.", e);
-                    }
-                };
-                // Commit
-                tx.commit().map_err(|_| Error::DatabaseFailedInternally)?;
-            }
-            None => {}
-        }
-    }
+    // Record activity for usage statistics
+    // We want to fail silently if any of this goes wrong
+    match update_usage_statistics(auth_token, pool) {
+        Ok(_) => (),
+        Err(_) => println!("Couldn't update usage stats."),
+    };
     // Return the messages
     return Ok(messages);
+}
+
+fn update_usage_statistics(
+    auth_token: &str, pool: &storage::DatabaseConnectionPool,
+) -> Result<(), Rejection> {
+    let public_key = get_public_key_for_auth_token(auth_token, pool)?;
+    let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
+    let now = chrono::Utc::now().timestamp();
+    let stmt = format!(
+        "INSERT OR REPLACE INTO {} (public_key, last_active) VALUES(?1, ?2)",
+        storage::USER_ACTIVITY_TABLE
+    );
+    conn.execute(&stmt, params![public_key, now]).map_err(|_| Error::DatabaseFailedInternally)?;
+    return Ok(());
 }
 
 // Message deletion
