@@ -56,7 +56,6 @@ pub const BLOCK_LIST_TABLE: &str = "block_list";
 pub const PENDING_TOKENS_TABLE: &str = "pending_tokens";
 pub const TOKENS_TABLE: &str = "tokens";
 pub const FILES_TABLE: &str = "files";
-
 pub const USER_ACTIVITY_TABLE: &str = "user_activity";
 
 lazy_static::lazy_static! {
@@ -158,7 +157,6 @@ fn create_room_tables_if_needed(conn: &DatabaseConnection) {
         FILES_TABLE
     );
     conn.execute(&files_table_cmd, params![]).expect("Couldn't create files table.");
-
     let user_activity_table_cmd = format!(
         "CREATE TABLE IF NOT EXISTS {} (
         public_key TEXT PRIMARY KEY,
@@ -166,7 +164,8 @@ fn create_room_tables_if_needed(conn: &DatabaseConnection) {
     )",
         USER_ACTIVITY_TABLE,
     );
-    conn.execute(&user_activity_table_cmd, params![]).expect("Couldn't create user activty table.");
+    conn.execute(&user_activity_table_cmd, params![])
+        .expect("Couldn't create user activity table.");
 }
 
 // Pruning
@@ -323,8 +322,7 @@ pub fn perform_migration() {
     let rooms = match get_all_room_ids() {
         Ok(ids) => ids,
         Err(_e) => {
-            error!("could not get all room ids");
-            return;
+            return error!("Couldn't get all room IDs.");
         }
     };
     for room in rooms {

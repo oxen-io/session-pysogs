@@ -1087,7 +1087,7 @@ pub async fn get_stats_for_room(
     };
 
     let raw_query_posts = format!(
-        "SELECT COUNT(id) FROM {} WHERE timestamp > ?1 AND timestamp <= ?2",
+        "SELECT COUNT(id) FROM {} WHERE timestamp >= ?1 AND timestamp <= ?2",
         storage::MESSAGES_TABLE
     );
 

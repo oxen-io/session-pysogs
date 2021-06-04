@@ -68,9 +68,9 @@ pub fn get_url() -> impl Filter<Extract = impl warp::Reply, Error = Rejection> +
     return warp::get().and(warp::path("url")).and_then(handlers::get_url);
 }
 
-/// GET /stats/:id?window=:seconds
+/// GET /stats/:room_id?window=:seconds
 ///
-/// not publicly exposed
+/// Not publicly exposed
 pub fn get_room_stats() -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     return warp::get()
         .and(warp::path!("stats" / String))
