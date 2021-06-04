@@ -556,7 +556,36 @@ pub fn get_messages(
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
+
     let messages: Vec<models::Message> = rows.filter_map(|result| result.ok()).collect();
+    // record activity sample for statistics
+    // let it fail as that isn't a big deal
+    {
+        let pubkey = match get_public_key_for_auth_token(auth_token, pool) {
+            Ok(pubkey) => pubkey,
+            Err(_) => None,
+        };
+        match pubkey {
+            Some(pubkey) => {
+                let mut conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
+                let now = chrono::Utc::now().timestamp();
+                let raw_stats_stmt = format!(
+                    "INSERT OR REPLACE INTO {}(public_key, last_active) VALUES(?1, ?2)",
+                    storage::USER_ACTIVITY_TABLE
+                );
+                let tx = conn.transaction().map_err(|_| Error::DatabaseFailedInternally)?;
+                match tx.execute(&raw_stats_stmt, params![pubkey, now]) {
+                    Ok(_) => (),
+                    Err(e) => {
+                        println!("failed to update stats: {}.", e);
+                    }
+                };
+                // Commit
+                tx.commit().map_err(|_| Error::DatabaseFailedInternally)?;
+            }
+            None => {}
+        }
+    }
     // Return the messages
     return Ok(messages);
 }
@@ -1031,6 +1060,64 @@ pub async fn get_session_version(platform: &str) -> Result<String, Rejection> {
     session_versions.insert(platform.to_string(), tuple);
     *SESSION_VERSIONS.write() = session_versions.clone();
     return Ok(tag);
+}
+
+// not publicly exposed.
+pub async fn get_stats_for_room(
+    room: String, query_map: HashMap<String, i64>,
+) -> Result<Response, Rejection> {
+    let now = chrono::Utc::now().timestamp();
+    let window = match query_map.get("window") {
+        Some(val) => val,
+        None => &3600i64,
+    };
+
+    let upperbound = match query_map.get("start") {
+        Some(val) => val,
+        None => &now,
+    };
+
+    let lowerbound = upperbound - window;
+    let pool = storage::pool_by_room_id(&room);
+    let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
+
+    let raw_query_users = format!(
+        "SELECT COUNT(public_key) FROM {} WHERE last_active > ?1 AND last_active <= ?2",
+        storage::USER_ACTIVITY_TABLE
+    );
+    let mut query_users =
+        conn.prepare(&raw_query_users).map_err(|_| Error::DatabaseFailedInternally)?;
+
+    let active = match query_users
+        .query_row(params![lowerbound, upperbound], |row| Ok(row.get::<_, u32>(0)?))
+    {
+        Ok(row) => row,
+        Err(_e) => return Err(warp::reject::custom(Error::DatabaseFailedInternally)),
+    };
+
+    let raw_query_posts = format!(
+        "SELECT COUNT(id) FROM {} WHERE timestamp > ?1 AND timestamp <= ?2",
+        storage::MESSAGES_TABLE
+    );
+
+    let mut query_posts =
+        conn.prepare(&raw_query_posts).map_err(|_| Error::DatabaseFailedInternally)?;
+
+    let posts = match query_posts
+        .query_row(params![lowerbound * 1000, upperbound * 1000], |row| Ok(row.get::<_, u32>(0)?))
+    {
+        Ok(row) => row,
+        Err(_e) => return Err(warp::reject::custom(Error::DatabaseFailedInternally)),
+    };
+
+    // Return value
+    #[derive(Debug, Deserialize, Serialize)]
+    struct Response {
+        posts: u32,
+        active_users: u32,
+    }
+    let response = Response { active_users: active, posts };
+    return Ok(warp::reply::json(&response).into_response());
 }
 
 // Utilities

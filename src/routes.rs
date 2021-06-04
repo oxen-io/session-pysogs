@@ -68,6 +68,16 @@ pub fn get_url() -> impl Filter<Extract = impl warp::Reply, Error = Rejection> +
     return warp::get().and(warp::path("url")).and_then(handlers::get_url);
 }
 
+/// GET /stats/:id?window=:seconds
+///
+/// not publicly exposed
+pub fn get_room_stats() -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+    return warp::get()
+        .and(warp::path!("stats" / String))
+        .and(warp::filters::query::query())
+        .and_then(handlers::get_stats_for_room);
+}
+
 pub async fn root_html() -> Result<Response, Rejection> {
     let body = r#"
     <html>
