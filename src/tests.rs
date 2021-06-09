@@ -1,37 +1,34 @@
 use std::collections::HashMap;
 use std::fs;
-use std::path::Path;
 
 use rand::{thread_rng, Rng};
 use rusqlite::params;
+use rusqlite::OpenFlags;
 use warp::http::StatusCode;
+
+use crate::storage::DatabaseConnectionPool;
 
 use super::crypto;
 use super::handlers;
-use super::models;
 use super::storage;
 
-fn perform_main_setup() {
-    storage::create_main_database_if_needed();
-    fs::create_dir_all("rooms").unwrap();
-    fs::create_dir_all("files").unwrap();
+async fn set_up_test_room() -> DatabaseConnectionPool {
+    let manager = r2d2_sqlite::SqliteConnectionManager::file("file::memory:?cache=shared");
+    let mut flags = OpenFlags::default();
+    flags.set(OpenFlags::SQLITE_OPEN_URI, true);
+
+    let manager = manager.with_flags(flags);
+
+    let pool = r2d2::Pool::<r2d2_sqlite::SqliteConnectionManager>::new(manager).unwrap();
+
+    let conn = pool.get().unwrap();
+
+    storage::create_room_tables_if_needed(&conn);
+
+    pool
 }
 
-async fn set_up_test_room() {
-    perform_main_setup();
-    let test_room_id = "test_room";
-    let test_room_name = "Test Room";
-    let test_room = models::Room { id: test_room_id.to_string(), name: test_room_name.to_string() };
-    handlers::create_room(test_room).await.unwrap();
-    let raw_path = format!("rooms/{}.db", test_room_id);
-    let path = Path::new(&raw_path);
-    fs::read(path).unwrap(); // Fail if this doesn't exist
-}
-
-fn get_auth_token() -> (String, String) {
-    // Get a database connection pool
-    let test_room_id = "test_room";
-    let pool = storage::pool_by_room_id(&test_room_id);
+fn get_auth_token(pool: &DatabaseConnectionPool) -> (String, String) {
     // Generate a fake user key pair
     let (user_private_key, user_public_key) = crypto::generate_x25519_key_pair();
     let hex_user_public_key = format!("05{}", hex::encode(user_public_key.to_bytes()));
@@ -57,12 +54,12 @@ fn get_auth_token() -> (String, String) {
 #[tokio::test]
 async fn test_authorization() {
     // Ensure the test room is set up and get a database connection pool
-    set_up_test_room().await;
-    let test_room_id = "test_room";
-    let pool = storage::pool_by_room_id(&test_room_id);
+
+    let pool = set_up_test_room().await;
+
     // Get an auth token
     // This tests claiming a token internally
-    let (_, hex_user_public_key) = get_auth_token();
+    let (_, hex_user_public_key) = get_auth_token(&pool);
     // Try to claim an incorrect token
     let mut incorrect_token = [0u8; 48];
     thread_rng().fill(&mut incorrect_token[..]);
@@ -76,11 +73,11 @@ async fn test_authorization() {
 #[tokio::test]
 async fn test_file_handling() {
     // Ensure the test room is set up and get a database connection pool
-    set_up_test_room().await;
+    let pool = set_up_test_room().await;
+
     let test_room_id = "test_room";
-    let pool = storage::pool_by_room_id(&test_room_id);
     // Get an auth token
-    let (auth_token, _) = get_auth_token();
+    let (auth_token, _) = get_auth_token(&pool);
     // Store the test file
     handlers::store_file(
         Some(test_room_id.to_string()),
@@ -105,7 +102,7 @@ async fn test_file_handling() {
     assert_eq!(base64_encoded_file, TEST_FILE);
     // Prune the file and check that it's gone
     // Will evaluate to now + 60
-    storage::prune_files(-60).await;
+    storage::prune_files_for_room(&pool, test_room_id, -60).await;
     // It should be gone now
     fs::read(format!("files/{}_files/{}", test_room_id, id)).unwrap_err();
     // Check that the file record is also gone

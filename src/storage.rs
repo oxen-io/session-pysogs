@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::fs;
 use std::path::Path;
 use std::sync::Mutex;
 
@@ -84,7 +83,7 @@ pub fn create_database_if_needed(room_id: &str) {
     create_room_tables_if_needed(&conn);
 }
 
-fn create_room_tables_if_needed(conn: &DatabaseConnection) {
+pub fn create_room_tables_if_needed(conn: &DatabaseConnection) {
     // Messages
     // The `id` field is needed to make `rowid` stable, which is important because otherwise
     // the `id`s in this table won't correspond to those in the deleted messages table
@@ -248,48 +247,39 @@ async fn prune_pending_tokens() {
     info!("Pruned pending tokens.");
 }
 
-pub async fn prune_files(file_expiration: i64) {
-    // The expiration setting is passed in for testing purposes
-    let rooms = match get_all_room_ids() {
-        Ok(rooms) => rooms,
-        Err(_) => return,
-    };
-    for room in rooms {
-        // It's not catastrophic if we fail to prune the database for a given room
-        let pool = pool_by_room_id(&room);
-        let now = chrono::Utc::now().timestamp();
-        let expiration = now - file_expiration;
-        // Get a database connection and open a transaction
-        let conn = match pool.get() {
-            Ok(conn) => conn,
-            Err(e) => {
-                return error!(
-                    "Couldn't get database connection to prune files due to error: {}.",
-                    e
-                )
-            }
-        };
-        // Get the IDs of the files to delete
-        let raw_query = format!("SELECT id FROM {} WHERE timestamp < (?1)", FILES_TABLE);
-        let mut query = match conn.prepare(&raw_query) {
-            Ok(query) => query,
-            Err(e) => return error!("Couldn't prepare query to prune files due to error: {}.", e),
-        };
-        let rows = match query.query_map(params![expiration], |row| row.get(0)) {
-            Ok(rows) => rows,
-            Err(e) => {
-                return error!(
-                    "Couldn't prune files due to error: {} (expiration = {}).",
-                    e, expiration
-                );
-            }
-        };
-        let ids: Vec<String> = rows.filter_map(|result| result.ok()).collect();
-        if !ids.is_empty() {
+fn get_expired_file_ids(
+    pool: &DatabaseConnectionPool, file_expiration: i64,
+) -> Result<Vec<String>, ()> {
+    let now = chrono::Utc::now().timestamp();
+    let expiration = now - file_expiration;
+    // Get a database connection and open a transaction
+    let conn = pool.get().map_err(|e| {
+        error!("Couldn't get database connection to prune files due to error: {}.", e);
+    })?;
+    // Get the IDs of the files to delete
+    let raw_query = format!("SELECT id FROM {} WHERE timestamp < (?1)", FILES_TABLE);
+
+    let mut query = conn.prepare(&raw_query).map_err(|e| {
+        error!("Couldn't prepare query to prune files due to error: {}.", e);
+    })?;
+
+    let rows = query.query_map(params![expiration], |row| row.get(0)).map_err(|e| {
+        error!("Couldn't prune files due to error: {} (expiration = {}).", e, expiration);
+    })?;
+
+    Ok(rows.filter_map(|result| result.ok()).collect())
+}
+
+pub async fn prune_files_for_room(pool: &DatabaseConnectionPool, room: &str, file_expiration: i64) {
+    let ids = get_expired_file_ids(&pool, file_expiration);
+
+    match ids {
+        Ok(ids) if !ids.is_empty() => {
             // Delete the files
             let mut deleted_ids: Vec<String> = vec![];
+
             for id in ids {
-                match fs::remove_file(format!("files/{}_files/{}", room, id)) {
+                match tokio::fs::remove_file(format!("files/{}_files/{}", room, id)).await {
                     Ok(_) => deleted_ids.push(id),
                     Err(e) => {
                         error!(
@@ -300,6 +290,17 @@ pub async fn prune_files(file_expiration: i64) {
                     }
                 }
             }
+
+            let conn = match pool.get() {
+                Ok(conn) => conn,
+                Err(e) => {
+                    return error!(
+                        "Couldn't get database connection to prune files due to error: {}.",
+                        e
+                    )
+                }
+            };
+
             // Remove the file records from the database
             // FIXME: It'd be great to do this in a single statement, but apparently this is not supported very well
             for id in deleted_ids {
@@ -314,7 +315,28 @@ pub async fn prune_files(file_expiration: i64) {
             // Log the result
             info!("Pruned files for room: {}.", room);
         }
+        Ok(_) => {
+            // empty
+        }
+        Err(_) => {
+            // It's not catastrophic if we fail to prune the database for a given room
+        }
     }
+}
+
+pub async fn prune_files(file_expiration: i64) {
+    // The expiration setting is passed in for testing purposes
+    let rooms = match get_all_room_ids() {
+        Ok(rooms) => rooms,
+        Err(_) => return,
+    };
+
+    let futs = rooms.into_iter().map(|room| async move {
+        let pool = pool_by_room_id(&room);
+        prune_files_for_room(&pool, &room, file_expiration).await;
+    });
+
+    futures::future::join_all(futs).await;
 }
 
 // Migration
