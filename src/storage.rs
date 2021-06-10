@@ -141,9 +141,9 @@ fn create_room_tables_if_needed(conn: &DatabaseConnection) {
     // The token is stored as hex here (rather than as bytes) because it's more convenient for lookup
     let tokens_table_cmd = format!(
         "CREATE TABLE IF NOT EXISTS {} (
-        public_key TEXT PRIMARY KEY,
+        public_key TEXT,
         timestamp INTEGER,
-        token TEXT
+        token TEXT PRIMARY KEY
     )",
         TOKENS_TABLE
     );

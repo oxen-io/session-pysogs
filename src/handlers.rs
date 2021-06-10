@@ -407,10 +407,11 @@ pub fn claim_auth_token(
     let token = &pending_tokens[index].1;
     // Store the claimed token
     let stmt = format!(
-        "INSERT OR REPLACE INTO {} (public_key, token) VALUES (?1, ?2)",
+        "INSERT INTO {} (public_key, timestamp, token) VALUES (?1, ?2, ?3)",
         storage::TOKENS_TABLE
     );
-    match conn.execute(&stmt, params![public_key, hex::encode(token)]) {
+    let now = chrono::Utc::now().timestamp();
+    match conn.execute(&stmt, params![public_key, now, hex::encode(token)]) {
         Ok(_) => (),
         Err(e) => {
             error!("Couldn't insert token due to error: {}.", e);
@@ -909,7 +910,7 @@ pub fn get_member_count(
     // Get a database connection
     let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     // Query the database
-    let raw_query = format!("SELECT COUNT(public_key) FROM {}", storage::TOKENS_TABLE);
+    let raw_query = format!("SELECT COUNT(DISTINCT public_key) FROM {}", storage::TOKENS_TABLE);
     let mut query = conn.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
     let rows = match query.query_map(params![], |row| row.get(0)) {
         Ok(rows) => rows,
