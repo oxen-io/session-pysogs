@@ -276,18 +276,21 @@ pub async fn prune_files_for_room(pool: &DatabaseConnectionPool, room: &str, fil
     match ids {
         Ok(ids) if !ids.is_empty() => {
             // Delete the files
-            let mut deleted_ids: Vec<String> = vec![];
+            let futs = ids.iter().map(|id| async move {
+                (
+                    tokio::fs::remove_file(format!("files/{}_files/{}", room, id)).await,
+                    id.to_owned(),
+                )
+            });
 
-            for id in ids {
-                match tokio::fs::remove_file(format!("files/{}_files/{}", room, id)).await {
-                    Ok(_) => deleted_ids.push(id),
-                    Err(e) => {
-                        error!(
-                            "Couldn't delete file: {} from room: {} due to error: {}.",
-                            id, room, e
-                        );
-                        deleted_ids.push(id);
-                    }
+            let results = futures::future::join_all(futs).await;
+
+            for (res, id) in results {
+                if let Err(err) = res {
+                    error!(
+                        "Couldn't delete file: {} from room: {} due to error: {}.",
+                        id, room, err
+                    );
                 }
             }
 
@@ -301,9 +304,13 @@ pub async fn prune_files_for_room(pool: &DatabaseConnectionPool, room: &str, fil
                 }
             };
 
+            // Measure the time it takes to delete all files sequentially
+            // (this might become a problem since we're not using an async interface)
+            let now = std::time::Instant::now();
+
             // Remove the file records from the database
             // FIXME: It'd be great to do this in a single statement, but apparently this is not supported very well
-            for id in deleted_ids {
+            for id in ids {
                 let stmt = format!("DELETE FROM {} WHERE id = (?1)", FILES_TABLE);
                 match conn.execute(&stmt, params![id]) {
                     Ok(_) => (),
@@ -313,7 +320,7 @@ pub async fn prune_files_for_room(pool: &DatabaseConnectionPool, room: &str, fil
                 };
             }
             // Log the result
-            info!("Pruned files for room: {}.", room);
+            info!("Pruned files for room: {}. Took: {:?}", room, now.elapsed());
         }
         Ok(_) => {
             // empty
