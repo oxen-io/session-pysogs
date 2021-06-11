@@ -1556,6 +1556,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "rusqlite_migration"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc814a80978c4b6aae9748dacf5570384dcb5255c17593b904d9b3b1482141a8"
+dependencies = [
+ "log",
+ "rusqlite",
+]
+
+[[package]]
 name = "rustc-demangle"
 version = "0.1.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1756,6 +1766,7 @@ dependencies = [
  "rand_core 0.5.1",
  "reqwest",
  "rusqlite",
+ "rusqlite_migration",
  "serde",
  "serde_json",
  "sha2",

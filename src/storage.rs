@@ -6,6 +6,7 @@ use std::sync::Mutex;
 use log::{error, info};
 use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::params;
+use rusqlite_migration::{Migrations, M};
 
 use super::errors::Error;
 
@@ -157,6 +158,7 @@ fn create_room_tables_if_needed(conn: &DatabaseConnection) {
         FILES_TABLE
     );
     conn.execute(&files_table_cmd, params![]).expect("Couldn't create files table.");
+    // User activity table
     let user_activity_table_cmd = format!(
         "CREATE TABLE IF NOT EXISTS {} (
         public_key TEXT PRIMARY KEY,
@@ -318,15 +320,27 @@ pub async fn prune_files(file_expiration: i64) {
 // Migration
 
 pub fn perform_migration() {
-    // ensure all rooms schemas are up to date
     let rooms = match get_all_room_ids() {
         Ok(ids) => ids,
         Err(_e) => {
             return error!("Couldn't get all room IDs.");
         }
     };
+    let create_tokens_table_cmd = format!(
+        "CREATE TABLE IF NOT EXISTS {} (
+        public_key TEXT,
+        timestamp INTEGER,
+        token TEXT PRIMARY KEY
+    )",
+        TOKENS_TABLE
+    );
+    let migrations =
+        Migrations::new(vec![M::up("DROP TABLE tokens"), M::up(&create_tokens_table_cmd)]);
     for room in rooms {
         create_database_if_needed(&room);
+        let pool = pool_by_room_id(&room);
+        let mut conn = pool.get().unwrap();
+        migrations.to_latest(&mut conn).unwrap();
     }
 }
 
