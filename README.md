@@ -4,11 +4,13 @@
 
 [CLI Reference](https://github.com/nielsandriesse/session-open-group-server/blob/main/CLI.md)
 
-Want to build from source? See [BUILDING.md](https://github.com/nielsandriesse/session-open-group-server/blob/main/BUILDING.md).
+Want to build from source? See [BUILDING.md](https://github.com/nielsandriesse/session-open-group-server/blob/main/BUILDING.md).  
+Want to deploy using Docker? See [DOCKER.md](https://github.com/nielsandriesse/session-open-group-server/blob/main/DOCKER.md).
 
 ## Installation Instructions
 
-**Note:** .debs for the Session Open Group server are currently only available for Ubuntu 20.04.
+**Note:** .debs for the Session Open Group server are currently only available for Ubuntu 20.04.  
+For other operating systems, you can either [build from source](https://github.com/nielsandriesse/session-open-group-server/blob/main/BUILDING.md) or use [Docker](https://github.com/nielsandriesse/session-open-group-server/blob/main/DOCKER.md).
 
 ### Step 1: Pull in the Session open group server executable:
 
@@ -72,7 +74,7 @@ For **example**:
 
 ```
 session-open-group-server --add-moderator 05d871fc80ca007eed9b2f4df72853e2a2d5465a92fcb1889fb5c84aa2833b3b40 fish
-``` 
+```
 
 
 ### Step 5: Add an image for your new room (Optional)
