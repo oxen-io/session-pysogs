@@ -29,7 +29,7 @@ If your device can't handle the building process or you don't want to build on y
 ### Step 3: Run the docker image
 
 ```bash
-sudo docker run \    
+sudo docker run \
     --name session-open-group \
     --restart unless-stopped \
     -v session-open-group-data:/session-open-group-server/target/release/data \
