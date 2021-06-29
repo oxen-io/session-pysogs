@@ -66,6 +66,12 @@ fn parse_onion_request_payload(
     // Extract the different components
     // This is safe because we know blob has a length of at least 4 bytes
     let size = u32::from_le_bytes(blob[0..4].try_into().unwrap()) as usize;
+
+    if blob.len() < 4 + size {
+        warn!("Ignoring blob of invalid size.");
+        return Err(warp::reject::custom(Error::InvalidOnionRequest));
+    }
+
     let ciphertext: Vec<u8> = blob[4..(4 + size)].try_into().unwrap();
     let utf8_json: Vec<u8> = blob[(4 + size)..].try_into().unwrap();
     // Parse JSON
