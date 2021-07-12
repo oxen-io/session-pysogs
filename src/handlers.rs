@@ -474,6 +474,18 @@ pub fn insert_message(
     // Get a connection and open a transaction
     let mut conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     let tx = conn.transaction().map_err(|_| Error::DatabaseFailedInternally)?;
+    // Check if the requesting user needs to be rate limited
+    let last_5_messages = get_last_5_messages(&requesting_public_key, pool)?;
+    let should_rate_limit: bool;
+    if last_5_messages.len() == 5 {
+        let interval = last_5_messages[0].timestamp - last_5_messages[4].timestamp;
+        should_rate_limit = interval < 8 * 1000;
+    } else {
+        should_rate_limit = false;
+    }
+    if should_rate_limit {
+        return Err(warp::reject::custom(Error::RateLimited));
+    }
     // Insert the message
     let timestamp = chrono::Utc::now().timestamp_millis();
     message.timestamp = timestamp;
@@ -504,6 +516,33 @@ pub fn insert_message(
     }
     let response = Response { status_code: StatusCode::OK.as_u16(), message };
     return Ok(warp::reply::json(&response).into_response());
+}
+
+fn get_last_5_messages(
+    public_key: &str, pool: &storage::DatabaseConnectionPool,
+) -> Result<Vec<models::Message>, Rejection> {
+    let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
+    let raw_query = format!(
+        "SELECT id, public_key, timestamp, data, signature FROM {} WHERE public_key = (?1) ORDER BY timestamp DESC LIMIT 5",
+        storage::MESSAGES_TABLE
+    );
+    let mut query = conn.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
+    let rows = match query.query_map(params![public_key], |row| {
+        Ok(models::Message {
+            server_id: row.get(0)?,
+            public_key: row.get(1)?,
+            timestamp: row.get(2)?,
+            data: row.get(3)?,
+            signature: row.get(4)?,
+        })
+    }) {
+        Ok(rows) => rows,
+        Err(e) => {
+            error!("Couldn't get last 5 messages due to error: {}.", e);
+            return Err(warp::reject::custom(Error::DatabaseFailedInternally));
+        }
+    };
+    return Ok(rows.filter_map(|result| result.ok()).collect());
 }
 
 /// Returns either the last `limit` messages or all messages since `from_server_id, limited to `limit`.
