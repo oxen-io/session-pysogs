@@ -10,6 +10,7 @@ pub enum Error {
     /// The requesting user didn't provide an auth token for a route that requires one.
     NoAuthToken,
     NoSuchRoom,
+    RateLimited,
     /// The requesting user provided a valid auth token, but they don't have a high enough permission level.
     Unauthorized,
     ValidationFailed,
@@ -23,6 +24,7 @@ pub fn status_code(e: Rejection) -> StatusCode {
             Error::DecryptionFailed | Error::InvalidOnionRequest | Error::InvalidRpcCall 
                 | Error::NoSuchRoom | Error::ValidationFailed => return StatusCode::BAD_REQUEST,
             Error::NoAuthToken => return StatusCode::UNAUTHORIZED,
+            Error::RateLimited => return StatusCode::TOO_MANY_REQUESTS,
             Error::Unauthorized => return StatusCode::FORBIDDEN,
             Error::DatabaseFailedInternally => return StatusCode::INTERNAL_SERVER_ERROR
         };
