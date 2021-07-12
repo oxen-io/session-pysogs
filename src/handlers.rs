@@ -471,6 +471,8 @@ pub fn insert_message(
     if !has_authorization_level {
         return Err(warp::reject::custom(Error::Unauthorized));
     }
+    // Get a timestamp
+    let timestamp = chrono::Utc::now().timestamp_millis();
     // Get a connection and open a transaction
     let mut conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     let tx = conn.transaction().map_err(|_| Error::DatabaseFailedInternally)?;
@@ -478,7 +480,7 @@ pub fn insert_message(
     let last_5_messages = get_last_5_messages(&requesting_public_key, pool)?;
     let should_rate_limit: bool;
     if last_5_messages.len() == 5 {
-        let interval = last_5_messages[0].timestamp - last_5_messages[4].timestamp;
+        let interval = timestamp - last_5_messages[4].timestamp;
         should_rate_limit = interval < 8 * 1000;
     } else {
         should_rate_limit = false;
@@ -487,7 +489,6 @@ pub fn insert_message(
         return Err(warp::reject::custom(Error::RateLimited));
     }
     // Insert the message
-    let timestamp = chrono::Utc::now().timestamp_millis();
     message.timestamp = timestamp;
     let stmt = format!(
         "INSERT INTO {} (public_key, timestamp, data, signature, is_deleted) VALUES (?1, ?2, ?3, ?4, ?5)",
