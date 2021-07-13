@@ -278,6 +278,21 @@ async fn handle_post_request(
             };
             return handlers::ban(&json.public_key, &auth_token, &pool);
         }
+        "ban_and_delete_all" => {
+            reject_if_file_server_mode(path)?;
+            #[derive(Debug, Deserialize)]
+            struct JSON {
+                public_key: String,
+            }
+            let json: JSON = match serde_json::from_str(&rpc_call.body) {
+                Ok(json) => json,
+                Err(e) => {
+                    warn!("Couldn't parse JSON from: {} due to error: {}.", rpc_call.body, e);
+                    return Err(warp::reject::custom(Error::InvalidRpcCall));
+                }
+            };
+            return handlers::ban_and_delete_all_messages(&json.public_key, &auth_token, &pool);
+        }
         "claim_auth_token" => {
             reject_if_file_server_mode(path)?;
             #[derive(Debug, Deserialize)]

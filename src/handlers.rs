@@ -848,6 +848,45 @@ pub fn get_moderators(
     return Ok(public_keys);
 }
 
+/// Bans the given `public_key` if the requesting user is a moderator, and deletes
+/// all messages sent by `public_key`.
+pub fn ban_and_delete_all_messages(
+    public_key: &str, auth_token: &str, pool: &storage::DatabaseConnectionPool,
+) -> Result<Response, Rejection> {
+    // Validate the public key
+    if !is_valid_public_key(&public_key) {
+        warn!("Ignoring ban and delete all messages request for invalid public key.");
+        return Err(warp::reject::custom(Error::ValidationFailed));
+    }
+    // Check authorization level
+    let (has_authorization_level, _) =
+        has_authorization_level(auth_token, AuthorizationLevel::Moderator, pool)?;
+    if !has_authorization_level {
+        return Err(warp::reject::custom(Error::Unauthorized));
+    }
+    // Ban the user
+    ban(public_key, auth_token, pool)?;
+    // Get the IDs of the messages to delete
+    let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
+    let raw_query = format!("SELECT id FROM {} WHERE public_key = (?1) AND is_deleted = 0", storage::MESSAGES_TABLE);
+    let mut query = conn.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
+    let rows = match query.query_map(params![public_key], |row| {
+        Ok(row.get(0)?)
+    }) {
+        Ok(rows) => rows,
+        Err(e) => {
+            error!("Couldn't delete messages due to error: {}.", e);
+            return Err(warp::reject::custom(Error::DatabaseFailedInternally));
+        }
+    };
+    let ids: Vec<i64> = rows.filter_map(|result| result.ok()).collect();
+    // Delete all messages sent by the given public key
+    delete_messages(ids, auth_token, pool)?;
+    // Return
+    let json = models::StatusCode { status_code: StatusCode::OK.as_u16() };
+    return Ok(warp::reply::json(&json).into_response());
+}
+
 /// Bans the given `public_key` if the requesting user is a moderator.
 pub fn ban(
     public_key: &str, auth_token: &str, pool: &storage::DatabaseConnectionPool,
