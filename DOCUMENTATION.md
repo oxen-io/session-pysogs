@@ -232,7 +232,7 @@ Poll for new messages, new deletions and the current moderator list for multiple
         {
             room_id: String,
             status_code: u16,
-            deletions: [ 
+            deletions: [
                 {
                     deletion_server_id: i64,
                     deleted_message_id: i64
@@ -418,6 +418,31 @@ Get the full list of moderators.
 | Room          | Yes      |           |
 
 Ban the given public key from the server.
+
+**Expected body:**
+
+```
+{
+    public_key: String
+}
+```
+
+**Response:**
+
+```
+{
+    status_code: u16
+}
+```
+
+### POST /ban_and_delete_all
+
+| Header        | Required | Notes     |
+| ------------- | -------- | --------- |
+| Authorization | Yes      | Moderator |
+| Room          | Yes      |           |
+
+Ban the given public key from the server and delete all messages sent by them.
 
 **Expected body:**
 
