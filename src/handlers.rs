@@ -481,7 +481,10 @@ pub fn insert_message(
     let should_rate_limit: bool;
     if last_5_messages.len() == 5 {
         let interval = timestamp - last_5_messages[4].timestamp;
-        should_rate_limit = interval < 8 * 1000;
+        // Rate limit if the interval between the fifth last message and the current timestamp is
+        // less than 16 seconds; in other words, the user can send 5 messages every 16 seconds. This
+        // is a very crude way of rate limiting, but it should be sufficient for now.
+        should_rate_limit = interval < 16 * 1000;
     } else {
         should_rate_limit = false;
     }
