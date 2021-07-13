@@ -868,11 +868,12 @@ pub fn ban_and_delete_all_messages(
     ban(public_key, auth_token, pool)?;
     // Get the IDs of the messages to delete
     let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
-    let raw_query = format!("SELECT id FROM {} WHERE public_key = (?1) AND is_deleted = 0", storage::MESSAGES_TABLE);
+    let raw_query = format!(
+        "SELECT id FROM {} WHERE public_key = (?1) AND is_deleted = 0",
+        storage::MESSAGES_TABLE
+    );
     let mut query = conn.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
-    let rows = match query.query_map(params![public_key], |row| {
-        Ok(row.get(0)?)
-    }) {
+    let rows = match query.query_map(params![public_key], |row| Ok(row.get(0)?)) {
         Ok(rows) => rows,
         Err(e) => {
             error!("Couldn't delete messages due to error: {}.", e);
