@@ -9,6 +9,8 @@ Want to deploy using Docker? See [DOCKER.md](https://github.com/nielsandriesse/s
 
 ## Installation Instructions
 
+### [Video Guide](https://www.youtube.com/watch?v=D83gKXn6iTI)
+
 **Note:** .debs for the Session Open Group server are currently only available for Ubuntu 20.04.  
 For other operating systems, you can either [build from source](https://github.com/nielsandriesse/session-open-group-server/blob/main/BUILDING.md) or use [Docker](https://github.com/nielsandriesse/session-open-group-server/blob/main/DOCKER.md).
 
