@@ -77,7 +77,9 @@ async fn main() {
         let prune_tokens_future = storage::prune_tokens_periodically();
         let prune_files_future = storage::prune_files_periodically();
         // Serve routes
-        let public_routes = routes::root().or(routes::lsrpc());
+        let public_routes = routes::root()
+            .or(routes::fallback())
+            .or(routes::lsrpc());
         let private_routes = routes::create_room()
             .or(routes::delete_room())
             .or(routes::add_moderator())
