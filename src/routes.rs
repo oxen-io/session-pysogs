@@ -103,9 +103,11 @@ pub async fn root_html() -> Result<Response, Rejection> {
     return Ok(warp::reply::html(body).into_response());
 }
 
-pub async fn fallback_html(room: String, query_map: HashMap<String, String>) -> Result<Response, Rejection> {
+pub async fn fallback_html(
+    room: String, query_map: HashMap<String, String>,
+) -> Result<Response, Rejection> {
     if !query_map.contains_key("public_key") || room == "" {
-        return fallback_nopubkey_html().await
+        return fallback_nopubkey_html().await;
     }
     let body = r#"
     <html>
@@ -116,14 +118,14 @@ pub async fn fallback_html(room: String, query_map: HashMap<String, String>) -> 
         <body>
             <h1>Session Open Group Room</h1>
             <p>
-                This is probably a Session open group room.<br>
+                This is probably a Session Open Group room.<br>
                 To join it, you must copy the URL and paste it in the appropriate field in your Session client.<br>
                 <br>
                 <b>On mobile:</b>
             </p>
             <ul>
                 <li>Click the green "+" button in the main screen of the app</li>
-                <li>Click on the globe icon in the left side of the "+" button</li>
+                <li>Click on the globe icon on the left side of the "+" button</li>
                 <li>Paste the open group URL and click "Enter"</li>
             </ul>
             <p><b>On desktop:</b></p>
@@ -154,7 +156,7 @@ pub async fn fallback_nopubkey_html() -> Result<Response, Rejection> {
         <body>
             <h1>This link is wrong!</h1>
             <p>
-                If you're trying to join a Session Open Group Room, this link can not work!<br>
+                If you're trying to join a Session Open Group room, this link won't work!<br>
                 It's missing the public key. Make sure you're following a correct room URL.
             </p>
         </body>
