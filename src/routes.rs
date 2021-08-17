@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use warp::{reply::Reply, reply::Response, Filter, Rejection};
 
 use super::errors;
@@ -7,6 +8,14 @@ use super::onion_requests;
 /// GET /
 pub fn root() -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
     return warp::get().and(warp::path::end()).and_then(root_html);
+}
+
+/// GET /:room_id?public_key=:public_key
+pub fn fallback() -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+    return warp::get()
+        .and(warp::path::param())
+        .and(warp::filters::query::query())
+        .and_then(fallback_html);
 }
 
 /// POST /loki/v3/lsrpc
@@ -83,9 +92,73 @@ pub async fn root_html() -> Result<Response, Rejection> {
     <html>
         <head>
             <title>Root</title>
+            <meta name="viewport" content="width=device-width, initial-scale=1">
         </head>
         <body>
-            This is a Session open group server.
+            <h1>Session Open Group Server</h1>
+            <p>This is a Session open group server.</p>
+        </body>
+    </html>
+    "#;
+    return Ok(warp::reply::html(body).into_response());
+}
+
+pub async fn fallback_html(
+    room: String, query_map: HashMap<String, String>,
+) -> Result<Response, Rejection> {
+    if !query_map.contains_key("public_key") || room == "" {
+        return fallback_nopubkey_html().await;
+    }
+    let body = r#"
+    <html>
+        <head>
+            <title>Group</title>
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+        </head>
+        <body>
+            <h1>Session Open Group Room</h1>
+            <p>
+                This is probably a Session Open Group room.<br>
+                To join it, you must copy the URL and paste it in the appropriate field in your Session client.<br>
+                <br>
+                <b>On mobile:</b>
+            </p>
+            <ul>
+                <li>Click the green "+" button in the main screen of the app</li>
+                <li>Click on the globe icon on the left side of the "+" button</li>
+                <li>Paste the open group URL and click "Enter"</li>
+            </ul>
+            <p><b>On desktop:</b></p>
+            <ul>
+                <li>Click on the "Join Open Group" button in the bottom left side of the main menu</li>
+                <li>Paste the open group URL and click "Next"</li>
+            </ul>
+            <p><br><br>If something goes wrong, make sure that:</p>
+            <ul>
+                <li>This room exists</li>
+                <li>You've pasted the entire link (public_key included)</li>
+                <li>You're correctly connected to Session</li>
+                <li>Your browser has not accidentally changed HTTP to HTTPS</li>
+            </ul>
+        </body>
+    </html>
+    "#;
+    return Ok(warp::reply::html(body).into_response());
+}
+
+pub async fn fallback_nopubkey_html() -> Result<Response, Rejection> {
+    let body = r#"
+    <html>
+        <head>
+            <title>Error</title>
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+        </head>
+        <body>
+            <h1>This link is wrong!</h1>
+            <p>
+                If you're trying to join a Session Open Group room, this link won't work!<br>
+                It's missing the public key. Make sure you're following a correct room URL.
+            </p>
         </body>
     </html>
     "#;
