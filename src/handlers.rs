@@ -136,7 +136,7 @@ pub async fn store_file(
     pool: &storage::DatabaseConnectionPool,
 ) -> Result<Response, Rejection> {
     // It'd be nice to use the UUID crate for the file ID, but clients want an integer ID
-    const UPPER_BOUND: u64 = 2u64.pow(53); // JS has trouble if we go higher than this
+    const UPPER_BOUND: u64 = 1u64 << 53; // JS has trouble if we go higher than this
     let id: u64 = thread_rng().gen_range(0..UPPER_BOUND);
     let now = chrono::Utc::now().timestamp();
     // Check authorization level if needed
