@@ -1,3 +1,4 @@
+use regex::Regex;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Mutex;
@@ -11,6 +12,30 @@ use super::errors::Error;
 
 pub type DatabaseConnection = r2d2::PooledConnection<SqliteConnectionManager>;
 pub type DatabaseConnectionPool = r2d2::Pool<SqliteConnectionManager>;
+
+#[derive(PartialEq, Eq, Hash)]
+pub struct RoomId {
+    id: String,
+}
+
+lazy_static::lazy_static! {
+    // Alphanumeric, Decimals "-" & "_" only and must be between 1 - 64 characters
+    static ref REGULAR_CHARACTERS_ONLY: Regex = Regex::new(r"^[\w-]{1,64}$").unwrap();
+}
+
+impl RoomId {
+    pub fn new(room_id: &str) -> Option<RoomId> {
+        if REGULAR_CHARACTERS_ONLY.is_match(room_id) {
+            return Some(RoomId { id: room_id.to_string() });
+        } else {
+            return None;
+        }
+    }
+
+    pub fn get_id(&self) -> &str {
+        &self.id
+    }
+}
 
 // Main
 
@@ -63,21 +88,21 @@ lazy_static::lazy_static! {
     static ref POOLS: Mutex<HashMap<String, DatabaseConnectionPool>> = Mutex::new(HashMap::new());
 }
 
-pub fn pool_by_room_id(room_id: &str) -> DatabaseConnectionPool {
+pub fn pool_by_room_id(room_id: &RoomId) -> DatabaseConnectionPool {
     let mut pools = POOLS.lock().unwrap();
-    if let Some(pool) = pools.get(room_id) {
+    if let Some(pool) = pools.get(room_id.get_id()) {
         return pool.clone();
     } else {
-        let raw_path = format!("rooms/{}.db", room_id);
+        let raw_path = format!("rooms/{}.db", room_id.get_id());
         let path = Path::new(&raw_path);
         let db_manager = r2d2_sqlite::SqliteConnectionManager::file(path);
         let pool = r2d2::Pool::new(db_manager).unwrap();
-        pools.insert(room_id.to_string(), pool);
-        return pools[room_id].clone();
+        pools.insert(room_id.get_id().to_string(), pool);
+        return pools[room_id.get_id()].clone();
     }
 }
 
-pub fn create_database_if_needed(room_id: &str) {
+pub fn create_database_if_needed(room_id: &RoomId) {
     let pool = pool_by_room_id(room_id);
     let conn = pool.get().unwrap();
     create_room_tables_if_needed(&conn);
@@ -270,7 +295,9 @@ fn get_expired_file_ids(
     Ok(rows.filter_map(|result| result.ok()).collect())
 }
 
-pub async fn prune_files_for_room(pool: &DatabaseConnectionPool, room: &str, file_expiration: i64) {
+pub async fn prune_files_for_room(
+    pool: &DatabaseConnectionPool, room: &RoomId, file_expiration: i64,
+) {
     let ids = get_expired_file_ids(&pool, file_expiration);
 
     match ids {
@@ -278,7 +305,7 @@ pub async fn prune_files_for_room(pool: &DatabaseConnectionPool, room: &str, fil
             // Delete the files
             let futs = ids.iter().map(|id| async move {
                 (
-                    tokio::fs::remove_file(format!("files/{}_files/{}", room, id)).await,
+                    tokio::fs::remove_file(format!("files/{}_files/{}", room.get_id(), id)).await,
                     id.to_owned(),
                 )
             });
@@ -289,7 +316,9 @@ pub async fn prune_files_for_room(pool: &DatabaseConnectionPool, room: &str, fil
                 if let Err(err) = res {
                     error!(
                         "Couldn't delete file: {} from room: {} due to error: {}.",
-                        id, room, err
+                        id,
+                        room.get_id(),
+                        err
                     );
                 }
             }
@@ -320,7 +349,7 @@ pub async fn prune_files_for_room(pool: &DatabaseConnectionPool, room: &str, fil
                 };
             }
             // Log the result
-            info!("Pruned files for room: {}. Took: {:?}", room, now.elapsed());
+            info!("Pruned files for room: {}. Took: {:?}", room.get_id(), now.elapsed());
         }
         Ok(_) => {
             // empty
@@ -375,7 +404,7 @@ pub fn perform_migration() {
 
 // Utilities
 
-fn get_all_room_ids() -> Result<Vec<String>, Error> {
+fn get_all_room_ids() -> Result<Vec<RoomId>, Error> {
     // Get a database connection
     let conn = MAIN_POOL.get().map_err(|_| Error::DatabaseFailedInternally)?;
     // Query the database
@@ -388,7 +417,11 @@ fn get_all_room_ids() -> Result<Vec<String>, Error> {
             return Err(Error::DatabaseFailedInternally);
         }
     };
-    let ids: Vec<String> = rows.filter_map(|result| result.ok()).collect();
+    let room_ids: Vec<_> = rows
+        .filter_map(|result: Result<String, _>| result.ok())
+        .map(|opt| RoomId::new(&opt))
+        .flatten()
+        .collect();
     // Return
-    return Ok(ids);
+    return Ok(room_ids);
 }

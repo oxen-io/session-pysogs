@@ -52,7 +52,9 @@ pub async fn create_room(room: models::Room) -> Result<Response, Rejection> {
         }
     }
     // Set up the database
-    storage::create_database_if_needed(&room.id);
+    storage::create_database_if_needed(
+        &storage::RoomId::new(&room.id).ok_or(Error::ValidationFailed)?,
+    );
     // Return
     info!("Added room with ID: {}", &room.id);
     let json = models::StatusCode { status_code: StatusCode::OK.as_u16() };
@@ -768,7 +770,8 @@ pub fn get_deleted_messages(
 pub async fn add_moderator_public(
     body: models::ChangeModeratorRequestBody, auth_token: &str,
 ) -> Result<Response, Rejection> {
-    let pool = storage::pool_by_room_id(&body.room_id);
+    let room_id = storage::RoomId::new(&body.room_id).ok_or(Error::ValidationFailed)?;
+    let pool = storage::pool_by_room_id(&room_id);
     let (has_authorization_level, _) =
         has_authorization_level(auth_token, AuthorizationLevel::Moderator, &pool)?;
     if !has_authorization_level {
@@ -782,7 +785,9 @@ pub async fn add_moderator(
     body: models::ChangeModeratorRequestBody,
 ) -> Result<Response, Rejection> {
     // Get a database connection
-    let pool = storage::pool_by_room_id(&body.room_id);
+    let pool = storage::pool_by_room_id(
+        &storage::RoomId::new(&body.room_id).ok_or(Error::ValidationFailed)?,
+    );
     let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     // Insert the moderator
     let stmt = format!("INSERT INTO {} (public_key) VALUES (?1)", storage::MODERATORS_TABLE);
@@ -802,7 +807,9 @@ pub async fn add_moderator(
 pub async fn delete_moderator_public(
     body: models::ChangeModeratorRequestBody, auth_token: &str,
 ) -> Result<Response, Rejection> {
-    let pool = storage::pool_by_room_id(&body.room_id);
+    let pool = storage::pool_by_room_id(
+        &storage::RoomId::new(&body.room_id).ok_or(Error::ValidationFailed)?,
+    );
     let (has_authorization_level, _) =
         has_authorization_level(auth_token, AuthorizationLevel::Moderator, &pool)?;
     if !has_authorization_level {
@@ -816,7 +823,9 @@ pub async fn delete_moderator(
     body: models::ChangeModeratorRequestBody,
 ) -> Result<Response, Rejection> {
     // Get a database connection
-    let pool = storage::pool_by_room_id(&body.room_id);
+    let pool = storage::pool_by_room_id(
+        &storage::RoomId::new(&body.room_id).ok_or(Error::ValidationFailed)?,
+    );
     let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     // Insert the moderator
     let stmt = format!("DELETE FROM {} WHERE public_key = (?1)", storage::MODERATORS_TABLE);
@@ -1051,7 +1060,9 @@ pub fn compact_poll(
             }
         };
         // Get the database connection pool
-        let pool = storage::pool_by_room_id(&room_id);
+        let pool = storage::pool_by_room_id(
+            &storage::RoomId::new(&room_id).ok_or(Error::ValidationFailed)?,
+        );
         // Get the new messages
         let mut get_messages_query_params: HashMap<String, String> = HashMap::new();
         if let Some(from_message_server_id) = from_message_server_id {
@@ -1160,7 +1171,7 @@ pub async fn get_session_version(platform: &str) -> Result<String, Rejection> {
 
 // not publicly exposed.
 pub async fn get_stats_for_room(
-    room: String, query_map: HashMap<String, i64>,
+    room_id: String, query_map: HashMap<String, i64>,
 ) -> Result<Response, Rejection> {
     let now = chrono::Utc::now().timestamp();
     let window = match query_map.get("window") {
@@ -1174,7 +1185,8 @@ pub async fn get_stats_for_room(
     };
 
     let lowerbound = upperbound - window;
-    let pool = storage::pool_by_room_id(&room);
+    let pool =
+        storage::pool_by_room_id(&storage::RoomId::new(&room_id).ok_or(Error::ValidationFailed)?);
     let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
 
     let raw_query_users = format!(

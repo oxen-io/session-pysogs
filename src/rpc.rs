@@ -49,13 +49,13 @@ pub async fn handle_rpc_call(rpc_call: RpcCall) -> Result<Response, Rejection> {
     // Get the auth token if possible
     let auth_token = get_auth_token(&rpc_call);
     // Get the room ID
-    let room_id = get_room_id(&rpc_call);
+    let room_id_str = get_room_id(&rpc_call);
     // Switch on the HTTP method
     match rpc_call.method.as_ref() {
         "GET" => {
-            return handle_get_request(room_id, rpc_call, &path, auth_token, query_params).await
+            return handle_get_request(room_id_str, rpc_call, &path, auth_token, query_params).await
         }
-        "POST" => return handle_post_request(room_id, rpc_call, &path, auth_token).await,
+        "POST" => return handle_post_request(room_id_str, rpc_call, &path, auth_token).await,
         "DELETE" => {
             let pool = get_pool_for_room(&rpc_call)?;
             return handle_delete_request(rpc_call, &path, auth_token, &pool).await;
@@ -408,14 +408,10 @@ async fn handle_delete_request(
 // Utilities
 
 fn get_pool_for_room(rpc_call: &RpcCall) -> Result<storage::DatabaseConnectionPool, Rejection> {
-    let room_id = match get_room_id(&rpc_call) {
-        Some(room_id) => room_id,
-        None => {
-            warn!("Missing room ID.");
-            return Err(warp::reject::custom(Error::InvalidRpcCall));
-        }
-    };
-    return Ok(storage::pool_by_room_id(&room_id));
+    let room_id = get_room_id(&rpc_call).ok_or(Error::ValidationFailed)?;
+    return Ok(storage::pool_by_room_id(
+        &storage::RoomId::new(&room_id).ok_or(Error::ValidationFailed)?,
+    ));
 }
 
 fn get_auth_token(rpc_call: &RpcCall) -> Option<String> {
