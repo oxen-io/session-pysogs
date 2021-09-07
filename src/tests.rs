@@ -89,7 +89,7 @@ async fn test_file_handling() {
     .unwrap();
     // Check that there's a file record
     let conn = pool.get().unwrap();
-    let raw_query = format!("SELECT id FROM {}", storage::FILES_TABLE);
+    let raw_query = "SELECT id FROM files";
     let id_as_string: String =
         conn.query_row(&raw_query, params![], |row| Ok(row.get(0)?)).unwrap();
     let id = id_as_string.parse::<u64>().unwrap();
@@ -107,7 +107,7 @@ async fn test_file_handling() {
     fs::read(format!("files/{}_files/{}", test_room_id, id)).unwrap_err();
     // Check that the file record is also gone
     let conn = pool.get().unwrap();
-    let raw_query = format!("SELECT id FROM {}", storage::FILES_TABLE);
+    let raw_query = "SELECT id FROM files";
     let result: Result<String, _> = conn.query_row(&raw_query, params![], |row| Ok(row.get(0)?));
     // It should be gone now
     result.unwrap_err();

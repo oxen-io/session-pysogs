@@ -43,7 +43,7 @@ pub async fn create_room(room: models::Room) -> Result<Response, Rejection> {
     let pool = &storage::MAIN_POOL;
     let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     // Insert the room
-    let stmt = format!("REPLACE INTO {} (id, name) VALUES (?1, ?2)", storage::MAIN_TABLE);
+    let stmt = "REPLACE INTO main (id, name) VALUES (?1, ?2)";
     match conn.execute(&stmt, params![&room.id, &room.name]) {
         Ok(_) => (),
         Err(e) => {
@@ -65,7 +65,7 @@ pub async fn delete_room(id: String) -> Result<Response, Rejection> {
     let pool = &storage::MAIN_POOL;
     let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     // Insert the room
-    let stmt = format!("DELETE FROM {} WHERE id = (?1)", storage::MAIN_TABLE);
+    let stmt = "DELETE FROM main WHERE id = (?1)";
     match conn.execute(&stmt, params![&id]) {
         Ok(_) => (),
         Err(e) => {
@@ -85,7 +85,7 @@ pub fn get_room(room_id: &str) -> Result<Response, Rejection> {
     let pool = &storage::MAIN_POOL;
     let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     // Get the room info if possible
-    let raw_query = format!("SELECT id, name FROM {} where id = (?1)", storage::MAIN_TABLE);
+    let raw_query = "SELECT id, name FROM main where id = (?1)";
     let room = match conn.query_row(&raw_query, params![room_id], |row| {
         Ok(models::Room { id: row.get(0)?, name: row.get(1)? })
     }) {
@@ -107,7 +107,7 @@ pub fn get_all_rooms() -> Result<Response, Rejection> {
     let pool = &storage::MAIN_POOL;
     let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     // Get the room info if possible
-    let raw_query = format!("SELECT id, name FROM {}", storage::MAIN_TABLE);
+    let raw_query = "SELECT id, name FROM main";
     let mut query = conn.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
     let rows = match query
         .query_map(params![], |row| Ok(models::Room { id: row.get(0)?, name: row.get(1)? }))
@@ -165,7 +165,7 @@ pub async fn store_file(
     let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     // INSERT rather than REPLACE so that on the off chance there's already a file with this exact
     // id (i.e. timestamp) we simply error out and get the client to retry.
-    let stmt = format!("INSERT INTO {} (id, timestamp) VALUES (?1, ?2)", storage::FILES_TABLE);
+    let stmt = "INSERT INTO files (id, timestamp) VALUES (?1, ?2)";
     let _ = match conn.execute(&stmt, params![id.to_string(), now]) {
         Ok(rows) => rows,
         Err(e) => {
@@ -361,10 +361,8 @@ pub fn get_auth_token_challenge(
     // Note that a given public key can have multiple pending tokens
     let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     let now = chrono::Utc::now().timestamp();
-    let stmt = format!(
-        "INSERT INTO {} (public_key, timestamp, token) VALUES (?1, ?2, ?3)",
-        storage::PENDING_TOKENS_TABLE
-    );
+    let stmt =
+        "INSERT INTO pending_tokens (public_key, timestamp, token) VALUES (?1, ?2, ?3)";
     let _ = match conn.execute(&stmt, params![hex_public_key, now, token]) {
         Ok(rows) => rows,
         Err(e) => {
@@ -406,10 +404,8 @@ pub fn claim_auth_token(
         .ok_or(Error::Unauthorized)?;
     let token = &pending_tokens[index].1;
     // Store the claimed token
-    let stmt = format!(
-        "INSERT INTO {} (public_key, timestamp, token) VALUES (?1, ?2, ?3)",
-        storage::TOKENS_TABLE
-    );
+    let stmt =
+        "INSERT INTO tokens (public_key, timestamp, token) VALUES (?1, ?2, ?3)";
     let now = chrono::Utc::now().timestamp();
     match conn.execute(&stmt, params![public_key, now, hex::encode(token)]) {
         Ok(_) => (),
@@ -419,7 +415,7 @@ pub fn claim_auth_token(
         }
     }
     // Delete all pending tokens for the given public key
-    let stmt = format!("DELETE FROM {} WHERE public_key = (?1)", storage::PENDING_TOKENS_TABLE);
+    let stmt = "DELETE FROM pending_tokens WHERE public_key = (?1)";
     match conn.execute(&stmt, params![public_key]) {
         Ok(_) => (),
         Err(e) => error!("Couldn't delete pending tokens due to error: {}.", e), // It's not catastrophic if this fails
@@ -441,7 +437,7 @@ pub fn delete_auth_token(
     // Get a database connection
     let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     // Delete the token
-    let stmt = format!("DELETE FROM {} WHERE public_key = (?1)", storage::TOKENS_TABLE);
+    let stmt = "DELETE FROM tokens WHERE public_key = (?1)";
     match conn.execute(&stmt, params![requesting_public_key]) {
         Ok(_) => (),
         Err(e) => {
@@ -493,10 +489,8 @@ pub fn insert_message(
     }
     // Insert the message
     message.timestamp = timestamp;
-    let stmt = format!(
-        "INSERT INTO {} (public_key, timestamp, data, signature, is_deleted) VALUES (?1, ?2, ?3, ?4, ?5)",
-        storage::MESSAGES_TABLE
-    );
+    let stmt =
+        "INSERT INTO messages (public_key, timestamp, data, signature, is_deleted) VALUES (?1, ?2, ?3, ?4, ?5)";
     match tx.execute(
         &stmt,
         params![&requesting_public_key, message.timestamp, message.data, message.signature, 0],
@@ -526,10 +520,8 @@ fn get_last_5_messages(
     public_key: &str, pool: &storage::DatabaseConnectionPool,
 ) -> Result<Vec<models::Message>, Rejection> {
     let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
-    let raw_query = format!(
-        "SELECT id, public_key, timestamp, data, signature FROM {} WHERE public_key = (?1) ORDER BY timestamp DESC LIMIT 5",
-        storage::MESSAGES_TABLE
-    );
+    let raw_query =
+        "SELECT id, public_key, timestamp, data, signature FROM messages WHERE public_key = (?1) ORDER BY timestamp DESC LIMIT 5";
     let mut query = conn.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
     let rows = match query.query_map(params![public_key], |row| {
         Ok(models::Message {
@@ -575,14 +567,11 @@ pub fn get_messages(
         limit = 256;
     }
     // Query the database
-    let raw_query: String;
+    let raw_query: &str;
     if query_params.get("from_server_id").is_some() {
-        raw_query = format!("SELECT id, public_key, timestamp, data, signature FROM {} WHERE id > (?1) AND is_deleted = 0 ORDER BY id ASC LIMIT (?2)", storage::MESSAGES_TABLE);
+        raw_query = "SELECT id, public_key, timestamp, data, signature FROM messages WHERE id > (?1) AND is_deleted = 0 ORDER BY id ASC LIMIT (?2)";
     } else {
-        raw_query = format!(
-            "SELECT id, public_key, timestamp, data, signature FROM {} WHERE is_deleted = 0 ORDER BY id DESC LIMIT (?2)",
-            storage::MESSAGES_TABLE
-        );
+        raw_query = "SELECT id, public_key, timestamp, data, signature FROM messages WHERE is_deleted = 0 ORDER BY id DESC LIMIT (?2)";
     }
     let mut query = conn.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
     let rows = match query.query_map(params![from_server_id, limit], |row| {
@@ -617,10 +606,8 @@ fn update_usage_statistics(
     let public_key = get_public_key_for_auth_token(auth_token, pool)?;
     let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     let now = chrono::Utc::now().timestamp();
-    let stmt = format!(
-        "INSERT OR REPLACE INTO {} (public_key, last_active) VALUES(?1, ?2)",
-        storage::USER_ACTIVITY_TABLE
-    );
+    let stmt =
+        "INSERT OR REPLACE INTO user_activity (public_key, last_active) VALUES(?1, ?2)";
     conn.execute(&stmt, params![public_key, now]).map_err(|_| Error::DatabaseFailedInternally)?;
     return Ok(());
 }
@@ -658,8 +645,7 @@ pub fn delete_message(
     // Check that the requesting user is either the sender of the message or a moderator
     let sender_option: Option<String> = {
         let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
-        let raw_query =
-            format!("SELECT public_key FROM {} WHERE id = (?1)", storage::MESSAGES_TABLE);
+        let raw_query = "SELECT public_key FROM messages WHERE id = (?1)";
         let mut query = conn.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
         let rows = match query.query_map(params![id], |row| row.get(0)) {
             Ok(rows) => rows,
@@ -680,7 +666,7 @@ pub fn delete_message(
     let mut conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     let tx = conn.transaction().map_err(|_| Error::DatabaseFailedInternally)?;
     // Delete the message if it's present
-    let stmt = format!("UPDATE {} SET public_key = 'deleted', timestamp = 0, data = 'deleted', signature = 'deleted', is_deleted = 1 WHERE id = (?1)", storage::MESSAGES_TABLE);
+    let stmt = "UPDATE messages SET public_key = 'deleted', timestamp = 0, data = 'deleted', signature = 'deleted', is_deleted = 1 WHERE id = (?1)";
     let count = match tx.execute(&stmt, params![id]) {
         Ok(count) => count,
         Err(e) => {
@@ -690,10 +676,8 @@ pub fn delete_message(
     };
     // Update the deletions table if needed
     if count > 0 {
-        let stmt = format!(
-            "INSERT INTO {} (deleted_message_id) VALUES (?1)",
-            storage::DELETED_MESSAGES_TABLE
-        );
+        let stmt =
+            "INSERT INTO deleted_messages (deleted_message_id) VALUES (?1)";
         match tx.execute(&stmt, params![id]) {
             Ok(_) => (),
             Err(e) => {
@@ -735,19 +719,13 @@ pub fn get_deleted_messages(
         limit = 256;
     }
     // Query the database
-    let raw_query: String;
+    let raw_query: &str;
     if query_params.get("from_server_id").is_some() {
-        raw_query = format!(
-            "SELECT id, deleted_message_id FROM {} WHERE id > (?1) ORDER BY id ASC LIMIT (?2)",
-            storage::DELETED_MESSAGES_TABLE
-        );
+        raw_query = "SELECT id, deleted_message_id FROM deleted_messages WHERE id > (?1) ORDER BY id ASC LIMIT (?2)";
     } else {
-        raw_query = format!(
-            "SELECT id, deleted_message_id FROM {} ORDER BY id DESC LIMIT (?2)",
-            storage::DELETED_MESSAGES_TABLE
-        );
+        raw_query = "SELECT id, deleted_message_id FROM deleted_messages ORDER BY id DESC LIMIT (?2)";
     }
-    let mut query = conn.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
+    let mut query = conn.prepare(raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
     let rows = match query.query_map(params![from_server_id, limit], |row| {
         Ok(models::DeletedMessage { id: row.get(0)?, deleted_message_id: row.get(1)? })
     }) {
@@ -785,7 +763,7 @@ pub async fn add_moderator(
     let pool = storage::pool_by_room_id(&body.room_id);
     let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     // Insert the moderator
-    let stmt = format!("INSERT INTO {} (public_key) VALUES (?1)", storage::MODERATORS_TABLE);
+    let stmt = "INSERT INTO moderators (public_key) VALUES (?1)";
     match conn.execute(&stmt, params![&body.public_key]) {
         Ok(_) => (),
         Err(e) => {
@@ -819,7 +797,7 @@ pub async fn delete_moderator(
     let pool = storage::pool_by_room_id(&body.room_id);
     let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     // Insert the moderator
-    let stmt = format!("DELETE FROM {} WHERE public_key = (?1)", storage::MODERATORS_TABLE);
+    let stmt = "DELETE FROM moderators WHERE public_key = (?1)";
     match conn.execute(&stmt, params![&body.public_key]) {
         Ok(_) => (),
         Err(e) => {
@@ -868,10 +846,8 @@ pub fn ban_and_delete_all_messages(
     ban(public_key, auth_token, pool)?;
     // Get the IDs of the messages to delete
     let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
-    let raw_query = format!(
-        "SELECT id FROM {} WHERE public_key = (?1) AND is_deleted = 0",
-        storage::MESSAGES_TABLE
-    );
+    let raw_query =
+        "SELECT id FROM messages WHERE public_key = (?1) AND is_deleted = 0";
     let mut query = conn.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
     let rows = match query.query_map(params![public_key], |row| Ok(row.get(0)?)) {
         Ok(rows) => rows,
@@ -910,7 +886,7 @@ pub fn ban(
     // Get a database connection
     let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     // Insert the message
-    let stmt = format!("INSERT INTO {} (public_key) VALUES (?1)", storage::BLOCK_LIST_TABLE);
+    let stmt = "INSERT INTO block_list (public_key) VALUES (?1)";
     match conn.execute(&stmt, params![public_key]) {
         Ok(_) => (),
         Err(e) => {
@@ -945,7 +921,7 @@ pub fn unban(
     // Get a database connection
     let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     // Insert the message
-    let stmt = format!("DELETE FROM {} WHERE public_key = (?1)", storage::BLOCK_LIST_TABLE);
+    let stmt = "DELETE FROM block_list WHERE public_key = (?1)";
     match conn.execute(&stmt, params![public_key]) {
         Ok(_) => (),
         Err(e) => {
@@ -993,7 +969,7 @@ pub fn get_member_count(
     // Get a database connection
     let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     // Query the database
-    let raw_query = format!("SELECT COUNT(DISTINCT public_key) FROM {}", storage::TOKENS_TABLE);
+    let raw_query = "SELECT COUNT(DISTINCT public_key) FROM tokens";
     let mut query = conn.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
     let rows = match query.query_map(params![], |row| row.get(0)) {
         Ok(rows) => rows,
@@ -1032,7 +1008,7 @@ pub fn compact_poll(
             from_deletion_server_id,
         } = request_body;
         // Check that the room hasn't been deleted
-        let raw_query = format!("SELECT id, name FROM {} where id = (?1)", storage::MAIN_TABLE);
+        let raw_query = "SELECT id, name FROM main where id = (?1)";
         match main_conn.query_row(&raw_query, params![room_id], |row| {
             Ok(models::Room { id: row.get(0)?, name: row.get(1)? })
         }) {
@@ -1177,10 +1153,8 @@ pub async fn get_stats_for_room(
     let pool = storage::pool_by_room_id(&room);
     let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
 
-    let raw_query_users = format!(
-        "SELECT COUNT(public_key) FROM {} WHERE last_active > ?1 AND last_active <= ?2",
-        storage::USER_ACTIVITY_TABLE
-    );
+    let raw_query_users =
+        "SELECT COUNT(public_key) FROM user_activity WHERE last_active > ?1 AND last_active <= ?2";
     let mut query_users =
         conn.prepare(&raw_query_users).map_err(|_| Error::DatabaseFailedInternally)?;
 
@@ -1191,10 +1165,8 @@ pub async fn get_stats_for_room(
         Err(_e) => return Err(warp::reject::custom(Error::DatabaseFailedInternally)),
     };
 
-    let raw_query_posts = format!(
-        "SELECT COUNT(id) FROM {} WHERE timestamp >= ?1 AND timestamp <= ?2",
-        storage::MESSAGES_TABLE
-    );
+    let raw_query_posts =
+        "SELECT COUNT(id) FROM messages WHERE timestamp >= ?1 AND timestamp <= ?2";
 
     let mut query_posts =
         conn.prepare(&raw_query_posts).map_err(|_| Error::DatabaseFailedInternally)?;
@@ -1222,10 +1194,8 @@ fn get_pending_tokens(
     public_key: &str, pool: &storage::DatabaseConnectionPool,
 ) -> Result<Vec<(i64, Vec<u8>)>, Rejection> {
     let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
-    let raw_query = format!(
-        "SELECT timestamp, token FROM {} WHERE public_key = (?1) AND timestamp > (?2)",
-        storage::PENDING_TOKENS_TABLE
-    );
+    let raw_query =
+        "SELECT timestamp, token FROM pending_tokens WHERE public_key = (?1) AND timestamp > (?2)";
     let mut query = conn.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
     let now = chrono::Utc::now().timestamp();
     let expiration = now - storage::PENDING_TOKEN_EXPIRATION;
@@ -1246,7 +1216,7 @@ fn get_moderators_vector(pool: &storage::DatabaseConnectionPool) -> Result<Vec<S
     // Get a database connection
     let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     // Query the database
-    let raw_query = format!("SELECT public_key FROM {}", storage::MODERATORS_TABLE);
+    let raw_query = "SELECT public_key FROM moderators";
     let mut query = conn.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
     let rows = match query.query_map(params![], |row| row.get(0)) {
         Ok(rows) => rows,
@@ -1272,7 +1242,7 @@ fn get_banned_public_keys_vector(
     // Get a database connection
     let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     // Query the database
-    let raw_query = format!("SELECT public_key FROM {}", storage::BLOCK_LIST_TABLE);
+    let raw_query = "SELECT public_key FROM block_list";
     let mut query = conn.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
     let rows = match query.query_map(params![], |row| row.get(0)) {
         Ok(rows) => rows,
@@ -1289,10 +1259,8 @@ fn is_banned(public_key: &str, pool: &storage::DatabaseConnectionPool) -> Result
     // Get a database connection
     let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     // Query the database
-    let raw_query = format!(
-        "SELECT COUNT(public_key) FROM {} WHERE public_key = (?1)",
-        storage::BLOCK_LIST_TABLE
-    );
+    let raw_query =
+        "SELECT COUNT(public_key) FROM block_list WHERE public_key = (?1)";
     let mut query = conn.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
     let rows = match query.query_map(params![public_key], |row| row.get(0)) {
         Ok(rows) => rows,
@@ -1327,7 +1295,7 @@ fn get_public_key_for_auth_token(
     // Get a database connection
     let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     // Query the database
-    let raw_query = format!("SELECT public_key FROM {} WHERE token = (?1)", storage::TOKENS_TABLE);
+    let raw_query = "SELECT public_key FROM tokens WHERE token = (?1)";
     let mut query = conn.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
     let rows = match query.query_map(params![auth_token], |row| row.get(0)) {
         Ok(rows) => rows,
