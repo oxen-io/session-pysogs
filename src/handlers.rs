@@ -361,8 +361,7 @@ pub fn get_auth_token_challenge(
     // Note that a given public key can have multiple pending tokens
     let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     let now = chrono::Utc::now().timestamp();
-    let stmt =
-        "INSERT INTO pending_tokens (public_key, timestamp, token) VALUES (?1, ?2, ?3)";
+    let stmt = "INSERT INTO pending_tokens (public_key, timestamp, token) VALUES (?1, ?2, ?3)";
     let _ = match conn.execute(&stmt, params![hex_public_key, now, token]) {
         Ok(rows) => rows,
         Err(e) => {
@@ -404,8 +403,7 @@ pub fn claim_auth_token(
         .ok_or(Error::Unauthorized)?;
     let token = &pending_tokens[index].1;
     // Store the claimed token
-    let stmt =
-        "INSERT INTO tokens (public_key, timestamp, token) VALUES (?1, ?2, ?3)";
+    let stmt = "INSERT INTO tokens (public_key, timestamp, token) VALUES (?1, ?2, ?3)";
     let now = chrono::Utc::now().timestamp();
     match conn.execute(&stmt, params![public_key, now, hex::encode(token)]) {
         Ok(_) => (),
@@ -606,8 +604,7 @@ fn update_usage_statistics(
     let public_key = get_public_key_for_auth_token(auth_token, pool)?;
     let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     let now = chrono::Utc::now().timestamp();
-    let stmt =
-        "INSERT OR REPLACE INTO user_activity (public_key, last_active) VALUES(?1, ?2)";
+    let stmt = "INSERT OR REPLACE INTO user_activity (public_key, last_active) VALUES(?1, ?2)";
     conn.execute(&stmt, params![public_key, now]).map_err(|_| Error::DatabaseFailedInternally)?;
     return Ok(());
 }
@@ -676,8 +673,7 @@ pub fn delete_message(
     };
     // Update the deletions table if needed
     if count > 0 {
-        let stmt =
-            "INSERT INTO deleted_messages (deleted_message_id) VALUES (?1)";
+        let stmt = "INSERT INTO deleted_messages (deleted_message_id) VALUES (?1)";
         match tx.execute(&stmt, params![id]) {
             Ok(_) => (),
             Err(e) => {
@@ -723,7 +719,8 @@ pub fn get_deleted_messages(
     if query_params.get("from_server_id").is_some() {
         raw_query = "SELECT id, deleted_message_id FROM deleted_messages WHERE id > (?1) ORDER BY id ASC LIMIT (?2)";
     } else {
-        raw_query = "SELECT id, deleted_message_id FROM deleted_messages ORDER BY id DESC LIMIT (?2)";
+        raw_query =
+            "SELECT id, deleted_message_id FROM deleted_messages ORDER BY id DESC LIMIT (?2)";
     }
     let mut query = conn.prepare(raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
     let rows = match query.query_map(params![from_server_id, limit], |row| {
@@ -846,8 +843,7 @@ pub fn ban_and_delete_all_messages(
     ban(public_key, auth_token, pool)?;
     // Get the IDs of the messages to delete
     let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
-    let raw_query =
-        "SELECT id FROM messages WHERE public_key = (?1) AND is_deleted = 0";
+    let raw_query = "SELECT id FROM messages WHERE public_key = (?1) AND is_deleted = 0";
     let mut query = conn.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
     let rows = match query.query_map(params![public_key], |row| Ok(row.get(0)?)) {
         Ok(rows) => rows,
@@ -1259,8 +1255,7 @@ fn is_banned(public_key: &str, pool: &storage::DatabaseConnectionPool) -> Result
     // Get a database connection
     let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     // Query the database
-    let raw_query =
-        "SELECT COUNT(public_key) FROM block_list WHERE public_key = (?1)";
+    let raw_query = "SELECT COUNT(public_key) FROM block_list WHERE public_key = (?1)";
     let mut query = conn.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
     let rows = match query.query_map(params![public_key], |row| row.get(0)) {
         Ok(rows) => rows,

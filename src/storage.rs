@@ -30,8 +30,7 @@ pub fn create_main_database_if_needed() {
 }
 
 fn create_main_tables_if_needed(conn: &DatabaseConnection) {
-    let main_table_cmd =
-        "CREATE TABLE IF NOT EXISTS main (
+    let main_table_cmd = "CREATE TABLE IF NOT EXISTS main (
         id TEXT PRIMARY KEY,
         name TEXT,
         image_id TEXT
@@ -74,8 +73,7 @@ pub fn create_room_tables_if_needed(conn: &DatabaseConnection) {
     // Messages
     // The `id` field is needed to make `rowid` stable, which is important because otherwise
     // the `id`s in this table won't correspond to those in the deleted messages table
-    let messages_table_cmd =
-        "CREATE TABLE IF NOT EXISTS messages (
+    let messages_table_cmd = "CREATE TABLE IF NOT EXISTS messages (
         id INTEGER PRIMARY KEY,
         public_key TEXT,
         timestamp INTEGER,
@@ -85,29 +83,25 @@ pub fn create_room_tables_if_needed(conn: &DatabaseConnection) {
     )";
     conn.execute(&messages_table_cmd, params![]).expect("Couldn't create messages table.");
     // Deleted messages
-    let deleted_messages_table_cmd =
-        "CREATE TABLE IF NOT EXISTS deleted_messages (
+    let deleted_messages_table_cmd = "CREATE TABLE IF NOT EXISTS deleted_messages (
         id INTEGER PRIMARY KEY,
         deleted_message_id INTEGER
     )";
     conn.execute(&deleted_messages_table_cmd, params![])
         .expect("Couldn't create deleted messages table.");
     // Moderators
-    let moderators_table_cmd =
-        "CREATE TABLE IF NOT EXISTS moderators (
+    let moderators_table_cmd = "CREATE TABLE IF NOT EXISTS moderators (
         public_key TEXT
     )";
     conn.execute(&moderators_table_cmd, params![]).expect("Couldn't create moderators table.");
     // Block list
-    let block_list_table_cmd =
-        "CREATE TABLE IF NOT EXISTS block_list (
+    let block_list_table_cmd = "CREATE TABLE IF NOT EXISTS block_list (
         public_key TEXT
     )";
     conn.execute(&block_list_table_cmd, params![]).expect("Couldn't create block list table.");
     // Pending tokens
     // Note that a given public key can have multiple pending tokens
-    let pending_tokens_table_cmd =
-        "CREATE TABLE IF NOT EXISTS pending_tokens (
+    let pending_tokens_table_cmd = "CREATE TABLE IF NOT EXISTS pending_tokens (
         public_key TEXT,
         timestamp INTEGER,
         token BLOB
@@ -116,23 +110,20 @@ pub fn create_room_tables_if_needed(conn: &DatabaseConnection) {
         .expect("Couldn't create pending tokens table.");
     // Tokens
     // The token is stored as hex here (rather than as bytes) because it's more convenient for lookup
-    let tokens_table_cmd =
-        "CREATE TABLE IF NOT EXISTS tokens (
+    let tokens_table_cmd = "CREATE TABLE IF NOT EXISTS tokens (
         public_key TEXT,
         timestamp INTEGER,
         token TEXT PRIMARY KEY
     )";
     conn.execute(&tokens_table_cmd, params![]).expect("Couldn't create tokens table.");
     // Files
-    let files_table_cmd =
-        "CREATE TABLE IF NOT EXISTS files (
+    let files_table_cmd = "CREATE TABLE IF NOT EXISTS files (
         id TEXT PRIMARY KEY,
         timestamp INTEGER
     )";
     conn.execute(&files_table_cmd, params![]).expect("Couldn't create files table.");
     // User activity table
-    let user_activity_table_cmd =
-        "CREATE TABLE IF NOT EXISTS user_activity (
+    let user_activity_table_cmd = "CREATE TABLE IF NOT EXISTS user_activity (
         public_key TEXT PRIMARY KEY,
         last_active INTEGER NOT NULL
     )";
@@ -326,8 +317,7 @@ pub fn perform_migration() {
             return error!("Couldn't get all room IDs.");
         }
     };
-    let create_tokens_table_cmd =
-        "CREATE TABLE IF NOT EXISTS tokens (
+    let create_tokens_table_cmd = "CREATE TABLE IF NOT EXISTS tokens (
         public_key TEXT,
         timestamp INTEGER,
         token TEXT PRIMARY KEY
