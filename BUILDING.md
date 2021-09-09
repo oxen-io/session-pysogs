@@ -26,6 +26,8 @@ sudo apt upgrade
 sudo apt install build-essential libssl-dev pkg-config
 ```
 
+(Or the equivalent on a non-Debian-based Linux system).
+
 Build it with
 
 ```
