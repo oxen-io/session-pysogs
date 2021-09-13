@@ -40,10 +40,12 @@ lazy_static::lazy_static! {
 // Not publicly exposed.
 pub async fn create_room(room: models::Room) -> Result<Response, Rejection> {
     // Get a connection
-    let pool = &storage::MAIN_POOL;
-    let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
+    let conn = storage::DB_POOL.get().map_err(|_| Error::DatabaseFailedInternally)?;
+
+    storage::RoomId::validate(&room.id)?;
+
     // Insert the room
-    let stmt = "REPLACE INTO main (id, name) VALUES (?1, ?2)";
+    let stmt = "INSERT OR REPLACE INTO rooms (identifier, name) VALUES (?, ?)";
     match conn.execute(&stmt, params![&room.id, &room.name]) {
         Ok(_) => (),
         Err(e) => {
@@ -51,10 +53,7 @@ pub async fn create_room(room: models::Room) -> Result<Response, Rejection> {
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     }
-    // Set up the database
-    storage::create_database_if_needed(
-        &storage::RoomId::new(&room.id).ok_or(Error::ValidationFailed)?,
-    );
+
     // Return
     info!("Added room with ID: {}", &room.id);
     let json = models::StatusCode { status_code: StatusCode::OK.as_u16() };
@@ -64,18 +63,13 @@ pub async fn create_room(room: models::Room) -> Result<Response, Rejection> {
 // Not publicly exposed.
 pub async fn delete_room(id: String) -> Result<Response, Rejection> {
     // Get a connection
-    let pool = &storage::MAIN_POOL;
-    let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
+    let conn = storage::DB_POOL.get().map_err(|_| Error::DatabaseFailedInternally)?;
     // Insert the room
-    let stmt = "DELETE FROM main WHERE id = (?1)";
-    match conn.execute(&stmt, params![&id]) {
-        Ok(_) => (),
-        Err(e) => {
-            error!("Couldn't delete room due to error: {}.", e);
-            return Err(warp::reject::custom(Error::DatabaseFailedInternally));
-        }
+    let stmt = "DELETE FROM rooms WHERE identifier = ?";
+    if Err(e) = conn.execute(&stmt, params![&id]) {
+        error!("Couldn't delete room due to error: {}.", e);
+        return Err(warp::reject::custom(Error::DatabaseFailedInternally));
     }
-    // Don't auto-delete the database file (the server operator might want to keep it around)
     // Return
     info!("Deleted room with ID: {}", &id);
     let json = models::StatusCode { status_code: StatusCode::OK.as_u16() };
@@ -84,8 +78,7 @@ pub async fn delete_room(id: String) -> Result<Response, Rejection> {
 
 pub fn get_room(room_id: &str) -> Result<Response, Rejection> {
     // Get a connection
-    let pool = &storage::MAIN_POOL;
-    let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
+    let conn = storage::DB_POOL.get().map_err(|_| Error::DatabaseFailedInternally)?;
     // Get the room info if possible
     let raw_query = "SELECT id, name FROM main where id = (?1)";
     let room = match conn.query_row(&raw_query, params![room_id], |row| {
@@ -106,8 +99,7 @@ pub fn get_room(room_id: &str) -> Result<Response, Rejection> {
 
 pub fn get_all_rooms() -> Result<Response, Rejection> {
     // Get a connection
-    let pool = &storage::MAIN_POOL;
-    let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
+    let conn = storage::DB_POOL.get().map_err(|_| Error::DatabaseFailedInternally)?;
     // Get the room info if possible
     let raw_query = "SELECT id, name FROM main";
     let mut query = conn.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
@@ -745,10 +737,8 @@ pub fn get_deleted_messages(
 pub async fn add_moderator_public(
     body: models::ChangeModeratorRequestBody, auth_token: &str,
 ) -> Result<Response, Rejection> {
-    let room_id = storage::RoomId::new(&body.room_id).ok_or(Error::ValidationFailed)?;
-    let pool = storage::pool_by_room_id(&room_id)?;
     let (has_authorization_level, _) =
-        has_authorization_level(auth_token, AuthorizationLevel::Moderator, &pool)?;
+        has_authorization_level(auth_token, AuthorizationLevel::Moderator, &storage::DB_POOL)?;
     if !has_authorization_level {
         return Err(warp::reject::custom(Error::Unauthorized));
     }
@@ -759,11 +749,9 @@ pub async fn add_moderator_public(
 pub async fn add_moderator(
     body: models::ChangeModeratorRequestBody,
 ) -> Result<Response, Rejection> {
+    storage::RoomId::validate(&body.room_id)?;
     // Get a database connection
-    let pool = storage::pool_by_room_id(
-        &storage::RoomId::new(&body.room_id).ok_or(Error::ValidationFailed)?,
-    )?;
-    let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
+    let conn = storage::DB_POOL.get().map_err(|_| Error::DatabaseFailedInternally)?;
     // Insert the moderator
     let stmt = "INSERT INTO moderators (public_key) VALUES (?1)";
     match conn.execute(&stmt, params![&body.public_key]) {
@@ -782,11 +770,8 @@ pub async fn add_moderator(
 pub async fn delete_moderator_public(
     body: models::ChangeModeratorRequestBody, auth_token: &str,
 ) -> Result<Response, Rejection> {
-    let pool = storage::pool_by_room_id(
-        &storage::RoomId::new(&body.room_id).ok_or(Error::ValidationFailed)?,
-    )?;
     let (has_authorization_level, _) =
-        has_authorization_level(auth_token, AuthorizationLevel::Moderator, &pool)?;
+        has_authorization_level(auth_token, AuthorizationLevel::Moderator, &storage::DB_POOL)?;
     if !has_authorization_level {
         return Err(warp::reject::custom(Error::Unauthorized));
     }
@@ -798,10 +783,7 @@ pub async fn delete_moderator(
     body: models::ChangeModeratorRequestBody,
 ) -> Result<Response, Rejection> {
     // Get a database connection
-    let pool = storage::pool_by_room_id(
-        &storage::RoomId::new(&body.room_id).ok_or(Error::ValidationFailed)?,
-    )?;
-    let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
+    let conn = storage::DB_POOL.get().map_err(|_| Error::DatabaseFailedInternally)?;
     // Insert the moderator
     let stmt = "DELETE FROM moderators WHERE public_key = (?1)";
     match conn.execute(&stmt, params![&body.public_key]) {
@@ -1002,8 +984,8 @@ pub fn compact_poll(
     request_bodies: Vec<models::CompactPollRequestBody>,
 ) -> Result<Response, Rejection> {
     let mut response_bodies: Vec<models::CompactPollResponseBody> = vec![];
-    let main_pool = &storage::MAIN_POOL;
-    let main_conn = main_pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
+    let main_conn = storage::DB_POOL.get().map_err(|_| Error::DatabaseFailedInternally)?;
+    let pool = &storage::DB_POOL;
     for request_body in request_bodies {
         // Unwrap the request body
         let models::CompactPollRequestBody {
@@ -1031,10 +1013,6 @@ pub fn compact_poll(
                 continue;
             }
         };
-        // Get the database connection pool
-        let pool = storage::pool_by_room_id(
-            &storage::RoomId::new(&room_id).ok_or(Error::ValidationFailed)?,
-        )?;
         // Get the new messages
         let mut get_messages_query_params: HashMap<String, String> = HashMap::new();
         if let Some(from_message_server_id) = from_message_server_id {
@@ -1157,9 +1135,7 @@ pub async fn get_stats_for_room(
     };
 
     let lowerbound = upperbound - window;
-    let pool =
-        storage::pool_by_room_id(&storage::RoomId::new(&room_id).ok_or(Error::ValidationFailed)?)?;
-    let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
+    let conn = storage::DB_POOL.get().map_err(|_| Error::DatabaseFailedInternally)?;
 
     let raw_query_users =
         "SELECT COUNT(public_key) FROM user_activity WHERE last_active > ?1 AND last_active <= ?2";
@@ -1206,7 +1182,7 @@ fn get_pending_tokens(
         "SELECT timestamp, token FROM pending_tokens WHERE public_key = (?1) AND timestamp > (?2)";
     let mut query = conn.prepare(&raw_query).map_err(|_| Error::DatabaseFailedInternally)?;
     let now = chrono::Utc::now().timestamp();
-    let expiration = now - storage::PENDING_TOKEN_EXPIRATION;
+    let expiration = now; // FIXME - storage::PENDING_TOKEN_EXPIRATION;
     let rows = match query
         .query_map(params![public_key, expiration], |row| Ok((row.get(0)?, row.get(1)?)))
     {

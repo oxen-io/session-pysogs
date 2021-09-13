@@ -64,15 +64,10 @@ async fn main() {
         info!("Users can join rooms on this open group server using the following URL format:");
         info!("{}", get_url());
         // Create the main database
-        storage::create_main_database_if_needed();
+        storage::create_database_if_needed();
         // Create required folders
-        fs::create_dir_all("./rooms").unwrap();
         fs::create_dir_all("./files").unwrap();
-        // Perform migration
-        storage::perform_migration();
         // Set up pruning jobs
-        let prune_pending_tokens_future = storage::prune_pending_tokens_periodically();
-        let prune_tokens_future = storage::prune_tokens_periodically();
         let prune_files_future = storage::prune_files_periodically();
         // Serve routes
         let public_routes = routes::root().or(routes::fallback()).or(routes::lsrpc());
@@ -92,8 +87,6 @@ async fn main() {
             let serve_private_routes_future = warp::serve(private_routes).run(localhost);
             // Keep futures alive
             join!(
-                prune_pending_tokens_future,
-                prune_tokens_future,
                 prune_files_future,
                 serve_public_routes_future,
                 serve_private_routes_future
@@ -104,8 +97,6 @@ async fn main() {
             let serve_private_routes_future = warp::serve(private_routes).run(localhost);
             // Keep futures alive
             join!(
-                prune_pending_tokens_future,
-                prune_tokens_future,
                 prune_files_future,
                 serve_public_routes_future,
                 serve_private_routes_future

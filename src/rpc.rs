@@ -56,10 +56,7 @@ pub async fn handle_rpc_call(rpc_call: RpcCall) -> Result<Response, Rejection> {
             return handle_get_request(room_id_str, rpc_call, &path, auth_token, query_params).await
         }
         "POST" => return handle_post_request(room_id_str, rpc_call, &path, auth_token).await,
-        "DELETE" => {
-            let pool = get_pool_for_room(&rpc_call)?;
-            return handle_delete_request(rpc_call, &path, auth_token, &pool).await;
-        }
+        "DELETE" => return handle_delete_request(rpc_call, &path, auth_token).await,
         _ => {
             warn!("Ignoring RPC call with invalid or unused HTTP method: {}.", rpc_call.method);
             return Err(warp::reject::custom(Error::InvalidRpcCall));
@@ -71,10 +68,10 @@ async fn handle_get_request(
     room_id: Option<String>, rpc_call: RpcCall, path: &str, auth_token: Option<String>,
     query_params: HashMap<String, String>,
 ) -> Result<Response, Rejection> {
+    let pool = &storage::DB_POOL;
     // Handle routes that don't require authorization first
     if path == "auth_token_challenge" {
         reject_if_file_server_mode(path)?;
-        let pool = get_pool_for_room(&rpc_call)?;
         let challenge = handlers::get_auth_token_challenge(query_params, &pool)?;
         #[derive(Debug, Deserialize, Serialize)]
         struct Response {
@@ -117,7 +114,6 @@ async fn handle_get_request(
         return Ok(warp::reply::json(&response).into_response());
     }
     // This route requires auth in open group server mode, but not in file server mode
-    let pool = get_pool_for_room(&rpc_call)?;
     if path.starts_with("files") {
         let components: Vec<&str> = path.split('/').collect(); // Split on subsequent slashes
         if components.len() != 2 {
@@ -212,7 +208,7 @@ async fn handle_post_request(
         return handlers::compact_poll(wrapper.requests);
     }
     // This route requires auth in open group server mode, but not in file server mode
-    let pool = get_pool_for_room(&rpc_call)?;
+    let pool = &storage::DB_POOL;
     if path == "files" {
         #[derive(Debug, Deserialize)]
         struct JSON {
@@ -343,9 +339,9 @@ async fn handle_post_request(
 }
 
 async fn handle_delete_request(
-    rpc_call: RpcCall, path: &str, auth_token: Option<String>,
-    pool: &storage::DatabaseConnectionPool,
+    rpc_call: RpcCall, path: &str, auth_token: Option<String>
 ) -> Result<Response, Rejection> {
+    let pool = &storage::DB_POOL;
     // Check that the auth token is present
     let auth_token = auth_token.ok_or_else(|| warp::reject::custom(Error::NoAuthToken))?;
     // DELETE /messages/:server_id
@@ -406,13 +402,6 @@ async fn handle_delete_request(
 }
 
 // Utilities
-
-fn get_pool_for_room(rpc_call: &RpcCall) -> Result<storage::DatabaseConnectionPool, Rejection> {
-    let room_id = get_room_id(&rpc_call).ok_or(Error::ValidationFailed)?;
-    return storage::pool_by_room_id(
-        &storage::RoomId::new(&room_id).ok_or(Error::ValidationFailed)?,
-    ).map_err(|e| e.into());
-}
 
 fn get_auth_token(rpc_call: &RpcCall) -> Option<String> {
     if rpc_call.headers.is_empty() {
