@@ -49,7 +49,7 @@ pub async fn create_room(room: models::Room) -> Result<Response, Rejection> {
     match conn.execute(&stmt, params![&room.id, &room.name]) {
         Ok(_) => (),
         Err(e) => {
-            error!("Couldn't create room due to error: {}.", e);
+            error!("Couldn't create room: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     }
@@ -67,7 +67,7 @@ pub async fn delete_room(id: String) -> Result<Response, Rejection> {
     // Insert the room
     let stmt = "DELETE FROM rooms WHERE identifier = ?";
     if let Err(e) = conn.execute(&stmt, params![&id]) {
-        error!("Couldn't delete room due to error: {}.", e);
+        error!("Couldn't delete room: {}.", e);
         return Err(warp::reject::custom(Error::DatabaseFailedInternally));
     }
     // Return
@@ -108,7 +108,7 @@ pub fn get_all_rooms() -> Result<Response, Rejection> {
     {
         Ok(rows) => rows,
         Err(e) => {
-            error!("Couldn't get rooms due to error: {}.", e);
+            error!("Couldn't get rooms: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
@@ -149,7 +149,7 @@ pub async fn store_file(
     let bytes = match base64::decode(base64_encoded_bytes) {
         Ok(bytes) => bytes,
         Err(e) => {
-            error!("Couldn't parse bytes from invalid base64 encoding due to error: {}.", e);
+            error!("Couldn't parse bytes from invalid base64 encoding: {}.", e);
             return Err(warp::reject::custom(Error::ValidationFailed));
         }
     };
@@ -163,7 +163,7 @@ pub async fn store_file(
     let _ = match conn.execute(&stmt, params![id.to_string(), now]) {
         Ok(rows) => rows,
         Err(e) => {
-            error!("Couldn't insert file record due to error: {}.", e);
+            error!("Couldn't insert file record: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
@@ -177,14 +177,14 @@ pub async fn store_file(
     let mut file = match File::create(path).await {
         Ok(file) => file,
         Err(e) => {
-            error!("Couldn't store file due to error: {}.", e);
+            error!("Couldn't store file: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
     match file.write_all(&bytes).await {
         Ok(_) => (),
         Err(e) => {
-            error!("Couldn't store file due to error: {}.", e);
+            error!("Couldn't store file: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
@@ -224,14 +224,14 @@ pub async fn get_file(
     let mut file = match File::open(path).await {
         Ok(file) => file,
         Err(e) => {
-            error!("Couldn't read file due to error: {}.", e);
+            error!("Couldn't read file: {}.", e);
             return Err(warp::reject::custom(Error::ValidationFailed));
         }
     };
     match file.read_to_end(&mut bytes).await {
         Ok(_) => (),
         Err(e) => {
-            error!("Couldn't read file due to error: {}.", e);
+            error!("Couldn't read file: {}.", e);
             return Err(warp::reject::custom(Error::ValidationFailed));
         }
     };
@@ -253,14 +253,14 @@ pub async fn get_group_image(room_id: &str) -> Result<Response, Rejection> {
     let mut file = match File::open(path).await {
         Ok(file) => file,
         Err(e) => {
-            error!("Couldn't read file due to error: {}.", e);
+            error!("Couldn't read file: {}.", e);
             return Err(warp::reject::custom(Error::ValidationFailed));
         }
     };
     match file.read_to_end(&mut bytes).await {
         Ok(_) => (),
         Err(e) => {
-            error!("Couldn't read file due to error: {}.", e);
+            error!("Couldn't read file: {}.", e);
             return Err(warp::reject::custom(Error::ValidationFailed));
         }
     };
@@ -288,7 +288,7 @@ pub async fn set_group_image(
     let bytes = match base64::decode(base64_encoded_bytes) {
         Ok(bytes) => bytes,
         Err(e) => {
-            error!("Couldn't parse bytes from invalid base64 encoding due to error: {}.", e);
+            error!("Couldn't parse bytes from invalid base64 encoding: {}.", e);
             return Err(warp::reject::custom(Error::ValidationFailed));
         }
     };
@@ -298,14 +298,14 @@ pub async fn set_group_image(
     let mut file = match File::create(path).await {
         Ok(file) => file,
         Err(e) => {
-            error!("Couldn't set group image due to error: {}.", e);
+            error!("Couldn't set group image: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
     match file.write_all(&bytes).await {
         Ok(_) => (),
         Err(e) => {
-            error!("Couldn't set group image due to error: {}.", e);
+            error!("Couldn't set group image: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
@@ -359,7 +359,7 @@ pub fn get_auth_token_challenge(
     let _ = match conn.execute(&stmt, params![hex_public_key, now, token]) {
         Ok(rows) => rows,
         Err(e) => {
-            error!("Couldn't insert pending token due to error: {}.", e);
+            error!("Couldn't insert pending token: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
@@ -402,7 +402,7 @@ pub fn claim_auth_token(
     match conn.execute(&stmt, params![public_key, now, hex::encode(token)]) {
         Ok(_) => (),
         Err(e) => {
-            error!("Couldn't insert token due to error: {}.", e);
+            error!("Couldn't insert token: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     }
@@ -410,7 +410,7 @@ pub fn claim_auth_token(
     let stmt = "DELETE FROM pending_tokens WHERE public_key = (?1)";
     match conn.execute(&stmt, params![public_key]) {
         Ok(_) => (),
-        Err(e) => error!("Couldn't delete pending tokens due to error: {}.", e), // It's not catastrophic if this fails
+        Err(e) => error!("Couldn't delete pending tokens: {}.", e), // It's not catastrophic if this fails
     };
     // Return
     let json = models::StatusCode { status_code: StatusCode::OK.as_u16() };
@@ -433,7 +433,7 @@ pub fn delete_auth_token(
     match conn.execute(&stmt, params![requesting_public_key]) {
         Ok(_) => (),
         Err(e) => {
-            error!("Couldn't delete token due to error: {}.", e);
+            error!("Couldn't delete token: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
@@ -489,7 +489,7 @@ pub fn insert_message(
     ) {
         Ok(_) => (),
         Err(e) => {
-            error!("Couldn't insert message due to error: {}.", e);
+            error!("Couldn't insert message: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     }
@@ -526,7 +526,7 @@ fn get_last_5_messages(
     }) {
         Ok(rows) => rows,
         Err(e) => {
-            error!("Couldn't get last 5 messages due to error: {}.", e);
+            error!("Couldn't get last 5 messages: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
@@ -577,7 +577,7 @@ pub fn get_messages(
     }) {
         Ok(rows) => rows,
         Err(e) => {
-            error!("Couldn't get messages due to error: {}.", e);
+            error!("Couldn't get messages: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
@@ -641,7 +641,7 @@ pub fn delete_message(
         let rows = match query.query_map(params![id], |row| row.get(0)) {
             Ok(rows) => rows,
             Err(e) => {
-                error!("Couldn't delete message due to error: {}.", e);
+                error!("Couldn't delete message: {}.", e);
                 return Err(warp::reject::custom(Error::DatabaseFailedInternally));
             }
         };
@@ -661,7 +661,7 @@ pub fn delete_message(
     let count = match tx.execute(&stmt, params![id]) {
         Ok(count) => count,
         Err(e) => {
-            error!("Couldn't delete message due to error: {}.", e);
+            error!("Couldn't delete message: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
@@ -671,7 +671,7 @@ pub fn delete_message(
         match tx.execute(&stmt, params![id]) {
             Ok(_) => (),
             Err(e) => {
-                error!("Couldn't delete message due to error: {}.", e);
+                error!("Couldn't delete message: {}.", e);
                 return Err(warp::reject::custom(Error::DatabaseFailedInternally));
             }
         };
@@ -722,7 +722,7 @@ pub fn get_deleted_messages(
     }) {
         Ok(rows) => rows,
         Err(e) => {
-            error!("Couldn't get deleted messages due to error: {}.", e);
+            error!("Couldn't get deleted messages: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
@@ -757,7 +757,7 @@ pub async fn add_moderator(
     match conn.execute(&stmt, params![&body.public_key]) {
         Ok(_) => (),
         Err(e) => {
-            error!("Couldn't make public key moderator due to error: {}.", e);
+            error!("Couldn't make public key moderator: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     }
@@ -789,7 +789,7 @@ pub async fn delete_moderator(
     match conn.execute(&stmt, params![&body.public_key]) {
         Ok(_) => (),
         Err(e) => {
-            error!("Couldn't delete moderator due to error: {}.", e);
+            error!("Couldn't delete moderator: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     }
@@ -839,7 +839,7 @@ pub fn ban_and_delete_all_messages(
     let rows = match query.query_map(params![public_key], |row| Ok(row.get(0)?)) {
         Ok(rows) => rows,
         Err(e) => {
-            error!("Couldn't delete messages due to error: {}.", e);
+            error!("Couldn't delete messages: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
@@ -877,7 +877,7 @@ pub fn ban(
     match conn.execute(&stmt, params![public_key]) {
         Ok(_) => (),
         Err(e) => {
-            error!("Couldn't ban public key due to error: {}.", e);
+            error!("Couldn't ban public key: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
@@ -912,7 +912,7 @@ pub fn unban(
     match conn.execute(&stmt, params![public_key]) {
         Ok(_) => (),
         Err(e) => {
-            error!("Couldn't unban public key due to error: {}.", e);
+            error!("Couldn't unban public key: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
@@ -961,7 +961,7 @@ pub fn get_member_count(
     let rows = match query.query_map(params![], |row| row.get(0)) {
         Ok(rows) => rows,
         Err(e) => {
-            error!("Couldn't query database due to error: {}.", e);
+            error!("Couldn't query database: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
@@ -1188,7 +1188,7 @@ fn get_pending_tokens(
     {
         Ok(rows) => rows,
         Err(e) => {
-            error!("Couldn't get pending tokens due to error: {}.", e);
+            error!("Couldn't get pending tokens: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
@@ -1205,7 +1205,7 @@ fn get_moderators_vector(pool: &storage::DatabaseConnectionPool) -> Result<Vec<S
     let rows = match query.query_map(params![], |row| row.get(0)) {
         Ok(rows) => rows,
         Err(e) => {
-            error!("Couldn't query database due to error: {}.", e);
+            error!("Couldn't query database: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
@@ -1231,7 +1231,7 @@ fn get_banned_public_keys_vector(
     let rows = match query.query_map(params![], |row| row.get(0)) {
         Ok(rows) => rows,
         Err(e) => {
-            error!("Couldn't query database due to error: {}.", e);
+            error!("Couldn't query database: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
@@ -1248,7 +1248,7 @@ fn is_banned(public_key: &str, pool: &storage::DatabaseConnectionPool) -> Result
     let rows = match query.query_map(params![public_key], |row| row.get(0)) {
         Ok(rows) => rows,
         Err(e) => {
-            error!("Couldn't query database due to error: {}.", e);
+            error!("Couldn't query database: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };
@@ -1283,7 +1283,7 @@ fn get_public_key_for_auth_token(
     let rows = match query.query_map(params![auth_token], |row| row.get(0)) {
         Ok(rows) => rows,
         Err(e) => {
-            error!("Couldn't query database due to error: {}.", e);
+            error!("Couldn't query database: {}.", e);
             return Err(warp::reject::custom(Error::DatabaseFailedInternally));
         }
     };

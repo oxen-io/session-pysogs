@@ -41,7 +41,7 @@ async fn handle_decrypted_onion_request(
     let rpc_call = match serde_json::from_slice(plaintext) {
         Ok(rpc_call) => rpc_call,
         Err(e) => {
-            warn!("Couldn't parse RPC call from JSON due to error: {}.", e);
+            warn!("Couldn't parse RPC call from JSON: {}.", e);
             return Err(warp::reject::custom(Error::InvalidOnionRequest));
         }
     };
@@ -78,7 +78,7 @@ fn parse_onion_request_payload(
     let json = match String::from_utf8(utf8_json) {
         Ok(json) => json,
         Err(e) => {
-            warn!("Couldn't parse onion request payload metadata due to error: {}.", e);
+            warn!("Couldn't parse onion request payload metadata: {}.", e);
             return Err(warp::reject::custom(Error::InvalidOnionRequest));
         }
     };
@@ -86,7 +86,7 @@ fn parse_onion_request_payload(
     let metadata: OnionRequestPayloadMetadata = match serde_json::from_str(&json) {
         Ok(metadata) => metadata,
         Err(e) => {
-            warn!("Couldn't parse onion request payload metadata due to error: {}.", e);
+            warn!("Couldn't parse onion request payload metadata: {}.", e);
             return Err(warp::reject::custom(Error::InvalidOnionRequest));
         }
     };

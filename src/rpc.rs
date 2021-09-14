@@ -35,14 +35,14 @@ pub async fn handle_rpc_call(rpc_call: RpcCall) -> Result<Response, Rejection> {
     let path: String = match raw_uri.parse::<http::Uri>() {
         Ok(uri) => uri.path().trim_start_matches('/').to_string(),
         Err(e) => {
-            warn!("Couldn't parse URI from: {} due to error: {}.", &raw_uri, e);
+            warn!("Couldn't parse URI from '{}': {}.", &raw_uri, e);
             return Err(warp::reject::custom(Error::InvalidRpcCall));
         }
     };
     let query_params: HashMap<String, String> = match url::Url::parse(&raw_uri) {
         Ok(url) => url.query_pairs().into_owned().collect(),
         Err(e) => {
-            warn!("Couldn't parse URL from: {} due to error: {}.", &raw_uri, e);
+            warn!("Couldn't parse URL from '{}': {}.", &raw_uri, e);
             return Err(warp::reject::custom(Error::InvalidRpcCall));
         }
     };
@@ -199,7 +199,7 @@ async fn handle_post_request(
             Ok(bodies) => bodies,
             Err(e) => {
                 warn!(
-                    "Couldn't parse compact poll request body wrapper from: {} due to error: {}.",
+                    "Couldn't parse compact poll request body wrapper from '{}': {}.",
                     rpc_call.body, e
                 );
                 return Err(warp::reject::custom(Error::InvalidRpcCall));
@@ -217,7 +217,7 @@ async fn handle_post_request(
         let json: JSON = match serde_json::from_str(&rpc_call.body) {
             Ok(json) => json,
             Err(e) => {
-                warn!("Couldn't parse JSON from: {} due to error: {}.", rpc_call.body, e);
+                warn!("Couldn't parse JSON from '{}': {}.", rpc_call.body, e);
                 return Err(warp::reject::custom(Error::InvalidRpcCall));
             }
         };
@@ -236,7 +236,7 @@ async fn handle_post_request(
             let json: JSON = match serde_json::from_str(&rpc_call.body) {
                 Ok(json) => json,
                 Err(e) => {
-                    warn!("Couldn't parse JSON from: {} due to error: {}.", rpc_call.body, e);
+                    warn!("Couldn't parse JSON from '{}': {}.", rpc_call.body, e);
                     return Err(warp::reject::custom(Error::InvalidRpcCall));
                 }
             };
@@ -253,7 +253,7 @@ async fn handle_post_request(
             let message = match serde_json::from_str(&rpc_call.body) {
                 Ok(message) => message,
                 Err(e) => {
-                    warn!("Couldn't parse message from: {} due to error: {}.", rpc_call.body, e);
+                    warn!("Couldn't parse message from '{}': {}.", rpc_call.body, e);
                     return Err(warp::reject::custom(Error::InvalidRpcCall));
                 }
             };
@@ -268,7 +268,7 @@ async fn handle_post_request(
             let json: JSON = match serde_json::from_str(&rpc_call.body) {
                 Ok(json) => json,
                 Err(e) => {
-                    warn!("Couldn't parse JSON from: {} due to error: {}.", rpc_call.body, e);
+                    warn!("Couldn't parse JSON from '{}': {}.", rpc_call.body, e);
                     return Err(warp::reject::custom(Error::InvalidRpcCall));
                 }
             };
@@ -283,7 +283,7 @@ async fn handle_post_request(
             let json: JSON = match serde_json::from_str(&rpc_call.body) {
                 Ok(json) => json,
                 Err(e) => {
-                    warn!("Couldn't parse JSON from: {} due to error: {}.", rpc_call.body, e);
+                    warn!("Couldn't parse JSON from '{}': {}.", rpc_call.body, e);
                     return Err(warp::reject::custom(Error::InvalidRpcCall));
                 }
             };
@@ -298,7 +298,7 @@ async fn handle_post_request(
             let json: JSON = match serde_json::from_str(&rpc_call.body) {
                 Ok(json) => json,
                 Err(e) => {
-                    warn!("Couldn't parse JSON from: {} due to error: {}.", rpc_call.body, e);
+                    warn!("Couldn't parse JSON from '{}': {}.", rpc_call.body, e);
                     return Err(warp::reject::custom(Error::InvalidRpcCall));
                 }
             };
@@ -310,7 +310,7 @@ async fn handle_post_request(
                 match serde_json::from_str(&rpc_call.body) {
                     Ok(body) => body,
                     Err(e) => {
-                        warn!("Couldn't parse JSON from: {} due to error: {}.", rpc_call.body, e);
+                        warn!("Couldn't parse JSON from '{}': {}.", rpc_call.body, e);
                         return Err(warp::reject::custom(Error::InvalidRpcCall));
                     }
                 };
@@ -325,7 +325,7 @@ async fn handle_post_request(
             let json: JSON = match serde_json::from_str(&rpc_call.body) {
                 Ok(json) => json,
                 Err(e) => {
-                    warn!("Couldn't parse JSON from: {} due to error: {}.", rpc_call.body, e);
+                    warn!("Couldn't parse JSON from '{}': {}.", rpc_call.body, e);
                     return Err(warp::reject::custom(Error::InvalidRpcCall));
                 }
             };

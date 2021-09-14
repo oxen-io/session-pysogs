@@ -72,7 +72,7 @@ pub fn encrypt_aes_gcm(
             return Ok(iv_and_ciphertext);
         }
         Err(e) => {
-            error!("Couldn't encrypt ciphertext due to error: {}.", e);
+            error!("Couldn't encrypt ciphertext: {}.", e);
             return Err(warp::reject::custom(Error::DecryptionFailed));
         }
     };
@@ -91,7 +91,7 @@ pub fn decrypt_aes_gcm(
     match cipher.decrypt(GenericArray::from_slice(&iv), &*ciphertext) {
         Ok(plaintext) => return Ok(plaintext),
         Err(e) => {
-            error!("Couldn't decrypt ciphertext due to error: {}.", e);
+            error!("Couldn't decrypt ciphertext: {}.", e);
             return Err(warp::reject::custom(Error::DecryptionFailed));
         }
     };
