@@ -18,18 +18,24 @@ Make sure you're pointing to the right openssl installation (e.g. macOS provides
 
 ### Step 2: Build the project
 
+The Linux Rust installer assumes that you already have a C linker installed. If this is not the case you'll see `error: linker 'cc' not found`. To fix this, run:
+
+```
+sudo apt update
+sudo apt upgrade
+sudo apt install build-essential libssl-dev pkg-config
+```
+
+(Or the equivalent on a non-Debian-based Linux system).
+
+Build it with
+
 ```
 cargo build --release
 ```
 
-The Linux Rust installer assumes that you already have a C linker installed. If this is not the case you'll see `error: linker 'cc' not found`. To fix this, run:
-
-```
-apt update
-sudo apt install build-essential
-```
-
 ### Step 3: Run it
+The two files generated in step 1 should be copied to the same directory as the executable. Alternatively you can use the command line arguments below to specify their locations. The executable needs both the x25519-public-key and the x25519-private-key to run.
 
 ```
 ./target/release/session-open-group-server
