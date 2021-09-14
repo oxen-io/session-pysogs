@@ -5,7 +5,7 @@ BEGIN;
 
 CREATE TABLE IF NOT EXISTS rooms (
     id INTEGER NOT NULL PRIMARY KEY, /* internal database id of the room */
-    identifier TEXT NOT NULL UNIQUE, /* room identifier used in URLs, etc. */
+    token TEXT NOT NULL UNIQUE COLLATE NOCASE, /* case-insensitive room identifier used in URLs, etc. */
     name TEXT NOT NULL, /* Publicly visible room name */
     image INTEGER REFERENCES files(id) ON DELETE SET NULL,
     created FLOAT NOT NULL DEFAULT ((julianday('now') - 2440587.5)*86400.0), /* unix epoch */
@@ -13,9 +13,10 @@ CREATE TABLE IF NOT EXISTS rooms (
     update_counter INTEGER NOT NULL DEFAULT 0, /* +1 for each edit or deletion */
     read BOOLEAN NOT NULL DEFAULT TRUE, /* Whether users can read by default */
     write BOOLEAN NOT NULL DEFAULT TRUE, /* Whether users can post by default */
-    upload BOOLEAN NOT NULL DEFAULT TRUE /* Whether file uploads are allowed */
+    upload BOOLEAN NOT NULL DEFAULT TRUE, /* Whether file uploads are allowed */
+    CHECK(token NOT GLOB '*[^a-zA-Z0-9_-]*')
 );
-CREATE INDEX IF NOT EXISTS rooms_identifier ON rooms(identifier);
+CREATE INDEX IF NOT EXISTS rooms_token ON rooms(token);
 
 CREATE TABLE IF NOT EXISTS messages (
     id INTEGER NOT NULL PRIMARY KEY,
