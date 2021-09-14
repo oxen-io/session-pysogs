@@ -75,12 +75,12 @@ async fn test_file_handling() {
     // Ensure the test room is set up and get a database connection pool
     let pool = set_up_test_room().await;
 
-    let test_room_id = "test_room";
+    let test_room_id = storage::RoomId::new("test_room").unwrap();
     // Get an auth token
     let (auth_token, _) = get_auth_token(&pool);
     // Store the test file
     handlers::store_file(
-        Some(test_room_id.to_string()),
+        Some(test_room_id.get_id().to_string()),
         TEST_FILE,
         Some(auth_token.clone()),
         &pool,
@@ -94,17 +94,21 @@ async fn test_file_handling() {
         conn.query_row(&raw_query, params![], |row| Ok(row.get(0)?)).unwrap();
     let id = id_as_string.parse::<u64>().unwrap();
     // Retrieve the file and check the content
-    let base64_encoded_file =
-        handlers::get_file(Some(test_room_id.to_string()), id, Some(auth_token.clone()), &pool)
-            .await
-            .unwrap()
-            .result;
+    let base64_encoded_file = handlers::get_file(
+        Some(test_room_id.get_id().to_string()),
+        id,
+        Some(auth_token.clone()),
+        &pool,
+    )
+    .await
+    .unwrap()
+    .result;
     assert_eq!(base64_encoded_file, TEST_FILE);
     // Prune the file and check that it's gone
     // Will evaluate to now + 60
-    storage::prune_files_for_room(&pool, test_room_id, -60).await;
+    storage::prune_files_for_room(&pool, &test_room_id, -60).await;
     // It should be gone now
-    fs::read(format!("files/{}_files/{}", test_room_id, id)).unwrap_err();
+    fs::read(format!("files/{}_files/{}", test_room_id.get_id(), id)).unwrap_err();
     // Check that the file record is also gone
     let conn = pool.get().unwrap();
     let raw_query = "SELECT id FROM files";
