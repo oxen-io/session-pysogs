@@ -8,6 +8,8 @@ use rusqlite::params;
 //use rusqlite_migration::{Migrations, M};
 
 use super::errors::Error;
+
+pub type DatabaseConnection = r2d2::PooledConnection<SqliteConnectionManager>;
 pub type DatabaseConnectionPool = r2d2::Pool<SqliteConnectionManager>;
 
 #[derive(PartialEq, Eq, Hash)]
@@ -69,7 +71,7 @@ pub fn create_database_if_needed() {
     };
 
     if !have_messages {
-        conn.execute(include_str!("create-schema.sql"), params![]).expect("Couldn't create database schema.");
+        conn.execute_batch(include_str!("create-schema.sql")).expect("Couldn't create database schema.");
 
         // TODO: migration code from old multi-DB structure goes here
     }
@@ -77,34 +79,35 @@ pub fn create_database_if_needed() {
     // Future DB migration code goes here
 }
 
-// Pruning
-
-pub async fn prune_files_periodically() {
-    let mut timer = tokio::time::interval(chrono::Duration::seconds(15).to_std().unwrap());
+// Performs periodic DB maintenance: file pruning, delayed permission applying, etc.
+pub async fn db_maintenance_job() {
+    let mut timer = tokio::time::interval(chrono::Duration::seconds(10).to_std().unwrap());
     loop {
         timer.tick().await;
         tokio::spawn(async {
-            prune_files(SystemTime::now()).await;
+            let now = SystemTime::now();
+            if let Ok(mut conn) = DB_POOL.get() {
+                prune_files(&mut conn, now);
+                apply_permission_updates(&mut conn, now);
+            } else {
+                warn!("Couldn't get a free db connection to perform database maintenance; will retry soon");
+            }
         });
     }
 }
 
 /// Removes all files with expiries <= the given time (which should generally by
 /// `SystemTime::now()`, except in the test suite).
-pub async fn prune_files(now: SystemTime) {
+pub fn prune_files(conn: &mut DatabaseConnection, now: SystemTime) {
 
-    let conn = match DB_POOL.get() {
-        Ok(conn) => conn,
-        Err(e) => return error!("Couldn't prune files: {}.", e)
-    };
     let mut st = match conn.prepare_cached("DELETE FROM files WHERE expiry <= ? RETURNING path") {
         Ok(st) => st,
-        Err(e) => return error!("Unable to prepare statement: {}", e)
+        Err(e) => { error!("Unable to prepare statement: {}", e); return; }
     };
     let now_secs = now.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs_f64();
     let mut rows = match st.query(params![now_secs]) {
         Ok(rows) => rows,
-        Err(e) => return error!("Unable to query expired files: {}", e)
+        Err(e) => { error!("Unable to query expired files: {}", e); return; }
     };
 
     let mut count = 0;
@@ -119,4 +122,45 @@ pub async fn prune_files(now: SystemTime) {
         }
     }
     info!("Pruned {} files", count);
+}
+
+pub fn apply_permission_updates(conn: &mut DatabaseConnection, now: SystemTime) {
+    let now_secs = now.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs_f64();
+
+    let tx = match conn.transaction() {
+        Ok(tx) => tx,
+        Err(e) => { error!("Unable to begin transaction: {}", e); return; }
+    };
+    {
+        let mut ins_st = match tx.prepare_cached("
+            INSERT INTO user_permission_overrides (room, user, read, write, upload)
+                SELECT room, user, read, write, upload FROM user_permissions_future WHERE at <= ?
+                ON CONFLICT DO UPDATE SET
+                    read = COALESCE(excluded.read, read),
+                    write = COALESCE(excluded.write, write),
+                    upload = COALESCE(excluded.upload, upload)") {
+            Ok(st) => st,
+            Err(e) => { error!("Unable to prepare statement: {}", e); return; }
+        };
+        let mut del_st = match tx.prepare_cached("DELETE FROM user_permissions_future WHERE at <= ?") {
+            Ok(st) => st,
+            Err(e) => { error!("Unable to prepare statement: {}", e); return; }
+        };
+        let num_applied = match ins_st.execute(params![now_secs]) {
+            Ok(num) => num,
+            Err(e) => { error!("Unable to apply scheduled future permissions: {}", e); return; }
+        };
+        if num_applied > 0 {
+            info!("Applied {} user permission updates", num_applied);
+            if let Err(e) = del_st.execute(params![now_secs]) {
+                error!("Unable to delete applied future permissions: {}", e);
+                return;
+            }
+        }
+    }
+
+    if let Err(e) = tx.commit() {
+        error!("Failed to commit scheduled user permission updates: {}", e);
+        return;
+    }
 }

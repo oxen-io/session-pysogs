@@ -68,7 +68,7 @@ async fn main() {
         // Create required folders
         fs::create_dir_all("./files").unwrap();
         // Set up pruning jobs
-        let prune_files_future = storage::prune_files_periodically();
+        let db_maintenance_future = storage::db_maintenance_job();
         // Serve routes
         let public_routes = routes::root().or(routes::fallback()).or(routes::lsrpc());
         let private_routes = routes::create_room()
@@ -87,7 +87,7 @@ async fn main() {
             let serve_private_routes_future = warp::serve(private_routes).run(localhost);
             // Keep futures alive
             join!(
-                prune_files_future,
+                db_maintenance_future,
                 serve_public_routes_future,
                 serve_private_routes_future
             );
@@ -97,7 +97,7 @@ async fn main() {
             let serve_private_routes_future = warp::serve(private_routes).run(localhost);
             // Keep futures alive
             join!(
-                prune_files_future,
+                db_maintenance_future,
                 serve_public_routes_future,
                 serve_private_routes_future
             );

@@ -66,7 +66,7 @@ pub async fn delete_room(id: String) -> Result<Response, Rejection> {
     let conn = storage::DB_POOL.get().map_err(|_| Error::DatabaseFailedInternally)?;
     // Insert the room
     let stmt = "DELETE FROM rooms WHERE identifier = ?";
-    if Err(e) = conn.execute(&stmt, params![&id]) {
+    if let Err(e) = conn.execute(&stmt, params![&id]) {
         error!("Couldn't delete room due to error: {}.", e);
         return Err(warp::reject::custom(Error::DatabaseFailedInternally));
     }

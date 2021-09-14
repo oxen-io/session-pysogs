@@ -1,4 +1,8 @@
 
+PRAGMA journal_mode=WAL;
+
+BEGIN;
+
 CREATE TABLE IF NOT EXISTS rooms (
     id INTEGER NOT NULL PRIMARY KEY, /* internal database id of the room */
     identifier TEXT NOT NULL UNIQUE, /* room identifier used in URLs, etc. */
@@ -96,9 +100,9 @@ CREATE TABLE IF NOT EXISTS user_permission_overrides (
     room INTEGER NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
     user INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     banned BOOLEAN NOT NULL DEFAULT FALSE, /* If true the user is banned */
-    read BOOLEAN, /* If false the user may not fetch messages */
-    write BOOLEAN, /* If false the user may not post */
-    upload BOOLEAN, /* If false the user may not upload files */
+    read BOOLEAN, /* If false the user may not fetch messages; null uses room default; true allows reading */
+    write BOOLEAN, /* If false the user may not post; null uses room default; true allows posting */
+    upload BOOLEAN, /* If false the user may not upload files; null uses room default; true allows uploading */
     moderator BOOLEAN NOT NULL DEFAULT FALSE, /* If true the user may moderate non-moderators */
     admin BOOLEAN NOT NULL DEFAULT FALSE, /* If true the user may moderate anyone (including other moderators and admins) */
     PRIMARY KEY(room, user),
@@ -135,12 +139,15 @@ FROM
 -- their user_permissions.write to false, then set a `write = true` entry with a +2d timestamp here.
 -- Or to implement a join delay you could set room defaults to false then insert a value here to be
 -- applied after a delay.
-CREATE TABLE IF NOT EXISTS user_permissions_future (
-    user INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+CREATE TABLE IF NOT EXISTS user_permission_futures (
     room INTEGER NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+    user INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     at FLOAT NOT NULL, /* when the change should take effect (unix epoch) */
-    read BOOLEAN, /* Set this value @ at */
-    write BOOLEAN, /* Set this value @ at */
-    PRIMARY KEY(user, room)
+    read BOOLEAN, /* Set this value @ at, if non-null */
+    write BOOLEAN, /* Set this value @ at, if non-null */
+    upload BOOLEAN, /* Set this value @ at, if non-null */
+    PRIMARY KEY(room, user)
 ) WITHOUT ROWID;
 CREATE INDEX user_permissions_future_at ON user_permissions_future(at);
+
+COMMIT;
