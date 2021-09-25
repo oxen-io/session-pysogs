@@ -53,7 +53,7 @@ async fn main() {
         PORT.store(opt.port, Ordering::SeqCst);
         USES_TLS.store(opt.tls, Ordering::SeqCst);
         // Run in server mode
-        logging::init(opt.log_file);
+        logging::init(opt.log_file, opt.log_level);
         let addr = SocketAddr::new(IpAddr::V4(opt.host), opt.port);
         let localhost = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), LOCALHOST_PORT);
         *crypto::PRIVATE_KEY_PATH.lock().unwrap() = opt.x25519_private_key;
