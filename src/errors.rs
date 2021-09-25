@@ -1,4 +1,4 @@
-use warp::{http::StatusCode, reply::Reply, reply::Response, Rejection};
+use warp::{http::StatusCode, reply::Reply, reply::Response, Rejection, reject::Reject};
 
 #[derive(Debug)]
 pub enum Error {
@@ -15,7 +15,7 @@ pub enum Error {
     Unauthorized,
     ValidationFailed,
 }
-impl warp::reject::Reject for Error {}
+impl Reject for Error {}
 
 #[rustfmt::skip]
 pub fn status_code(e: Rejection) -> StatusCode {

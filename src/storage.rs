@@ -1,5 +1,5 @@
 use std::fs;
-use std::time::SystemTime;
+use std::time::{SystemTime, Duration};
 
 use log::{error, warn, info};
 use r2d2_sqlite::SqliteConnectionManager;
@@ -8,9 +8,11 @@ use rusqlite::params;
 //use rusqlite_migration::{Migrations, M};
 
 use super::errors::Error;
+use super::models::Room;
 
 pub type DatabaseConnection = r2d2::PooledConnection<SqliteConnectionManager>;
 pub type DatabaseConnectionPool = r2d2::Pool<SqliteConnectionManager>;
+pub type DatabaseTransaction<'a> = rusqlite::Transaction<'a>;
 
 #[derive(PartialEq, Eq, Hash)]
 pub struct RoomId {
@@ -41,16 +43,32 @@ impl RoomId {
     }
 }
 
-// Main
+// How long without activity before we drop user-room activity info.
+pub const ROOM_ACTIVE_PRUNE_THRESHOLD: Duration = Duration::from_secs(60 * 86400);
+
+// How long we keep message edit/deletion history.
+pub const MESSAGE_HISTORY_PRUNE_THRESHOLD: Duration = Duration::from_secs(30 * 86400);
 
 lazy_static::lazy_static! {
 
-    pub static ref DB_POOL: DatabaseConnectionPool = {
+    static ref DB_POOL: DatabaseConnectionPool = {
         let file_name = "sogs.db";
-        let db_manager = r2d2_sqlite::SqliteConnectionManager::file(file_name);
-        // FIXME: enable wal, normal journal mode
+        let db_manager = r2d2_sqlite::SqliteConnectionManager::file(file_name)
+            .with_init(|c| c.execute_batch("
+            PRAGMA foreign_keys = ON;
+            PRAGMA journal_mode = WAL;
+            PRAGMA synchronous = NORMAL;
+        "));
         return r2d2::Pool::new(db_manager).unwrap();
     };
+}
+
+pub fn get_conn() -> Result<DatabaseConnection, Error> {
+    Ok(DB_POOL.get().map_err(|_| Error::DatabaseFailedInternally)?)
+}
+
+pub fn get_transaction<'a>(conn: &'a mut DatabaseConnection) -> Result<DatabaseTransaction<'a>, Error> {
+    conn.transaction().map_err(|_| Error::DatabaseFailedInternally)
 }
 
 /// Initialize the database, creating and migrating its structure if necessary.
@@ -60,7 +78,7 @@ pub fn create_database_if_needed() {
         panic!("SQLite 3.35.0+ is required!");
     }
 
-    let conn = DB_POOL.get().unwrap();
+    let conn = get_conn().unwrap();
 
     let have_messages = match conn.query_row(
         "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'messages')",
@@ -71,7 +89,7 @@ pub fn create_database_if_needed() {
     };
 
     if !have_messages {
-        conn.execute_batch(include_str!("create-schema.sql")).expect("Couldn't create database schema.");
+        conn.execute_batch(include_str!("schema.sql")).expect("Couldn't create database schema.");
 
         // TODO: migration code from old multi-DB structure goes here
     }
@@ -86,9 +104,11 @@ pub async fn db_maintenance_job() {
         timer.tick().await;
         tokio::spawn(async {
             let now = SystemTime::now();
-            if let Ok(mut conn) = DB_POOL.get() {
-                prune_files(&mut conn, now);
-                apply_permission_updates(&mut conn, now);
+            if let Ok(mut conn) = get_conn() {
+                prune_files(&mut conn, &now);
+                prune_message_history(&mut conn, &now);
+                prune_room_activity(&mut conn, &now);
+                apply_permission_updates(&mut conn, &now);
             } else {
                 warn!("Couldn't get a free db connection to perform database maintenance; will retry soon");
             }
@@ -98,7 +118,7 @@ pub async fn db_maintenance_job() {
 
 /// Removes all files with expiries <= the given time (which should generally by
 /// `SystemTime::now()`, except in the test suite).
-pub fn prune_files(conn: &mut DatabaseConnection, now: SystemTime) {
+fn prune_files(conn: &mut DatabaseConnection, now: &SystemTime) {
 
     let mut st = match conn.prepare_cached("DELETE FROM files WHERE expiry <= ? RETURNING path") {
         Ok(st) => st,
@@ -107,24 +127,57 @@ pub fn prune_files(conn: &mut DatabaseConnection, now: SystemTime) {
     let now_secs = now.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs_f64();
     let mut rows = match st.query(params![now_secs]) {
         Ok(rows) => rows,
-        Err(e) => { error!("Unable to query expired files: {}", e); return; }
+        Err(e) => { error!("Unable to delete expired file rows: {}", e); return; }
     };
 
     let mut count = 0;
     while let Ok(Some(row)) = rows.next() {
         if let Ok(path) = row.get_ref_unwrap(1).as_str() {
-            let p = format!("files/{}", path);
-            if let Err(e) = fs::remove_file(p) {
-                error!("Couldn't delete expired file 'files/{}': {}", path, e);
+            if let Err(e) = fs::remove_file(path) {
+                error!("Couldn't delete expired file '{}': {}", path, e);
             } else {
                 count += 1;
             }
         }
     }
-    info!("Pruned {} files", count);
+    if count > 0 {
+        info!("Pruned {} expired/deleted files", count);
+    }
 }
 
-pub fn apply_permission_updates(conn: &mut DatabaseConnection, now: SystemTime) {
+/// Prune old message edit/deletion history
+fn prune_message_history(conn: &mut DatabaseConnection, now: &SystemTime) {
+
+    let mut st = match conn.prepare_cached("DELETE FROM message_history WHERE replaced <= ?") {
+        Ok(st) => st,
+        Err(e) => { error!("Unable to prepare message history prune statement: {}", e); return; }
+    };
+    let now_secs = (*now - MESSAGE_HISTORY_PRUNE_THRESHOLD).duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs_f64();
+    let count = match st.execute(params![now_secs]) {
+        Ok(count) => count,
+        Err(e) => { error!("Unable to prune message history: {}", e); return; }
+    };
+    if count > 0 {
+        info!("Pruned {} message edits/deletions", count);
+    }
+}
+
+fn prune_room_activity(conn: &mut DatabaseConnection, now: &SystemTime) {
+    let mut st = match conn.prepare_cached("DELETE FROM room_users WHERE last_active <= ?") {
+        Ok(st) => st,
+        Err(e) => { error!("Unable to prepare room activity prune statement: {}", e); return; }
+    };
+    let now_secs = (*now - ROOM_ACTIVE_PRUNE_THRESHOLD).duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs_f64();
+    let count = match st.execute(params![now_secs]) {
+        Ok(count) => count,
+        Err(e) => { error!("Unable to prune room activity: {}", e); return; }
+    };
+    if count > 0 {
+        info!("Pruned {} old room activity records", count);
+    }
+}
+
+fn apply_permission_updates(conn: &mut DatabaseConnection, now: &SystemTime) {
     let now_secs = now.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs_f64();
 
     let tx = match conn.transaction() {
@@ -134,7 +187,7 @@ pub fn apply_permission_updates(conn: &mut DatabaseConnection, now: SystemTime) 
     {
         let mut ins_st = match tx.prepare_cached("
             INSERT INTO user_permission_overrides (room, user, read, write, upload)
-                SELECT room, user, read, write, upload FROM user_permissions_future WHERE at <= ?
+                SELECT room, user, read, write, upload FROM user_permission_futures WHERE at <= ?
                 ON CONFLICT DO UPDATE SET
                     read = COALESCE(excluded.read, read),
                     write = COALESCE(excluded.write, write),
@@ -142,7 +195,7 @@ pub fn apply_permission_updates(conn: &mut DatabaseConnection, now: SystemTime) 
             Ok(st) => st,
             Err(e) => { error!("Unable to prepare statement: {}", e); return; }
         };
-        let mut del_st = match tx.prepare_cached("DELETE FROM user_permissions_future WHERE at <= ?") {
+        let mut del_st = match tx.prepare_cached("DELETE FROM user_permission_futures WHERE at <= ?") {
             Ok(st) => st,
             Err(e) => { error!("Unable to prepare statement: {}", e); return; }
         };
@@ -162,5 +215,17 @@ pub fn apply_permission_updates(conn: &mut DatabaseConnection, now: SystemTime) 
     if let Err(e) = tx.commit() {
         error!("Failed to commit scheduled user permission updates: {}", e);
         return;
+    }
+}
+
+// Utilities
+
+pub fn get_room_from_token(conn: &rusqlite::Connection, token: &str) -> Result<Room, Error> {
+    match conn.prepare_cached("SELECT * FROM rooms WHERE token = ?")
+        .map_err(|_| Error::DatabaseFailedInternally)?
+        .query_row(params![&token], Room::from_row) {
+        Ok(room) => return Ok(room),
+        Err(rusqlite::Error::QueryReturnedNoRows) => return Err(Error::NoSuchRoom.into()),
+        Err(_) => return Err(Error::DatabaseFailedInternally.into())
     }
 }

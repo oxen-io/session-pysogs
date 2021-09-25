@@ -9,6 +9,8 @@ use log::{error, warn};
 use rand::{thread_rng, Rng};
 use rand_core::OsRng;
 use sha2::Sha256;
+use curve25519_dalek;
+use blake2::{Blake2b, Digest};
 
 use super::errors::Error;
 
@@ -39,6 +41,47 @@ lazy_static::lazy_static! {
         let raw_public_key = fs::read_to_string(path).unwrap();
         return curve25519_parser::parse_openssl_25519_pubkey(raw_public_key.as_bytes()).unwrap();
     };
+
+    // For backwards compatibility with token-using Session client versions we include a signature
+    // in the "token" value we send back, signed using this key.  When we drop token support we can
+    // also drop this.
+    pub static ref TOKEN_SIGNING_KEYS: ed25519_dalek::Keypair = {
+        let mut hasher = Blake2b::new();
+        hasher.update(b"SOGS TOKEN SIGNING KEY");
+        hasher.update(PRIVATE_KEY.to_bytes());
+        hasher.update(PUBLIC_KEY.as_bytes());
+        let res = hasher.finalize();
+        let secret = ed25519_dalek::SecretKey::from_bytes(&res[..]).unwrap();
+        let public = ed25519_dalek::PublicKey::from(&secret);
+        ed25519_dalek::Keypair{ secret, public }
+    };
+}
+
+/// Takes hex string representation of an ed25519 pubkey, returns the ed25519 pubkey, derived x25519 pubkey, and the Session id in hex.
+pub fn get_pubkeys(edpk_hex: &str) -> Result<(ed25519_dalek::PublicKey, x25519_dalek::PublicKey, String), warp::reject::Rejection> {
+    if edpk_hex.len() != 64 {
+        return Err(warp::reject::custom(Error::DecryptionFailed));
+    }
+    let edpk_bytes = match hex::decode(edpk_hex) {
+        Ok(bytes) => bytes,
+        Err(_) => {
+            warn!("Invalid ed25519 pubkey: '{}' is not hex", edpk_hex);
+            return Err(warp::reject::custom(Error::DecryptionFailed));
+        }
+    };
+
+    let edpk = ed25519_dalek::PublicKey::from_bytes(&edpk_bytes).map_err(|_| Error::DecryptionFailed)?;
+    let compressed = curve25519_dalek::edwards::CompressedEdwardsY::from_slice(&edpk_bytes);
+    let edpoint = compressed.decompress().ok_or(warp::reject::custom(Error::DecryptionFailed))?;
+    if !edpoint.is_torsion_free() {
+        return Err(Error::DecryptionFailed.into());
+    }
+
+    let xpk = x25519_dalek::PublicKey::from(*edpoint.to_montgomery().as_bytes());
+    let mut session_id = String::with_capacity(66);
+    session_id.push_str("05");
+    session_id.push_str(&hex::encode(xpk.as_bytes()));
+    return Ok((edpk, xpk, session_id));
 }
 
 pub fn get_x25519_symmetric_key(

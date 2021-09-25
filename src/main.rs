@@ -111,7 +111,7 @@ async fn execute_commands(opt: options::Opt) {
     // Add a room
     if let Some(args) = opt.add_room {
         let mut params = HashMap::new();
-        params.insert("id", &args[0]);
+        params.insert("token", &args[0]);
         params.insert("name", &args[1]);
         client.post(format!("{}/rooms", localhost)).json(&params).send().await.unwrap();
         println!("Added room with ID: {}", &args[0]);
@@ -123,6 +123,7 @@ async fn execute_commands(opt: options::Opt) {
     }
     // Add a moderator
     if let Some(args) = opt.add_moderator {
+        // FIXME: need to add an ability to add an admin instead of moderator (by setting the "admin" param to true)
         let mut params = HashMap::new();
         params.insert("public_key", &args[0]);
         params.insert("room_id", &args[1]);

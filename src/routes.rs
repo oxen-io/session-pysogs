@@ -37,6 +37,7 @@ pub fn lsrpc() -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + C
 ///
 /// Not publicly exposed.
 pub fn create_room() -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+
     return warp::post()
         .and(warp::path("rooms"))
         .and(warp::body::json())
