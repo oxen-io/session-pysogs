@@ -152,7 +152,7 @@ fn prune_files(conn: &mut DatabaseConnection, now: &SystemTime) {
 
     let mut count = 0;
     while let Ok(Some(row)) = rows.next() {
-        if let Ok(path) = row.get_ref_unwrap(1).as_str() {
+        if let Ok(path) = row.get_ref_unwrap(0).as_str() {
             if let Err(e) = fs::remove_file(path) {
                 error!("Couldn't delete expired file '{}': {}", path, e);
             } else {

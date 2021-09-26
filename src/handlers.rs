@@ -71,6 +71,9 @@ pub const UPLOAD_FILENAME_MAX: usize = 60;
 pub const UPLOAD_FILENAME_KEEP_PREFIX: usize = 40;
 pub const UPLOAD_FILENAME_KEEP_SUFFIX: usize = 17;
 
+// How long until an upload expires.  TODO FIXME -- this could easily be a per-room property.
+// Note that room image uploads do not expire (until they are replaced).
+pub const UPLOAD_DEFAULT_EXPIRY: Duration = Duration::from_secs(15 * 86400);
 
 // Backwards compatibility token sizes.  We return a "token" consisting of [SESSIONID][SIGNATURE]
 // where SESSIONID is the provided session id (in bytes) and SIGNATURE is the session ID signed by
@@ -209,7 +212,13 @@ impl Drop for FileUpload<'_> {
 /// actions, but *must* call `.commit()` on success -- if dropped the FileUpload will clean up the
 /// temporary file and drop the transaction inserting the records.
 fn store_file_impl<'a>(
-    conn: &'a mut storage::DatabaseConnection, room: &'a Room, user: &User, auth: AuthorizationRequired, data_b64: &str, filename: Option<&str>,
+    conn: &'a mut storage::DatabaseConnection,
+    room: &'a Room,
+    user: &User,
+    auth: AuthorizationRequired,
+    data_b64: &str,
+    filename: Option<&str>,
+    expires: bool
 ) -> Result<FileUpload<'a>, Rejection> {
 
     // Determine the file size from the base64 data without decoding it (we'll do that later
@@ -248,10 +257,13 @@ fn store_file_impl<'a>(
     require_authorization(&upload.tx.as_ref().unwrap(), &user, &room, auth)?;
 
     let db_filename: Option<String> = filename.map(|f| UPLOAD_FILENAME_BAD.replace_all(f, "_").into());
+    let expiry: Option<f64> = if expires {
+        Some((SystemTime::now() + UPLOAD_DEFAULT_EXPIRY).duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs_f64())
+    } else { None };
     upload.id = match upload.tx.as_ref().unwrap().prepare_cached(
-        "INSERT INTO files (room, uploader, size, filename, path) VALUES (?, ?, ?, ?, 'tmp') RETURNING id")
+        "INSERT INTO files (room, uploader, size, expiry, filename, path) VALUES (?, ?, ?, ?, ?, 'tmp') RETURNING id")
         .map_err(db_error)?
-        .query_row(params![room.id, user.id, bytes, db_filename], |row| row.get(0)) {
+        .query_row(params![room.id, user.id, bytes, db_filename, expiry], |row| row.get(0)) {
             Ok(r) => r,
             Err(e) => {
                 error!("Couldn't insert file row: {}.", e);
@@ -317,7 +329,7 @@ pub fn store_file(
     let auth = AuthorizationRequired { upload: true, write: true, ..Default::default() };
 
     let mut conn = storage::get_conn()?;
-    let mut upload = match store_file_impl(&mut conn, &room, &user, auth, data_b64, filename) {
+    let mut upload = match store_file_impl(&mut conn, &room, &user, auth, data_b64, filename, true) {
         Ok(id) => id,
         Err(e) => return Err(e)
     };
@@ -403,14 +415,12 @@ pub async fn set_room_image(
     let auth = AuthorizationRequired { moderator: true, ..Default::default() };
 
     let mut conn = storage::get_conn()?;
-    let mut upload = store_file_impl(&mut conn, &room, &user, auth, data_b64, filename)?;
+    let mut upload = store_file_impl(&mut conn, &room, &user, auth, data_b64, filename, false)?;
 
-    if let Err(e) = upload.prepare_cached("UPDATE rooms SET image = ? WHERE id = ?")
+    upload.prepare_cached("UPDATE rooms SET image = ? WHERE id = ?")
         .map_err(db_error)?
-        .execute(params![upload.id, room.id]) {
-        error!("Failed to update room file: {}", e);
-        return Err(Error::DatabaseFailedInternally.into());
-    }
+        .execute(params![upload.id, room.id])
+        .map_err(db_error)?;
 
     if let Err(e) = upload.commit() {
         error!("File upload failed: {}", e);

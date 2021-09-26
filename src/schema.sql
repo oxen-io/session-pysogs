@@ -18,6 +18,13 @@ CREATE TABLE rooms (
 );
 CREATE INDEX rooms_token ON rooms(token);
 
+-- Trigger to expire an old room image attachment when the room image is changed
+CREATE TRIGGER room_image_expiry AFTER UPDATE ON rooms
+FOR EACH ROW WHEN NEW.image IS NOT OLD.image AND OLD.image IS NOT NULL
+BEGIN
+    UPDATE files SET expiry = 0.0 WHERE id = OLD.image;
+END;
+
 CREATE TABLE messages (
     id INTEGER NOT NULL PRIMARY KEY,
     room INTEGER NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
@@ -95,7 +102,7 @@ CREATE TABLE files (
     uploader INTEGER REFERENCES users(id),
     size INTEGER NOT NULL,
     uploaded FLOAT NOT NULL DEFAULT ((julianday('now') - 2440587.5)*86400.0), /* unix epoch */
-    expiry FLOAT NOT NULL DEFAULT ((julianday('now') - 2440587.5 + 15.0)*86400.0), /* unix epoch */
+    expiry FLOAT DEFAULT ((julianday('now') - 2440587.5 + 15.0)*86400.0), /* unix epoch */
     filename TEXT, /* user-provided filename */
     path TEXT NOT NULL /* path on disk */
 );
