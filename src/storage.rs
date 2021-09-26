@@ -4,7 +4,7 @@ use std::time::{SystemTime, Duration};
 use log::{error, warn, info};
 use r2d2_sqlite::SqliteConnectionManager;
 use regex::Regex;
-use rusqlite::params;
+use rusqlite::{params, config::DbConfig};
 //use rusqlite_migration::{Migrations, M};
 
 use super::errors::Error;
@@ -54,21 +54,41 @@ lazy_static::lazy_static! {
     static ref DB_POOL: DatabaseConnectionPool = {
         let file_name = "sogs.db";
         let db_manager = r2d2_sqlite::SqliteConnectionManager::file(file_name)
-            .with_init(|c| c.execute_batch("
-            PRAGMA foreign_keys = ON;
-            PRAGMA journal_mode = WAL;
-            PRAGMA synchronous = NORMAL;
-        "));
+            .with_init(|c| {
+                c.set_prepared_statement_cache_capacity(100);
+                c.execute_batch("
+                    PRAGMA journal_mode = WAL;
+                    PRAGMA synchronous = NORMAL;
+                ")?;
+                if !c.set_db_config(DbConfig::SQLITE_DBCONFIG_ENABLE_FKEY, true)? {
+                    panic!("Unable to enable foreign key support; perhaps sqlite3 is compiled without it‽");
+                }
+                if !c.set_db_config(DbConfig::SQLITE_DBCONFIG_ENABLE_TRIGGER, true)? {
+                    panic!("Unable to enable trigger support; perhaps sqlite3 is built without it‽");
+                }
+                Ok(())
+            });
         return r2d2::Pool::new(db_manager).unwrap();
     };
 }
 
-pub fn get_conn() -> Result<DatabaseConnection, Error> {
-    Ok(DB_POOL.get().map_err(|_| Error::DatabaseFailedInternally)?)
+pub fn get_conn() -> Result<DatabaseConnection, errors::Error> {
+    match DB_POOL.get() {
+        Ok(conn) => Ok(conn),
+        Err(e) => {
+            error!("Unable to get database connection: {}", e);
+            return Err(errors::Error::DatabaseFailedInternally);
+        }
+    }
 }
 
-pub fn get_transaction<'a>(conn: &'a mut DatabaseConnection) -> Result<DatabaseTransaction<'a>, Error> {
-    conn.transaction().map_err(|_| Error::DatabaseFailedInternally)
+pub fn get_transaction<'a>(conn: &'a mut DatabaseConnection) -> Result<DatabaseTransaction<'a>, errors::Error> {
+    conn.transaction().map_err(db_error)
+}
+
+pub fn db_error(e: rusqlite::Error) -> errors::Error {
+    error!("Database query failed: {}", e);
+    return errors::Error::DatabaseFailedInternally;
 }
 
 /// Initialize the database, creating and migrating its structure if necessary.
@@ -222,7 +242,7 @@ fn apply_permission_updates(conn: &mut DatabaseConnection, now: &SystemTime) {
 
 pub fn get_room_from_token(conn: &rusqlite::Connection, token: &str) -> Result<Room, Error> {
     match conn.prepare_cached("SELECT * FROM rooms WHERE token = ?")
-        .map_err(|_| Error::DatabaseFailedInternally)?
+        .map_err(db_error)?
         .query_row(params![&token], Room::from_row) {
         Ok(room) => return Ok(room),
         Err(rusqlite::Error::QueryReturnedNoRows) => return Err(Error::NoSuchRoom.into()),

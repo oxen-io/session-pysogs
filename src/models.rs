@@ -45,7 +45,7 @@ pub struct Message {
     pub timestamp: i64, // unix epoch milliseconds; Deprecated in favour of `posted`
     pub posted: f64, // unix epoch seconds when the message was created
     pub edited: Option<f64>, // unix epoch seconds when the message was last edited (null if never edited)
-    pub update: Option<i64>, // Set to the room's current `updates` value when created or last edited/deleted
+    pub updated: i64, // Set to the room's current `updates` value when created or last edited/deleted
     #[serde(skip_serializing_if = "Option::is_none", serialize_with = "as_opt_base64")]
     pub data: Option<Vec<u8>>,
     #[serde(skip_serializing_if = "Option::is_none", serialize_with = "as_opt_base64")]
@@ -87,7 +87,7 @@ impl Message {
             timestamp: (posted * 1000.0) as i64,
             posted,
             edited: row.get(row.column_index("edited")?)?,
-            update: row.get(row.column_index("updated")?)?,
+            updated: row.get(row.column_index("updated")?)?,
             data,
             signature: row.get(row.column_index("signature")?)?,
             deleted
@@ -154,15 +154,22 @@ pub struct ChangeModeratorRequestBody {
 pub struct CompactPollRequestBody {
     #[serde(rename = "room_id")]
     pub room_token: String,
+
+    // Deprecated: older Session clients pass the authorization token through this.  Newer clients
+    // should use signed requests instead.
     pub auth_token: Option<String>,
-    // New querying ability, returns all new+edited+deleted messages since the given value
+
+    // New querying ability: returns all messages (new, updates, and deletions) since the given
+    // room update counter.
     pub since_update: Option<i64>,
 
-    // Old querying:
-    #[serde(rename = "from_deletion_server_id")]
-    pub since_deletion: Option<i64>,
-    #[serde(rename = "from_message_server_id")]
-    pub since_message: Option<i64>,
+    // Old, deprecated querying.  These return separate lists for messages and deletions, and do
+    // not support message updates at all.  Both may be given at once.
+    pub from_deletion_server_id: Option<i64>,
+    pub from_message_server_id: Option<i64>,
+
+    // If none of the above since/from options are given, we return the most recent 256 messages,
+    // not including deletion markers, in reverse chronological order (i.e. latest message first).
 }
 
 #[derive(Debug, Serialize)]
@@ -170,6 +177,7 @@ pub struct CompactPollResponseBody {
     #[serde(rename = "room_id")]
     pub room_token: String,
     pub status_code: u16,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub deletions: Option<Vec<DeletedMessage>>,
     pub messages: Vec<Message>,
     pub moderators: Vec<String>,

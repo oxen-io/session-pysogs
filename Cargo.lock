@@ -1809,6 +1809,7 @@ dependencies = [
  "curve25519-dalek",
  "curve25519-parser",
  "ed25519-dalek",
+ "form_urlencoded",
  "futures",
  "hex",
  "hmac",
@@ -1832,7 +1833,6 @@ dependencies = [
  "structopt",
  "tokio",
  "tokio-test",
- "url",
  "warp",
  "x25519-dalek",
 ]

@@ -47,7 +47,7 @@ CREATE TRIGGER messages_insert_counter AFTER INSERT ON messages
 FOR EACH ROW
 BEGIN
     UPDATE rooms SET updates = updates + 1 WHERE id = NEW.room;
-    UPDATE messages SET updated = (SELECT updates FROM rooms WHERE id = NEW.room);
+    UPDATE messages SET updated = (SELECT updates FROM rooms WHERE id = NEW.room) WHERE id = NEW.id;
 END;
 
 -- Trigger to record the old value into message_history whenever data is updated, and update the
@@ -57,7 +57,7 @@ FOR EACH ROW WHEN NEW.data IS NOT OLD.data
 BEGIN
     INSERT INTO message_history (message, data, signature) VALUES (NEW.id, OLD.data, OLD.signature);
     UPDATE rooms SET updates = updates + 1 WHERE id = NEW.room;
-    UPDATE messages SET updated = (SELECT updates FROM rooms WHERE id = NEW.room);
+    UPDATE messages SET updated = (SELECT updates FROM rooms WHERE id = NEW.room) WHERE id = NEW.id;
 END;
 
 -- Trigger to remove the room's pinned message when that message is deleted
@@ -127,6 +127,13 @@ FOR EACH ROW WHEN NEW.admin AND NOT NEW.moderator
 BEGIN
     UPDATE users SET moderator = TRUE WHERE id = NEW.id;
 END;
+
+
+-- Effectively the same as `messages` except that it also includes the `session_id` from the users
+-- table of the user who posted it, which we often need when returning a message list to clients.
+CREATE TABLE message_details AS
+SELECT messages.*, users.session_id FROM messages JOIN users ON messages.user = users.id;
+
 
 
 

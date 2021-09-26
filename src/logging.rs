@@ -17,7 +17,7 @@ pub fn init(log_file: Option<String>, log_level: Option<String>) {
         LevelFilter::Info
     };
     let stdout_appender = {
-        let encoder = Box::new(PatternEncoder::new("{h({l})} {d} - {m}{n}"));
+        let encoder = Box::new(PatternEncoder::new("{h({l})} {d(%Y-%m-%d %H:%M:%S%.3f)} [{f}:{L}] {m}{n}"));
         let stdout = ConsoleAppender::builder().encoder(encoder).build();
         let filter = Box::new(ThresholdFilter::new(level));
         Appender::builder().filter(filter).build("stdout", Box::new(stdout))

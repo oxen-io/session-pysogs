@@ -51,7 +51,7 @@ lazy_static::lazy_static! {
         hasher.update(PRIVATE_KEY.to_bytes());
         hasher.update(PUBLIC_KEY.as_bytes());
         let res = hasher.finalize();
-        let secret = ed25519_dalek::SecretKey::from_bytes(&res[..]).unwrap();
+        let secret = ed25519_dalek::SecretKey::from_bytes(&res[0..32]).unwrap();
         let public = ed25519_dalek::PublicKey::from(&secret);
         ed25519_dalek::Keypair{ secret, public }
     };

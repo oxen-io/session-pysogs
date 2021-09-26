@@ -87,17 +87,18 @@ pub async fn handle_rpc_call(mut rpc_call: RpcCall) -> Result<Response, Rejectio
     if !rpc_call.endpoint.starts_with('/') {
         rpc_call.endpoint = format!("/{}", rpc_call.endpoint);
     }
-    let path: String = match rpc_call.endpoint.parse::<http::Uri>() {
-        Ok(uri) => uri.path().trim_start_matches('/').to_string(),
+    let path: String;
+    let query_params: HashMap<String, String>;
+    match rpc_call.endpoint.parse::<http::Uri>() {
+        Ok(uri) => {
+            path = uri.path().trim_start_matches('/').to_string();
+            query_params = match uri.query() {
+                Some(qs) => form_urlencoded::parse(qs.as_bytes()).into_owned().collect(),
+                None => HashMap::new()
+            };
+        }
         Err(e) => {
             warn!("Couldn't parse URI from '{}': {}.", &rpc_call.endpoint, e);
-            return Err(Error::InvalidRpcCall.into());
-        }
-    };
-    let query_params: HashMap<String, String> = match url::Url::parse(&rpc_call.endpoint) {
-        Ok(url) => url.query_pairs().into_owned().collect(),
-        Err(e) => {
-            warn!("Couldn't parse URL from '{}': {}.", &rpc_call.endpoint, e);
             return Err(Error::InvalidRpcCall.into());
         }
     };
