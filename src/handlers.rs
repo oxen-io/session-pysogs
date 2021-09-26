@@ -310,7 +310,7 @@ fn store_file_impl<'a>(
 pub fn store_file(
     room: Room, user: User, data_b64: &str, filename: Option<&str>,
 ) -> Result<Response, Rejection> {
-    if matches!(rpc::MODE, rpc::Mode::OpenGroupServer) {
+    if !matches!(rpc::MODE, rpc::Mode::OpenGroupServer) {
         panic!("FIXME file mode FIXME FIXME TODO!"); // FIXME TODO
     }
 
