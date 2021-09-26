@@ -50,14 +50,20 @@ BEGIN
     UPDATE messages SET updated = (SELECT updates FROM rooms WHERE id = NEW.room) WHERE id = NEW.id;
 END;
 
--- Trigger to record the old value into message_history whenever data is updated, and update the
--- room's `updates` counter so that clients can query to learn about the update.
+-- Trigger to do various tasks needed when a message is edited/deleted:
+-- * record the old value into message_history
+-- * update the room's `updates` counter (so that clients can learn about the update)
+-- * update the message's `updated` value to that new counter
+-- * update the message's `edit` timestamp
 CREATE TRIGGER messages_insert_history AFTER UPDATE OF data ON messages
 FOR EACH ROW WHEN NEW.data IS NOT OLD.data
 BEGIN
     INSERT INTO message_history (message, data, signature) VALUES (NEW.id, OLD.data, OLD.signature);
     UPDATE rooms SET updates = updates + 1 WHERE id = NEW.room;
-    UPDATE messages SET updated = (SELECT updates FROM rooms WHERE id = NEW.room) WHERE id = NEW.id;
+    UPDATE messages SET
+        updated = (SELECT updates FROM rooms WHERE id = NEW.room),
+        edited = (julianday('now') - 2440587.5)*86400.0
+    WHERE id = NEW.id;
 END;
 
 -- Trigger to remove the room's pinned message when that message is deleted
@@ -131,9 +137,14 @@ END;
 
 -- Effectively the same as `messages` except that it also includes the `session_id` from the users
 -- table of the user who posted it, which we often need when returning a message list to clients.
-CREATE TABLE message_details AS
+CREATE VIEW message_details AS
 SELECT messages.*, users.session_id FROM messages JOIN users ON messages.user = users.id;
 
+-- View of `messages` that is useful for manually inspecting table contents by only returning the
+-- length (rather than raw bytes) for data/signature.
+CREATE VIEW message_metadata AS
+SELECT id, room, user, session_id, posted, edited, updated, length(data) AS data_length, length(signature) as signature_length
+    FROM message_details;
 
 
 

@@ -655,15 +655,19 @@ pub fn delete_message(
 
     match st.query_row(params![room.id, id, user.id], |row| row.get::<_, i64>(0)) {
         Ok(count) => { if count > 0 { auth_req.moderator = true; } },
+        Err(rusqlite::Error::QueryReturnedNoRows) => {
+            let response = json!({"status_code": StatusCode::NOT_FOUND.as_u16()});
+            return Ok(warp::reply::json(&response).into_response());
+        },
         Err(_) => return Err(Error::DatabaseFailedInternally.into())
     };
 
     require_authorization(conn, user, room, auth_req)?;
 
-    let mut del_st = conn.prepare_cached("DELETE FROM messages WHERE room = ? AND id = ?")
+    let mut del_st = conn.prepare_cached("UPDATE messages SET data = NULL, signature = NULL WHERE id = ?")
         .map_err(db_error)?;
 
-    if let Err(e) = del_st.execute(params![room.id, id]) {
+    if let Err(e) = del_st.execute(params![id]) {
         error!("Couldn't delete message: {}.", e);
         return Err(Error::DatabaseFailedInternally.into());
     }
@@ -1028,6 +1032,10 @@ pub fn compact_poll(
             "SELECT * FROM message_details WHERE room = ? AND id > ? AND data IS NOT NULL ORDER BY id LIMIT 256")
             .map_err(db_error)?;
 
+        let mut get_recent_deletions = tx.prepare_cached(
+            "SELECT id, updated FROM messages WHERE room = ? AND data IS NULL ORDER BY updated DESC LIMIT 256")
+            .map_err(db_error)?;
+
         for request in request_bodies {
             let mut response = models::CompactPollResponseBody {
                 room_token: request.room_token.clone(),
@@ -1063,6 +1071,10 @@ pub fn compact_poll(
                 continue;
             }
 
+            let deprecated_request: bool =
+                request.from_message_server_id.is_some() || request.from_deletion_server_id.is_some();
+            let mut recent_messages: bool = true;
+
             // Newer clients just request all messages since an update id, and get everything
             // (new+edits+deletions) posted to the room since then.
             if let Some(since) = request.since_update {
@@ -1071,26 +1083,46 @@ pub fn compact_poll(
                     .map_err(db_error)?
                     .collect::<Result<Vec<models::Message>, _>>()
                     .map_err(db_error)?;
-            } else if let Some(since) = request.from_message_server_id {
+                recent_messages = false;
+            } else if deprecated_request {
                 // Older Session clients ask us for messages since some ID & deletions since some deletion
                 // ID, and can't handle edits at all:
-                debug!("Got deprecated poll request for room {} messages since {}", room.token, since);
-                response.messages = get_msgs_since.query_map(params![room.id, since], Message::from_row)
-                    .map_err(db_error)?
-                    .collect::<Result<Vec<models::Message>, _>>()
-                    .map_err(db_error)?;
-            } else if let Some(since) = request.from_deletion_server_id {
-                // Older Session making a deprecated request for deletions since N
-                debug!("Got deprecated poll request for room {} deletions since {}", room.token, since);
-                response.deletions = Some(get_deleted_msgs.query_map(
-                        params![room.id, since],
-                        |row| Ok(models::DeletedMessage { deleted_message_id: row.get(0)?, updated: row.get(1)? }))
-                    .map_err(db_error)?
-                    .collect::<Result<Vec<models::DeletedMessage>, _>>()
-                    .map_err(db_error)?
-                );
-            } else {
-                // No request at all means return all recent messages.
+                if let Some(since) = request.from_message_server_id {
+                    debug!("Got deprecated poll request for room {} messages since {}", room.token, since);
+                    response.messages = get_msgs_since.query_map(params![room.id, since], Message::from_row)
+                        .map_err(db_error)?
+                        .collect::<Result<Vec<models::Message>, _>>()
+                        .map_err(db_error)?;
+                    recent_messages = false;
+                } // otherwise we get messages via the `if recent_messages` below.
+
+                match request.from_deletion_server_id {
+                    None => {
+                        // Older Session with omitted or null deletion id expects recent deletions
+                        debug!("Got deprecated poll request for recent deletions for room {}", room.token);
+                        response.deletions = Some(get_recent_deletions.query_map(
+                                params![room.id],
+                                |row| Ok(models::DeletedMessage { deleted_message_id: row.get(0)?, updated: row.get(1)? }))
+                            .map_err(db_error)?
+                            .collect::<Result<Vec<models::DeletedMessage>, _>>()
+                            .map_err(db_error)?
+                        );
+                    },
+                    Some(since) => {
+                        // Older Session making a deprecated request for deletions since N
+                        debug!("Got deprecated poll request for room {} deletions since {}", room.token, since);
+                        response.deletions = Some(get_deleted_msgs.query_map(
+                                params![room.id, since],
+                                |row| Ok(models::DeletedMessage { deleted_message_id: row.get(0)?, updated: row.get(1)? }))
+                            .map_err(db_error)?
+                            .collect::<Result<Vec<models::DeletedMessage>, _>>()
+                            .map_err(db_error)?
+                        );
+                    }
+                }
+            }
+
+            if recent_messages {
                 debug!("Got poll request for recent messages for {}", room.token);
                 response.messages = get_recent_messages.query_map(params![room.id], Message::from_row)
                     .map_err(db_error)?
@@ -1107,6 +1139,12 @@ pub fn compact_poll(
                     continue;
                 }
             };
+            // We *also* include the requesting user if she is a global moderator/admin -- this
+            // isn't part of the room's moderator list, but Session relies on seeing itself in this
+            // list to enable moderator capabilities.
+            if user.moderator || user.admin {
+                response.moderators.push(user.session_id.clone());
+            }
 
             response_bodies.push(response);
         }

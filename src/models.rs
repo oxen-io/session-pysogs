@@ -164,9 +164,11 @@ pub struct CompactPollRequestBody {
     pub since_update: Option<i64>,
 
     // Old, deprecated querying.  These return separate lists for messages and deletions, and do
-    // not support message updates at all.  Both may be given at once.
-    pub from_deletion_server_id: Option<i64>,
+    // not support message updates at all.  Note that we include both deprecated results (messages
+    // + deletions) if *either* of these are specified, because older Session clients don't (or
+    // sometimes don't?) incude the deletion id when it is null.
     pub from_message_server_id: Option<i64>,
+    pub from_deletion_server_id: Option<i64>,
 
     // If none of the above since/from options are given, we return the most recent 256 messages,
     // not including deletion markers, in reverse chronological order (i.e. latest message first).
