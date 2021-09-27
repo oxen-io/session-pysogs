@@ -32,26 +32,91 @@ fn as_opt_base64<S>(val: &Option<Vec<u8>>, s: S) -> Result<S::Ok, S::Error>
     s.serialize_str(&base64::encode(val.as_ref().unwrap()))
 }
 
+/// Old message structure returned by the deprecated compact_poll endpoint.
+#[derive(Debug, Serialize)]
+pub struct OldMessage {
+    /// Server-side message id.  Migration: this becomes `id` in the new Message format.
+    pub server_id: i64,
+    /// Session id of the poster.  Omitted when the information isn't available/useful (such as
+    /// submitting new messages).  Migration: this becomes `session_id` in the new Message format.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub public_key: Option<String>,
+    /// Timestamp, in unix epoch milliseconds.  Migration: in the new Message format this value is
+    /// a floating point value (rather than integer) *and* is returned as actual unix time (i.e.
+    /// seconds) rather than milliseconds.
+    pub timestamp: i64,
+    /// Message data, encoded in base64
+    #[serde(serialize_with = "as_opt_base64")]
+    pub data: Option<Vec<u8>>,
+    /// XEd25519 message signature of the `data` bytes (not the base64 representation), encoded in
+    /// base64
+    #[serde(serialize_with = "as_opt_base64")]
+    pub signature: Option<Vec<u8>>,
+}
+
+impl OldMessage {
+    pub fn from_row(row: &rusqlite::Row) -> Result<OldMessage, rusqlite::Error> {
+        let data: Option<Vec<u8>> = row.get(row.column_index("data")?)?;
+        let session_id = match row.column_index("session_id") {
+            Ok(index) => Some(row.get(index)?),
+            Err(_) => None
+        };
+        return Ok(OldMessage {
+            server_id: row.get(row.column_index("id")?)?,
+            public_key: session_id,
+            timestamp: (row.get::<_, f64>(row.column_index("posted")?)? * 1000.0) as i64,
+            data,
+            signature: row.get(row.column_index("signature")?)?
+        });
+    }
+}
+
+
 #[derive(Debug, Serialize)]
 pub struct Message {
-    #[serde(rename = "server_id")]
+    /// The message id.
     pub id: i64,
-    #[serde(rename = "room_id")]
-    pub room: i64,
-    #[serde(skip)]
-    pub user: i64,
-    #[serde(rename = "public_key", skip_serializing_if = "Option::is_none")]
+    /// The session ID of the user who posted this message, in hex.  Omitted in contexts where the
+    /// information isn't available or isn't useful, such as when inserting a message.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
-    pub timestamp: i64, // unix epoch milliseconds; Deprecated in favour of `posted`
-    pub posted: f64, // unix epoch seconds when the message was created
-    pub edited: Option<f64>, // unix epoch seconds when the message was last edited (null if never edited)
-    pub updated: i64, // Set to the room's current `updates` value when created or last edited/deleted
+    /// unix timestamp of when the message was received on the server.
+    pub timestamp: f64,
+    /// unix timestamp of when the message was last edited (null if never edited).
+    pub edited: Option<f64>,
+    /// set to the room's current `updates` value at the time this message was created, last
+    /// edited, or deleted.
+    pub updated: i64,
+    /// The message data, encoded in base64.  This field is omitted if the message is deleted.
     #[serde(skip_serializing_if = "Option::is_none", serialize_with = "as_opt_base64")]
     pub data: Option<Vec<u8>>,
+    /// The message signature, encoded in base64.  This field is omitted if the message is deleted.
     #[serde(skip_serializing_if = "Option::is_none", serialize_with = "as_opt_base64")]
     pub signature: Option<Vec<u8>>,
+    /// Flag set to true if the message is deleted, and omitted otherwise.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub deleted: Option<bool>,
+}
+
+impl Message {
+    pub fn from_row(row: &rusqlite::Row) -> Result<Message, rusqlite::Error> {
+        let data: Option<Vec<u8>> = row.get(row.column_index("data")?)?;
+        let deleted = if data.is_none() { Some(true) } else { None };
+        let session_id = match row.column_index("session_id") {
+            Ok(index) => Some(row.get(index)?),
+            Err(_) => None
+        };
+        return Ok(Message {
+            id: row.get(row.column_index("id")?)?,
+            session_id,
+            timestamp: row.get(row.column_index("posted")?)?,
+            edited: row.get(row.column_index("edited")?)?,
+            updated: row.get(row.column_index("updated")?)?,
+            data,
+            signature: row.get(row.column_index("signature")?)?,
+            deleted
+        });
+    }
 }
 
 fn bytes_from_base64<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
@@ -68,31 +133,6 @@ pub struct PostMessage {
     pub data: Vec<u8>,
     #[serde(deserialize_with = "bytes_from_base64")]
     pub signature: Vec<u8>,
-}
-
-impl Message {
-    pub fn from_row(row: &rusqlite::Row) -> Result<Message, rusqlite::Error> {
-        let posted: f64 = row.get(row.column_index("posted")?)?;
-        let data: Option<Vec<u8>> = row.get(row.column_index("data")?)?;
-        let session_id = match row.column_index("session_id") {
-            Ok(index) => Some(row.get(index)?),
-            Err(_) => None
-        };
-        let deleted = if data.is_none() { Some(true) } else { None };
-        return Ok(Message {
-            id: row.get(row.column_index("id")?)?,
-            room: row.get(row.column_index("room")?)?,
-            user: row.get(row.column_index("user")?)?,
-            session_id,
-            timestamp: (posted * 1000.0) as i64,
-            posted,
-            edited: row.get(row.column_index("edited")?)?,
-            updated: row.get(row.column_index("updated")?)?,
-            data,
-            signature: row.get(row.column_index("signature")?)?,
-            deleted
-        });
-    }
 }
 
 #[derive(Debug, Serialize)]
@@ -151,6 +191,78 @@ pub struct ChangeModeratorRequestBody {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct PollRoomMetadata {
+    /// Token of the room to poll
+    pub room: String,
+    /// The last `info_update` value the client has; results are only returned if the room has been
+    /// modified since the value provided by the client.
+    pub since_update: i64
+}
+
+#[derive(Debug, Serialize)]
+pub struct RoomDetails {
+    /// The token of this room
+    pub token: String,
+    /// Number of recently active users in the room
+    pub active_users: i64,
+    /// Metadata of the room; this omitted from the response when polling if the room metadata
+    /// (other than active user count) has not changed since the request update counter.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub details: Option<RoomMetadata>
+}
+
+#[derive(Debug, Serialize)]
+pub struct RoomMetadata {
+    /// A counter that is updated whenever this room's metadata changes; clients are expected to
+    /// poll for updates using this id.
+    pub info_update: i64,
+    /// Unix timestamp (seconds since epoch) when this room was created
+    pub created: f64,
+    /// The human-readable room name
+    pub name: String,
+    /// Text description of the room
+    pub description: Option<String>,
+    /// ID of an uploaded file that contains the image for this room
+    pub image_id: Option<i64>,
+    /// ID of a pinned message in this room
+    pub pinned_id: Option<i64>,
+    /// List of non-admin public moderator Session IDs.  This list includes both room-specific and
+    /// global moderators, but not admins and only if the moderator is configured as visible.
+    pub moderators: Vec<String>,
+    /// List of public admin session IDs for this room.  In addition to everything moderators can
+    /// do, admins can also add/remove/ban other moderators and admins.  As with `moderators` only
+    /// visible admins are included.
+    pub admins: Vec<String>,
+    /// List of hidden moderator Session IDs.  This field is omitted if the requesting user is not
+    /// a moderator or admin.
+    pub hidden_mods: Option<Vec<String>>,
+    /// List of hidden admin Session IDs.  This field is omitted if the requesting user is not a
+    /// moderator or admin.
+    pub hidden_admins: Option<Vec<String>>,
+    /// Whether or not the requesting user has moderator powers.
+    pub moderator: bool,
+    /// Whether or not the requesting user has admin powers.
+    pub admin: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PollRoomMessages {
+    /// Token of the room to poll for messages.
+    pub room: String,
+    /// Return new messages, edit, and deletions posted since this `updates` value.  Clients should
+    /// poll with the most recent updates value they have received.
+    pub since_update: i64
+}
+
+#[derive(Debug, Serialize)]
+pub struct RoomMessages {
+    /// The token of this room
+    pub room: String,
+    /// Vector of new/edited/deleted message posted to the room since the requested update.
+    pub messages: Vec<Message>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct CompactPollRequestBody {
     #[serde(rename = "room_id")]
     pub room_token: String,
@@ -159,19 +271,11 @@ pub struct CompactPollRequestBody {
     // should use signed requests instead.
     pub auth_token: Option<String>,
 
-    // New querying ability: returns all messages (new, updates, and deletions) since the given
-    // room update counter.
-    pub since_update: Option<i64>,
-
-    // Old, deprecated querying.  These return separate lists for messages and deletions, and do
-    // not support message updates at all.  Note that we include both deprecated results (messages
-    // + deletions) if *either* of these are specified, because older Session clients don't (or
-    // sometimes don't?) incude the deletion id when it is null.
+    // Input parameters to query.  If these are omitted (or null) then this returns the latest 256
+    // messages/deletions, in reverse order from what you get with regular polling.  New clients
+    // should update to the new polling endpoints ASAP.
     pub from_message_server_id: Option<i64>,
     pub from_deletion_server_id: Option<i64>,
-
-    // If none of the above since/from options are given, we return the most recent 256 messages,
-    // not including deletion markers, in reverse chronological order (i.e. latest message first).
 }
 
 #[derive(Debug, Serialize)]
@@ -181,7 +285,7 @@ pub struct CompactPollResponseBody {
     pub status_code: u16,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub deletions: Option<Vec<DeletedMessage>>,
-    pub messages: Vec<Message>,
+    pub messages: Vec<OldMessage>,
     pub moderators: Vec<String>,
 }
 

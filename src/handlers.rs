@@ -16,7 +16,7 @@ use warp::{http::StatusCode, reply::Reply, reply::Response, Rejection};
 
 use super::crypto;
 use super::errors::Error;
-use super::models::{Room, User, Message};
+use super::models::{Room, User, OldMessage};
 use super::models;
 use super::rpc;
 use super::storage::{self, db_error};
@@ -537,6 +537,7 @@ pub fn get_auth_token_challenge(public_key: &str) -> Result<models::Challenge, R
 
 // Message sending & receiving
 
+// FIXME TODO - needs a flag to control whether it returns in new Message format instead of OldMessage
 /// Inserts a message into the database.
 pub fn insert_message(
     room: Room, user: User, data: &[u8], signature: &[u8],
@@ -559,7 +560,7 @@ pub fn insert_message(
     // Insert the message
     let message = match tx.prepare_cached("INSERT INTO messages (room, user, data, signature) VALUES (?, ?, ?, ?) RETURNING *")
         .map_err(db_error)?
-        .query_row(params![room.id, user.id, data, signature], Message::from_row) {
+        .query_row(params![room.id, user.id, data, signature], OldMessage::from_row) {
         Ok(m) => m,
         Err(e) => {
             error!("Couldn't insert message: {}.", e);
@@ -573,13 +574,7 @@ pub fn insert_message(
         return Err(warp::reject::custom(Error::DatabaseFailedInternally));
     }
 
-    // Return
-    #[derive(Debug, Serialize)]
-    struct Response {
-        status_code: u16,
-        message: Message,
-    }
-    let response = Response { status_code: StatusCode::OK.as_u16(), message };
+    let response = json!({ "status_code": StatusCode::OK.as_u16(), "message": message });
     Ok(warp::reply::json(&response).into_response())
 }
 
@@ -608,10 +603,11 @@ fn get_messages_params(query_params: &HashMap<String, String>) -> (Option<i64>, 
     return (from_server_id, limit);
 }
 
+// FIXME: need something similar that returns new message format
 /// Returns either the last `limit` messages or all messages since `from_server_id, limited to `limit`.
 pub fn get_messages(
     query_params: HashMap<String, String>, user: User, room: Room,
-) -> Result<Vec<Message>, Rejection> {
+) -> Result<Vec<OldMessage>, Rejection> {
     let conn = storage::get_conn()?;
 
     require_authorization(&conn, &user, &room, AuthorizationRequired { read: true, ..Default::default() })?;
@@ -623,13 +619,13 @@ pub fn get_messages(
                         if from_server_id.is_some() { "AND id > ?1" } else { "" },
                         if from_server_id.is_some() { "ASC" } else { "DESC" });
     let result = match conn.prepare_cached(&query).map_err(db_error)?
-        .query_map(params![from_server_id, limit], Message::from_row) {
+        .query_map(params![from_server_id, limit], OldMessage::from_row) {
         Ok(rows) => rows,
         Err(e) => {
             error!("Couldn't get messages: {}.", e);
             return Err(Error::DatabaseFailedInternally.into());
         }
-    }.collect::<Result<Vec<Message>, _>>().map_err(|_| Error::DatabaseFailedInternally.into());
+    }.collect::<Result<Vec<OldMessage>, _>>().map_err(|_| Error::DatabaseFailedInternally.into());
     return result;
 }
 
@@ -997,6 +993,37 @@ pub fn get_member_count_since(user: User, room: Room, ago: Duration) -> Result<R
     Ok(warp::reply::json(&response).into_response())
 }
 
+/// Polls a room for metadata (name, description, image, moderators) if metadata has been updated
+/// since the given update value (or always, if since_update is omitted).
+pub fn poll_room_metadata(user: &User, room: Room, since_update: Option<i64>) {
+    // FIXME TODO
+    panic!("FIXME TODO");
+}
+
+/// Polls a room for new/updated/deleted messages posted since a given update id.
+pub fn get_room_updates(user: User, room: Room, since_update: i64) {
+    // FIXME TODO - implement this
+    panic!("FIXME TODO");
+
+    /*
+                debug!("Got unified poll request for room {} since update {}", room.token, since);
+                response.messages = get_msg_updates.query_map(params![room.id, since], Message::from_row)
+                    .map_err(db_error)?
+                    .collect::<Result<Vec<models::Message>, _>>()
+                    .map_err(db_error)?;
+
+    // Gets a list of new, updated, and deleted messages since a given room update value.
+    let mut get_msg_updates = tx.prepare_cached(
+        "SELECT * FROM message_details WHERE room = ? AND updated > ? ORDER BY updated LIMIT 250")
+        .map_err(db_error)?;
+
+    */
+}
+
+
+/// Deprecated room polling; unlike the above, this does not handle metadata (except for
+/// moderators, which are *always* included even though they rarely change), does not support
+/// message edits, and has non-obvious alternate modes of operation.
 pub fn compact_poll(
     user: Option<User>, request_bodies: Vec<models::CompactPollRequestBody>,
 ) -> Result<Response, Rejection> {
@@ -1028,12 +1055,11 @@ pub fn compact_poll(
             "SELECT * FROM message_details WHERE room = ? AND data IS NOT NULL ORDER BY id DESC LIMIT 256")
             .map_err(db_error)?;
 
-        // Gets a list of new, updated, and deleted messages since a given room update value.
-        let mut get_msg_updates = tx.prepare_cached(
-            "SELECT * FROM message_details WHERE room = ? AND updated > ? ORDER BY updated LIMIT 256")
+        let mut get_recent_deletions = tx.prepare_cached(
+            "SELECT id, updated FROM messages WHERE room = ? AND data IS NULL ORDER BY updated DESC LIMIT 256")
             .map_err(db_error)?;
 
-        // We need these for deprecated requests; can remove once we know longer support them
+        // Queries for actual polling, where we have an ID
         let mut get_deleted_msgs = tx.prepare_cached(
             "SELECT id, updated FROM messages WHERE room = ? AND updated > ? AND data IS NULL ORDER BY updated LIMIT 256")
             .map_err(db_error)?;
@@ -1042,9 +1068,6 @@ pub fn compact_poll(
             "SELECT * FROM message_details WHERE room = ? AND id > ? AND data IS NOT NULL ORDER BY id LIMIT 256")
             .map_err(db_error)?;
 
-        let mut get_recent_deletions = tx.prepare_cached(
-            "SELECT id, updated FROM messages WHERE room = ? AND data IS NULL ORDER BY updated DESC LIMIT 256")
-            .map_err(db_error)?;
 
         for request in request_bodies {
             let mut response = models::CompactPollResponseBody {
@@ -1081,66 +1104,45 @@ pub fn compact_poll(
                 continue;
             }
 
-            let deprecated_request: bool =
-                request.from_message_server_id.is_some() || request.from_deletion_server_id.is_some();
-            let mut recent_messages: bool = true;
-
-            // Newer clients just request all messages since an update id, and get everything
-            // (new+edits+deletions) posted to the room since then.
-            if let Some(since) = request.since_update {
-                debug!("Got unified poll request for room {} since update {}", room.token, since);
-                response.messages = get_msg_updates.query_map(params![room.id, since], Message::from_row)
+            // Older Session clients ask us for messages since some ID & deletions since some deletion
+            // ID, and can't handle edits at all:
+            if let Some(since) = request.from_message_server_id {
+                debug!("Got deprecated poll request for room {} messages since {}", room.token, since);
+                response.messages = get_msgs_since.query_map(params![room.id, since], OldMessage::from_row)
                     .map_err(db_error)?
-                    .collect::<Result<Vec<models::Message>, _>>()
+                    .collect::<Result<Vec<models::OldMessage>, _>>()
                     .map_err(db_error)?;
-                recent_messages = false;
-            } else if deprecated_request {
-                // Older Session clients ask us for messages since some ID & deletions since some deletion
-                // ID, and can't handle edits at all:
-                if let Some(since) = request.from_message_server_id {
-                    debug!("Got deprecated poll request for room {} messages since {}", room.token, since);
-                    response.messages = get_msgs_since.query_map(params![room.id, since], Message::from_row)
-                        .map_err(db_error)?
-                        .collect::<Result<Vec<models::Message>, _>>()
-                        .map_err(db_error)?;
-                    recent_messages = false;
-                } // otherwise we get messages via the `if recent_messages` below.
-
-                match request.from_deletion_server_id {
-                    None => {
-                        // Older Session with omitted or null deletion id expects recent deletions
-                        debug!("Got deprecated poll request for recent deletions for room {}", room.token);
-                        response.deletions = Some(get_recent_deletions.query_map(
-                                params![room.id],
-                                |row| Ok(models::DeletedMessage { deleted_message_id: row.get(0)?, updated: row.get(1)? }))
-                            .map_err(db_error)?
-                            .collect::<Result<Vec<models::DeletedMessage>, _>>()
-                            .map_err(db_error)?
-                        );
-                    },
-                    Some(since) => {
-                        // Older Session making a deprecated request for deletions since N
-                        debug!("Got deprecated poll request for room {} deletions since {}", room.token, since);
-                        response.deletions = Some(get_deleted_msgs.query_map(
-                                params![room.id, since],
-                                |row| Ok(models::DeletedMessage { deleted_message_id: row.get(0)?, updated: row.get(1)? }))
-                            .map_err(db_error)?
-                            .collect::<Result<Vec<models::DeletedMessage>, _>>()
-                            .map_err(db_error)?
-                        );
-                    }
-                }
-            }
-
-            if recent_messages {
-                debug!("Got poll request for recent messages for {}", room.token);
-                response.messages = get_recent_messages.query_map(params![room.id], Message::from_row)
+            } else {
+                debug!("Deprecated request without from; returning recent messages for {}", room.token);
+                response.messages = get_recent_messages.query_map(params![room.id], OldMessage::from_row)
                     .map_err(db_error)?
-                    .collect::<Result<Vec<models::Message>, _>>()
+                    .collect::<Result<Vec<models::OldMessage>, _>>()
                     .map_err(db_error)?;
             }
 
-            // Get the moderators
+            if let Some(since) = request.from_deletion_server_id {
+                // Older Session making a deprecated request for deletions since N
+                debug!("Got deprecated poll request for room {} deletions since {}", room.token, since);
+                response.deletions = Some(get_deleted_msgs.query_map(
+                        params![room.id, since],
+                        |row| Ok(models::DeletedMessage { deleted_message_id: row.get(0)?, updated: row.get(1)? }))
+                    .map_err(db_error)?
+                    .collect::<Result<Vec<models::DeletedMessage>, _>>()
+                    .map_err(db_error)?
+                );
+            } else {
+                // Older Session with omitted or null deletion id expects recent deletions
+                debug!("Got deprecated poll request without deleted from; returning recent deletions for {}", room.token);
+                response.deletions = Some(get_recent_deletions.query_map(
+                        params![room.id],
+                        |row| Ok(models::DeletedMessage { deleted_message_id: row.get(0)?, updated: row.get(1)? }))
+                    .map_err(db_error)?
+                    .collect::<Result<Vec<models::DeletedMessage>, _>>()
+                    .map_err(db_error)?
+                );
+            }
+
+            // Get the moderators.
             response.moderators = match get_moderators(&tx, &user, &room) {
                 Ok(moderators) => moderators,
                 Err(e) => {
@@ -1150,8 +1152,8 @@ pub fn compact_poll(
                 }
             };
             // We *also* include the requesting user if she is a global moderator/admin -- this
-            // isn't part of the room's moderator list, but Session relies on seeing itself in this
-            // list to enable moderator capabilities.
+            // isn't part of the room's moderator list, but older Session relies on seeing itself
+            // in this list to enable moderator capabilities.
             if user.moderator || user.admin {
                 response.moderators.push(user.session_id.clone());
             }

@@ -147,6 +147,7 @@ async fn handle_get_request(
         let response = json!({ "status_code": StatusCode::OK.as_u16(), "challenge": challenge });
         return Ok(warp::reply::json(&response).into_response());
     }
+    // /rooms/* endpoint: Deprecated.  Use `GET /rooms` or `GET /r/ROOMID` or `GET /r/ROOMID/file/ID` instead.  FIXME TODO
     if components[0] == "rooms" {
         reject_if_file_server_mode(path)?;
         if components.len() == 1 {
@@ -201,9 +202,29 @@ async fn handle_get_request(
 
     let user = user.ok_or(Error::NoAuthToken)?;
 
+    // TODO FIXME: new endpoints:
+    // - /r/ROOMID - retrieves room metadata
+    //
+    // - /r/ROOMID/recent - retrieves recent messages
+    //
+    // - /r/ROOMID/message/ID - retrieve a message by ID
+    //
+    // - /r/ROOMID/file/FILEID/filename - retrieve a file by id (the "filename" part is optional
+    //   and only suggestive)
+    //
+    // - /r/ROOMID/moderators - retrieves publicly visible room moderators and admins
+    //
+    // - /r/ROOMID/moderators/all - retrieves visible + hidden room moderators/admins (requires
+    //   moderator permission)
+    //
+    // - /r/ROOMID/bans - retrieves banned public keys.  The full list is only visible to
+    //   moderators; for regular users this will be either empty or include just their own session
+    //   ID (if banned).
+
     // Everything below this point requires a room:
     let room = room.ok_or(Error::NoSuchRoom)?;
 
+    // All of these are deprecated; should be using /r/ROOMID/whatever instead.
     match components[0] {
         "messages" => {
             reject_if_file_server_mode(path)?;
@@ -249,8 +270,12 @@ async fn handle_post_request(
     room: Option<Room>, rpc_call: RpcCall, path: &str, user: Option<User>,
 ) -> Result<Response, Rejection> {
     // Handle routes that don't require authorization first
+
     // The compact poll endpoint expects the auth token to be in the request body; not
     // in the headers.
+    // TODO FIXME: Deprecated; replace this with a /multi endpoint that takes a list of requests to
+    // submit (but rather than be specific to that endpoint, it would allow *any* other endpoints
+    // to be invoked).
     if path == "compact_poll" {
         reject_if_file_server_mode(path)?;
         #[derive(Debug, Deserialize)]
@@ -327,6 +352,9 @@ async fn handle_post_request(
     let room = room.ok_or(Error::NoSuchRoom)?;
     match path {
         "messages" => {
+            // FIXME TODO - Deprecated, returns old message format.  Rewrite this as
+            // `POST /r/ROOMID/message`.
+            // FIXME 2: Add a `POST /r/ROOMID/message/ID` for editing a message.
             reject_if_file_server_mode(path)?;
             let message: models::PostMessage = match serde_json::from_str(&rpc_call.body) {
                 Ok(message) => message,
@@ -339,6 +367,7 @@ async fn handle_post_request(
         }
 
         "files" => {
+            // FIXME TODO - Deprecated; rewrite as `POST /r/ROOMID/file`, make it require a filename
             #[derive(Debug, Deserialize)]
             struct JSON {
                 file: String,
@@ -357,8 +386,9 @@ async fn handle_post_request(
             return handlers::store_file(room, user, &json.file, filename);
         }
 
-        // FIXME: deprecate these next two separate endpoints and replace with a single "ban"
-        // endpoint that has a "delete all?" flag.
+        // FIXME: deprecate these next two separate endpoints and replace with a single
+        // "/r/ROOMID/ban" endpoint that has a "delete all?" flag, and has options for different
+        // types of bans and ban expiries.
         "block_list" => {
             reject_if_file_server_mode(path)?;
             #[derive(Debug, Deserialize)]
@@ -390,12 +420,16 @@ async fn handle_post_request(
             return handlers::ban(&json.public_key, true, &user, &room).await;
         }
         "claim_auth_token" => {
-            // Backwards compat: we've already verified to token so this is a no-op
+            // Deprecated; has no purpose anymore (but here for older clients to not get an error)
+            // because we're already verified the token (and there are no ephemeral tokens
+            // anymore).
             reject_if_file_server_mode(path)?;
             let json = models::StatusCode { status_code: StatusCode::OK.as_u16() };
             return Ok(warp::reply::json(&json).into_response());
         }
         "moderators" => {
+            // FIXME TODO - Deprecated; Rewrite as /r/ROOMID/moderator and allow it to support new
+            // moderator options such as being a hidden mod
             reject_if_file_server_mode(path)?;
             let body: models::ChangeModeratorRequestBody =
                 match serde_json::from_str(&rpc_call.body) {
@@ -408,6 +442,9 @@ async fn handle_post_request(
             return handlers::add_moderator_public(room, user, &body.session_id, body.admin.unwrap_or(false));
         }
         "delete_messages" => {
+            // FIXME TODO - Deprecated; this should be a DELETE /r/ROOMID/ID request, and if we
+            // need multiple deletes in one request then should use the POST /multi endpoint to
+            // submit them.
             reject_if_file_server_mode(path)?;
             #[derive(Debug, Deserialize)]
             struct JSON {
@@ -435,6 +472,7 @@ async fn handle_delete_request(
     // Check that the auth token is present
     let user = user.ok_or(Error::NoAuthToken)?;
     // DELETE /messages/:server_id
+    // FIXME TODO: Deprecated; use DELETE /r/ROOMID/message/ID instead.
     if path.starts_with("messages") {
         reject_if_file_server_mode(path)?;
         let components: Vec<&str> = path.split('/').collect(); // Split on subsequent slashes
@@ -452,6 +490,7 @@ async fn handle_delete_request(
         return handlers::delete_message(&*storage::get_conn()?, server_id, &user, &room);
     }
     // DELETE /block_list/:public_key
+    // FIXME TODO: Deprecated; use DELETE /r/ROOMID/unban/ID instead.
     if path.starts_with("block_list") {
         reject_if_file_server_mode(path)?;
         let components: Vec<&str> = path.split('/').collect(); // Split on subsequent slashes
@@ -462,7 +501,7 @@ async fn handle_delete_request(
         let public_key = components[1].to_string();
         return handlers::unban(&public_key, &user, &room);
     }
-    // DELETE /auth_token
+    // DELETE /auth_token.  Deprecated and does nothing.
     if path == "auth_token" {
         reject_if_file_server_mode(path)?;
         // No-op; this is here for backwards compat with Session clients that try to use auth tokens.
@@ -470,6 +509,7 @@ async fn handle_delete_request(
         return Ok(warp::reply::json(&json).into_response());
     }
     // DELETE /moderators/:public_key
+    // FIXME TODO: Deprecated; use DELETE /r/ROOMID/moderator/SESSIONID
     if path.starts_with("moderators") {
         reject_if_file_server_mode(path)?;
         let components: Vec<&str> = path.split('/').collect(); // Split on subsequent slashes
