@@ -56,7 +56,8 @@ pub struct OldMessage {
 
 impl OldMessage {
     pub fn from_row(row: &rusqlite::Row) -> Result<OldMessage, rusqlite::Error> {
-        let data: Option<Vec<u8>> = row.get(row.column_index("data")?)?;
+        let mut data: Option<Vec<u8>> = row.get(row.column_index("data")?)?;
+        repad(&mut data, row.get::<_, Option<usize>>(row.column_index("data_size")?)?);
         let session_id = match row.column_index("session_id") {
             Ok(index) => Some(row.get(index)?),
             Err(_) => None
@@ -98,9 +99,18 @@ pub struct Message {
     pub deleted: Option<bool>,
 }
 
+fn repad(data: &mut Option<Vec<u8>>, size: Option<usize>) {
+    if let Some(size) = size {
+        if data.is_some() && data.as_ref().unwrap().len() < size {
+            data.as_mut().unwrap().resize(size, 0);
+        }
+    }
+}
+
 impl Message {
     pub fn from_row(row: &rusqlite::Row) -> Result<Message, rusqlite::Error> {
-        let data: Option<Vec<u8>> = row.get(row.column_index("data")?)?;
+        let mut data: Option<Vec<u8>> = row.get(row.column_index("data")?)?;
+        repad(&mut data, row.get::<_, Option<usize>>(row.column_index("data_size")?)?);
         let deleted = if data.is_none() { Some(true) } else { None };
         let session_id = match row.column_index("session_id") {
             Ok(index) => Some(row.get(index)?),

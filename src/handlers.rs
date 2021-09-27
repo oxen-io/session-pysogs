@@ -557,10 +557,19 @@ pub fn insert_message(
     if recent_posts >= RATE_LIMIT_POSTS {
         return Err(warp::reject::custom(Error::RateLimited));
     }
+
+    // Don't store useless padding; we'll repad (since it's needed for signature verification) when
+    // we retrieve.
+    let size = data.len();
+    let trimmed = match data.iter().rposition(|&c| c != 0u8) {
+        Some(last) => &data[0..last+1],
+        None => &data
+    };
+
     // Insert the message
-    let message = match tx.prepare_cached("INSERT INTO messages (room, user, data, signature) VALUES (?, ?, ?, ?) RETURNING *")
+    let message = match tx.prepare_cached("INSERT INTO messages (room, user, data, data_size, signature) VALUES (?, ?, ?, ?, ?) RETURNING *")
         .map_err(db_error)?
-        .query_row(params![room.id, user.id, data, signature], OldMessage::from_row) {
+        .query_row(params![room.id, user.id, trimmed, size, signature], OldMessage::from_row) {
         Ok(m) => m,
         Err(e) => {
             error!("Couldn't insert message: {}.", e);
@@ -670,7 +679,7 @@ pub fn delete_message(
 
     require_authorization(conn, user, room, auth_req)?;
 
-    let mut del_st = conn.prepare_cached("UPDATE messages SET data = NULL, signature = NULL WHERE id = ?")
+    let mut del_st = conn.prepare_cached("UPDATE messages SET data = NULL, data_size = NULL, signature = NULL WHERE id = ?")
         .map_err(db_error)?;
 
     if let Err(e) = del_st.execute(params![id]) {
@@ -879,7 +888,7 @@ pub async fn ban(session_id: &str, delete_all: bool, user: &User, room: &Room) -
     let mut posts_removed = 0;
     let mut files_removed = 0;
     if delete_all {
-        posts_removed += match tx.prepare_cached("UPDATE messages SET data = NULL, signature = NULL WHERE room = ? AND user = ?")
+        posts_removed += match tx.prepare_cached("UPDATE messages SET data = NULL, data_size = NULL, signature = NULL WHERE room = ? AND user = ?")
             .map_err(db_error)?
             .execute(params![room.id, userid]) {
             Ok(count) => count,

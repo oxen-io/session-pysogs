@@ -66,7 +66,8 @@ CREATE TABLE messages (
     posted FLOAT NOT NULL DEFAULT ((julianday('now') - 2440587.5)*86400.0), /* unix epoch */
     edited FLOAT,
     updated INTEGER NOT NULL DEFAULT 0, /* set to the room's `updates` counter when posted/edited/deleted */
-    data BLOB, /* Actual message content; set to null to delete a message */
+    data BLOB, /* Actual message content, not including trailing padding; set to null to delete a message */
+    data_size INTEGER, /* The message size, including trailing padding (needed because the signature is over the padded data) */
     signature BLOB /* Signature of `data` by `public_key`; set to null when deleting a message */
 );
 CREATE INDEX messages_room ON messages(room, posted);
@@ -184,7 +185,7 @@ SELECT messages.*, users.session_id FROM messages JOIN users ON messages.user = 
 -- View of `messages` that is useful for manually inspecting table contents by only returning the
 -- length (rather than raw bytes) for data/signature.
 CREATE VIEW message_metadata AS
-SELECT id, room, user, session_id, posted, edited, updated, length(data) AS data_length, length(signature) as signature_length
+SELECT id, room, user, session_id, posted, edited, updated, length(data) AS data_unpadded, data_size, length(signature) as signature_length
     FROM message_details;
 
 
