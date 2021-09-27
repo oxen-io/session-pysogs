@@ -7,10 +7,12 @@ CREATE TABLE rooms (
     id INTEGER NOT NULL PRIMARY KEY, /* internal database id of the room */
     token TEXT NOT NULL UNIQUE COLLATE NOCASE, /* case-insensitive room identifier used in URLs, etc. */
     name TEXT NOT NULL, /* Publicly visible room name */
+    description TEXT, /* Publicly visible room description */
     image INTEGER REFERENCES files(id) ON DELETE SET NULL,
     created FLOAT NOT NULL DEFAULT ((julianday('now') - 2440587.5)*86400.0), /* unix epoch */
     pinned INTEGER REFERENCES messages(id) ON DELETE SET NULL,
     updates INTEGER NOT NULL DEFAULT 0, /* +1 for each new message, edit or deletion */
+    info_updated INTEGER NOT NULL DEFAULT 0, /* +1 for any room metadata update (name/desc/image/pinned/mods) */
     read BOOLEAN NOT NULL DEFAULT TRUE, /* Whether users can read by default */
     write BOOLEAN NOT NULL DEFAULT TRUE, /* Whether users can post by default */
     upload BOOLEAN NOT NULL DEFAULT TRUE, /* Whether file uploads are allowed */
@@ -24,6 +26,38 @@ FOR EACH ROW WHEN NEW.image IS NOT OLD.image AND OLD.image IS NOT NULL
 BEGIN
     UPDATE files SET expiry = 0.0 WHERE id = OLD.image;
 END;
+
+-- Trigger to update `info_updated` on metadata column changes
+CREATE TRIGGER room_metadata_update AFTER UPDATE ON rooms
+FOR EACH ROW WHEN
+    NEW.name IS NOT OLD.name OR
+    NEW.description IS NOT OLD.description OR
+    NEW.image IS NOT OLD.image OR
+    NEW.pinned IS NOT OLD.pinned
+BEGIN
+    UPDATE rooms SET updates = updates + 1, info_updated = updates + 1 WHERE id = NEW.id;
+END;
+-- Triggers to update `info_updated` when the mod list changes:
+CREATE TRIGGER room_metadata_mods_insert AFTER INSERT ON user_permission_overrides
+FOR EACH ROW WHEN NEW.moderator OR NEW.admin
+BEGIN
+    UPDATE rooms SET updates = updates + 1, info_updated = updates + 1 WHERE id = NEW.room;
+END;
+CREATE TRIGGER room_metadata_mods_update AFTER UPDATE ON user_permission_overrides
+FOR EACH ROW WHEN (NEW.moderator OR NEW.admin) != (OLD.moderator OR OLD.admin)
+BEGIN
+    UPDATE rooms SET updates = updates + 1, info_updated = updates + 1 WHERE id = NEW.room;
+END;
+CREATE TRIGGER room_metadata_mods_delete AFTER DELETE ON user_permission_overrides
+FOR EACH ROW WHEN OLD.moderator OR OLD.admin
+BEGIN
+    UPDATE rooms SET updates = updates + 1, info_updated = updates + 1 WHERE id = NEW.room;
+END;
+-- Trigger to update `info_updated` of all rooms whenever we add/remove a global moderator/admin
+-- because global mod settings affect the permissions of all rooms (and polling clients need to pick
+-- up on this).
+CREATE TRIGGER room_metadata_global_mods_insert AFTER INSERT ON users
+FOR EACH ROW WHEN NEW.
 
 CREATE TABLE messages (
     id INTEGER NOT NULL PRIMARY KEY,
@@ -125,7 +159,7 @@ CREATE TABLE users (
     banned BOOLEAN NOT NULL DEFAULT FALSE, /* true = globally banned from all rooms */
     moderator BOOLEAN NOT NULL DEFAULT FALSE, /* true = moderator of all rooms, and can add global bans */
     admin BOOLEAN NOT NULL DEFAULT FALSE, /* true = admin of all rooms, and can appoint global bans/mod/admins */
-    visible_mod BOOLEAN NOT NULL DEFAULT FALSE, /* if true this user (if a moderator) is included in the list of each room's public moderators *unless* specifically listed as a hidden moderator of a room */
+    visible_mod BOOLEAN NOT NULL DEFAULT FALSE, /* if true this user's moderator status is viewable by regular room users of all rooms */
     CHECK(NOT (banned AND (moderator OR admin))) /* someone cannot be banned *and* a moderator at the same time */
 );
 CREATE INDEX users_last_active ON users(last_active);
