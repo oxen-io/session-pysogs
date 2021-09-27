@@ -27,37 +27,6 @@ BEGIN
     UPDATE files SET expiry = 0.0 WHERE id = OLD.image;
 END;
 
--- Trigger to update `info_updated` on metadata column changes
-CREATE TRIGGER room_metadata_update AFTER UPDATE ON rooms
-FOR EACH ROW WHEN
-    NEW.name IS NOT OLD.name OR
-    NEW.description IS NOT OLD.description OR
-    NEW.image IS NOT OLD.image OR
-    NEW.pinned IS NOT OLD.pinned
-BEGIN
-    UPDATE rooms SET updates = updates + 1, info_updated = updates + 1 WHERE id = NEW.id;
-END;
--- Triggers to update `info_updated` when the mod list changes:
-CREATE TRIGGER room_metadata_mods_insert AFTER INSERT ON user_permission_overrides
-FOR EACH ROW WHEN NEW.moderator OR NEW.admin
-BEGIN
-    UPDATE rooms SET updates = updates + 1, info_updated = updates + 1 WHERE id = NEW.room;
-END;
-CREATE TRIGGER room_metadata_mods_update AFTER UPDATE ON user_permission_overrides
-FOR EACH ROW WHEN (NEW.moderator OR NEW.admin) != (OLD.moderator OR OLD.admin)
-BEGIN
-    UPDATE rooms SET updates = updates + 1, info_updated = updates + 1 WHERE id = NEW.room;
-END;
-CREATE TRIGGER room_metadata_mods_delete AFTER DELETE ON user_permission_overrides
-FOR EACH ROW WHEN OLD.moderator OR OLD.admin
-BEGIN
-    UPDATE rooms SET updates = updates + 1, info_updated = updates + 1 WHERE id = NEW.room;
-END;
--- Trigger to update `info_updated` of all rooms whenever we add/remove a global moderator/admin
--- because global mod settings affect the permissions of all rooms (and polling clients need to pick
--- up on this).
-CREATE TRIGGER room_metadata_global_mods_insert AFTER INSERT ON users
-FOR EACH ROW WHEN NEW.
 
 CREATE TABLE messages (
     id INTEGER NOT NULL PRIMARY KEY,
@@ -243,6 +212,53 @@ FOR EACH ROW WHEN NEW.banned
 BEGIN
     DELETE FROM room_users WHERE room = NEW.room AND user = NEW.user;
 END;
+
+
+-- Triggers to update `rooms.info_updated` on metadata column changes
+CREATE TRIGGER room_metadata_update AFTER UPDATE ON rooms
+FOR EACH ROW WHEN
+    NEW.name IS NOT OLD.name OR
+    NEW.description IS NOT OLD.description OR
+    NEW.image IS NOT OLD.image OR
+    NEW.pinned IS NOT OLD.pinned
+BEGIN
+    UPDATE rooms SET updates = updates + 1, info_updated = updates + 1 WHERE id = NEW.id;
+END;
+-- Triggers to update `info_updated` when the mod list changes:
+CREATE TRIGGER room_metadata_mods_insert AFTER INSERT ON user_permission_overrides
+FOR EACH ROW WHEN NEW.moderator OR NEW.admin
+BEGIN
+    UPDATE rooms SET updates = updates + 1, info_updated = updates + 1 WHERE id = NEW.room;
+END;
+CREATE TRIGGER room_metadata_mods_update AFTER UPDATE ON user_permission_overrides
+FOR EACH ROW WHEN NEW.moderator != OLD.moderator OR NEW.admin != OLD.admin
+BEGIN
+    UPDATE rooms SET updates = updates + 1, info_updated = updates + 1 WHERE id = NEW.room;
+END;
+CREATE TRIGGER room_metadata_mods_delete AFTER DELETE ON user_permission_overrides
+FOR EACH ROW WHEN OLD.moderator OR OLD.admin
+BEGIN
+    UPDATE rooms SET updates = updates + 1, info_updated = updates + 1 WHERE id = OLD.room;
+END;
+-- Trigger to update `info_updated` of all rooms whenever we add/remove a global moderator/admin
+-- because global mod settings affect the permissions of all rooms (and polling clients need to pick
+-- up on this).
+CREATE TRIGGER room_metadata_global_mods_insert AFTER INSERT ON users
+FOR EACH ROW WHEN (NEW.admin OR NEW.moderator) AND NEW.visible_mod
+BEGIN
+    UPDATE rooms SET updates = updates + 1, info_updated = updates + 1; -- WHERE everything!
+END;
+CREATE TRIGGER room_metadata_global_mods_update AFTER UPDATE ON users
+FOR EACH ROW WHEN (NEW.moderator != OLD.moderator OR NEW.admin != OLD.admin) AND (NEW.visible_mod OR OLD.visible_mod)
+BEGIN
+    UPDATE rooms SET updates = updates + 1, info_updated = updates + 1; -- WHERE everything!
+END;
+CREATE TRIGGER room_metadata_global_mods_delete AFTER DELETE ON users
+FOR EACH ROW WHEN (OLD.moderator OR OLD.admin) AND OLD.visible_mod
+BEGIN
+    UPDATE rooms SET updates = updates + 1, info_updated = updates + 1; -- WHERE everything!
+END;
+
 
 -- View of permissions; for users with an entry in user_permissions we use those values; for null
 -- values or no user_permissions entry we return the room's default read/write values (and false for
