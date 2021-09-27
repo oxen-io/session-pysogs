@@ -66,7 +66,7 @@ async fn test_authorization() {
     let hex_incorrect_token = hex::encode(incorrect_token);
     match handlers::claim_auth_token(&hex_user_public_key, &hex_incorrect_token, &pool) {
         Ok(_) => assert!(false),
-        Err(_) => (),
+        Err(_) => ()
     }
 }
 
@@ -83,7 +83,7 @@ async fn test_file_handling() {
         Some(test_room_id.get_id().to_string()),
         TEST_FILE,
         Some(auth_token.clone()),
-        &pool,
+        &pool
     )
     .await
     .unwrap();

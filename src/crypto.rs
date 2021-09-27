@@ -4,23 +4,25 @@ use std::sync::Mutex;
 
 use aes_gcm::aead::{generic_array::GenericArray, Aead, NewAead};
 use aes_gcm::Aes256Gcm;
+use blake2::{Blake2b, Digest};
+use curve25519_dalek;
 use hmac::{Hmac, Mac, NewMac};
 use log::{error, warn};
 use rand::{thread_rng, Rng};
 use rand_core::OsRng;
 use sha2::Sha256;
-use curve25519_dalek;
-use blake2::{Blake2b, Digest};
 
 use super::errors::Error;
 
 type HmacSha256 = Hmac<Sha256>;
 
-// By default the aes-gcm crate will use software implementations of both AES and the POLYVAL universal hash function. When
-// targeting modern x86/x86_64 CPUs, use the following RUSTFLAGS to take advantage of high performance AES-NI and CLMUL CPU
-// intrinsics:
+// By default the aes-gcm crate will use software implementations of both AES
+// and the POLYVAL universal hash function. When targeting modern x86/x86_64
+// CPUs, use the following RUSTFLAGS to take advantage of high performance
+// AES-NI and CLMUL CPU intrinsics:
 //
-// RUSTFLAGS="-Ctarget-cpu=sandybridge -Ctarget-feature=+aes,+sse2,+sse4.1,+ssse3"
+// RUSTFLAGS="-Ctarget-cpu=sandybridge
+// -Ctarget-feature=+aes,+sse2,+sse4.1,+ssse3"
 
 const IV_SIZE: usize = 12;
 
@@ -57,8 +59,11 @@ lazy_static::lazy_static! {
     };
 }
 
-/// Takes hex string representation of an ed25519 pubkey, returns the ed25519 pubkey, derived x25519 pubkey, and the Session id in hex.
-pub fn get_pubkeys(edpk_hex: &str) -> Result<(ed25519_dalek::PublicKey, x25519_dalek::PublicKey, String), warp::reject::Rejection> {
+/// Takes hex string representation of an ed25519 pubkey, returns the ed25519
+/// pubkey, derived x25519 pubkey, and the Session id in hex.
+pub fn get_pubkeys(
+    edpk_hex: &str
+) -> Result<(ed25519_dalek::PublicKey, x25519_dalek::PublicKey, String), warp::reject::Rejection> {
     if edpk_hex.len() != 64 {
         return Err(warp::reject::custom(Error::DecryptionFailed));
     }
@@ -70,7 +75,8 @@ pub fn get_pubkeys(edpk_hex: &str) -> Result<(ed25519_dalek::PublicKey, x25519_d
         }
     };
 
-    let edpk = ed25519_dalek::PublicKey::from_bytes(&edpk_bytes).map_err(|_| Error::DecryptionFailed)?;
+    let edpk =
+        ed25519_dalek::PublicKey::from_bytes(&edpk_bytes).map_err(|_| Error::DecryptionFailed)?;
     let compressed = curve25519_dalek::edwards::CompressedEdwardsY::from_slice(&edpk_bytes);
     let edpoint = compressed.decompress().ok_or(warp::reject::custom(Error::DecryptionFailed))?;
     if !edpoint.is_torsion_free() {
@@ -85,8 +91,10 @@ pub fn get_pubkeys(edpk_hex: &str) -> Result<(ed25519_dalek::PublicKey, x25519_d
 }
 
 pub fn get_x25519_symmetric_key(
-    public_key: &[u8], private_key: &x25519_dalek::StaticSecret,
-) -> Result<Vec<u8>, warp::reject::Rejection> {
+    public_key: &[u8],
+    private_key: &x25519_dalek::StaticSecret
+) -> Result<Vec<u8>, warp::reject::Rejection>
+{
     if public_key.len() != 32 {
         error!(
             "Couldn't create symmetric key using public key of invalid length: {}.",
@@ -103,8 +111,10 @@ pub fn get_x25519_symmetric_key(
 }
 
 pub fn encrypt_aes_gcm(
-    plaintext: &[u8], symmetric_key: &[u8],
-) -> Result<Vec<u8>, warp::reject::Rejection> {
+    plaintext: &[u8],
+    symmetric_key: &[u8]
+) -> Result<Vec<u8>, warp::reject::Rejection>
+{
     let mut iv = [0u8; IV_SIZE];
     thread_rng().fill(&mut iv[..]);
     let cipher = Aes256Gcm::new(&GenericArray::from_slice(symmetric_key));
@@ -122,8 +132,10 @@ pub fn encrypt_aes_gcm(
 }
 
 pub fn decrypt_aes_gcm(
-    iv_and_ciphertext: &[u8], symmetric_key: &[u8],
-) -> Result<Vec<u8>, warp::reject::Rejection> {
+    iv_and_ciphertext: &[u8],
+    symmetric_key: &[u8]
+) -> Result<Vec<u8>, warp::reject::Rejection>
+{
     if iv_and_ciphertext.len() < IV_SIZE {
         warn!("Ignoring ciphertext of invalid size: {}.", iv_and_ciphertext.len());
         return Err(warp::reject::custom(Error::DecryptionFailed));

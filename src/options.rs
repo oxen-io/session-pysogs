@@ -2,8 +2,8 @@ use std::net::Ipv4Addr;
 
 use structopt::StructOpt;
 
-// The default is * not * to run in TLS mode. This is because normally the server communicates through
-// onion requests, eliminating the need for TLS.
+// The default is *not* to run in TLS mode. This is because normally the server communicates
+// through onion requests, eliminating the need for TLS.
 
 #[derive(StructOpt)]
 #[structopt(name = "Session Open Group Server")]
@@ -64,5 +64,5 @@ pub struct Opt {
 
     /// Prints the URL format users can use to join rooms on this open group server.
     #[structopt(long = "print-url")]
-    pub print_url: bool,
+    pub print_url: bool
 }

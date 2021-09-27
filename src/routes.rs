@@ -37,7 +37,6 @@ pub fn lsrpc() -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + C
 ///
 /// Not publicly exposed.
 pub fn create_room() -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
-
     return warp::post()
         .and(warp::path("rooms"))
         .and(warp::body::json())
@@ -105,8 +104,10 @@ pub async fn root_html() -> Result<Response, Rejection> {
 }
 
 pub async fn fallback_html(
-    room: String, query_map: HashMap<String, String>,
-) -> Result<Response, Rejection> {
+    room: String,
+    query_map: HashMap<String, String>
+) -> Result<Response, Rejection>
+{
     if !query_map.contains_key("public_key") || room == "" {
         return fallback_nopubkey_html().await;
     }

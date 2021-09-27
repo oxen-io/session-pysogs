@@ -1,19 +1,22 @@
-use warp::{http::StatusCode, reply::Reply, reply::Response, Rejection, reject::Reject};
+use warp::{http::StatusCode, reject::Reject, reply::Reply, reply::Response, Rejection};
 
 #[derive(Debug)]
 pub enum Error {
     DecryptionFailed,
     DatabaseFailedInternally,
     InvalidOnionRequest,
-    /// Usually this means the endpoint or HTTP method specified in the RPC call was malformed.
+    /// Usually this means the endpoint or HTTP method specified in the RPC call
+    /// was malformed.
     InvalidRpcCall,
-    /// The requesting user didn't provide an auth token for a route that requires one.
+    /// The requesting user didn't provide an auth token for a route that
+    /// requires one.
     NoAuthToken,
     NoSuchRoom,
     RateLimited,
-    /// The requesting user provided a valid auth token, but they don't have a high enough permission level.
+    /// The requesting user provided a valid auth token, but they don't have a
+    /// high enough permission level.
     Unauthorized,
-    ValidationFailed,
+    ValidationFailed
 }
 impl Reject for Error {}
 

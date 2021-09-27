@@ -3,10 +3,8 @@
 use parking_lot::RwLock;
 use std::fs;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::{
-    collections::HashMap,
-    sync::atomic::{AtomicBool, AtomicU16, Ordering},
-};
+use std::{collections::HashMap,
+          sync::atomic::{AtomicBool, AtomicU16, Ordering}};
 
 use futures::join;
 use log::info;
@@ -86,21 +84,13 @@ async fn main() {
                 .run(addr);
             let serve_private_routes_future = warp::serve(private_routes).run(localhost);
             // Keep futures alive
-            join!(
-                db_maintenance_future,
-                serve_public_routes_future,
-                serve_private_routes_future
-            );
+            join!(db_maintenance_future, serve_public_routes_future, serve_private_routes_future);
         } else {
             info!("Running on {}.", addr);
             let serve_public_routes_future = warp::serve(public_routes).run(addr);
             let serve_private_routes_future = warp::serve(private_routes).run(localhost);
             // Keep futures alive
-            join!(
-                db_maintenance_future,
-                serve_public_routes_future,
-                serve_private_routes_future
-            );
+            join!(db_maintenance_future, serve_public_routes_future, serve_private_routes_future);
         }
     }
 }
@@ -123,7 +113,8 @@ async fn execute_commands(opt: options::Opt) {
     }
     // Add a moderator
     if let Some(args) = opt.add_moderator {
-        // FIXME: need to add an ability to add an admin instead of moderator (by setting the "admin" param to true)
+        // FIXME: need to add an ability to add an admin instead of moderator (by setting the
+        // "admin" param to true)
         let mut params = HashMap::new();
         params.insert("public_key", &args[0]);
         params.insert("room_id", &args[1]);
