@@ -1299,9 +1299,10 @@ fn require_authorization_impl(conn: &rusqlite::Connection, user: &User, room: &R
     };
 
     if log_active {
-        conn.prepare_cached("UPDATE room_users SET last_active = ? WHERE user = ? AND room = ?")
+        conn.prepare_cached("INSERT INTO room_users (user, room) VALUES (?, ?)
+                            ON CONFLICT DO UPDATE SET last_active = ((julianday('now') - 2440587.5)*86400.0)")
             .map_err(db_error)?
-            .execute(params![unixtime_f64(), user.id, room.id])
+            .execute(params![user.id, room.id])
             .map_err(db_error)?;
     }
     Ok(())
