@@ -1,18 +1,18 @@
-![example workflow](https://github.com/nielsandriesse/session-open-group-server/actions/workflows/check.yml/badge.svg)
+![example workflow](https://github.com/oxen-io/session-open-group-server/actions/workflows/check.yml/badge.svg)
 
-[API Documentation](https://github.com/nielsandriesse/session-open-group-server/blob/main/DOCUMENTATION.md)
+[API Documentation](https://github.com/oxen-io/session-open-group-server/blob/main/DOCUMENTATION.md)
 
-[CLI Reference](https://github.com/nielsandriesse/session-open-group-server/blob/main/CLI.md)
+[CLI Reference](https://github.com/oxen-io/session-open-group-server/blob/main/CLI.md)
 
-Want to build from source? See [BUILDING.md](https://github.com/nielsandriesse/session-open-group-server/blob/main/BUILDING.md).  
-Want to deploy using Docker? See [DOCKER.md](https://github.com/nielsandriesse/session-open-group-server/blob/main/DOCKER.md).
+Want to build from source? See [BUILDING.md](https://github.com/oxen-io/session-open-group-server/blob/main/BUILDING.md).  
+Want to deploy using Docker? See [DOCKER.md](https://github.com/oxen-io/session-open-group-server/blob/main/DOCKER.md).
 
 ## Installation Instructions
 
 ### [Video Guide](https://www.youtube.com/watch?v=D83gKXn6iTI)
 
 **Note:** .debs for the Session Open Group server are currently only available for Ubuntu 20.04.  
-For other operating systems, you can either [build from source](https://github.com/nielsandriesse/session-open-group-server/blob/main/BUILDING.md) or use [Docker](https://github.com/nielsandriesse/session-open-group-server/blob/main/DOCKER.md).
+For other operating systems, you can either [build from source](https://github.com/oxen-io/session-open-group-server/blob/main/BUILDING.md) or use [Docker](https://github.com/oxen-io/session-open-group-server/blob/main/DOCKER.md).
 
 ### Step 1: Pull in the Session open group server executable:
 
@@ -92,7 +92,7 @@ Or
 
 ## Customization
 
-The default options the Session open group server runs with should be fine in most cases, but if you like you can run on a custom port or host, specify the path to the X25519 key pair you want to use, etc. To do this, simply add [the right arguments](https://github.com/nielsandriesse/session-open-group-server/blob/main/BUILDING.md#step-3-run-it) to the `ExecStart` line in your systemd service file (normally located under `/etc/systemd/system`) and restart your service using:
+The default options the Session open group server runs with should be fine in most cases, but if you like you can run on a custom port or host, specify the path to the X25519 key pair you want to use, etc. To do this, simply add [the right arguments](https://github.com/oxen-io/session-open-group-server/blob/main/BUILDING.md#step-3-run-it) to the `ExecStart` line in your systemd service file (normally located under `/etc/systemd/system`) and restart your service using:
 
 ```
 systemctl restart session-open-group-server.service
