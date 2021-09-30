@@ -157,3 +157,32 @@ pub fn generate_x25519_key_pair() -> (x25519_dalek::StaticSecret, x25519_dalek::
     let public_key = x25519_dalek::PublicKey::from(&private_key);
     return (private_key, public_key);
 }
+
+// Verifies a signature over the given byte parts, concatenated together.
+pub fn verify_signature(
+    edpk: &ed25519_dalek::PublicKey,
+    sig: &ed25519_dalek::Signature,
+    parts: &[&[u8]]
+) -> Result<(), Error>
+{
+    let mut verify_buf: Vec<u8> = Vec::new();
+    let verify: &[u8];
+    if parts.len() == 1 {
+        verify = &parts[0];
+    } else {
+        verify_buf.reserve_exact(parts.iter().map(|&x| x.len()).sum());
+        for &x in parts {
+            verify_buf.extend_from_slice(x);
+        }
+        verify = &verify_buf;
+    }
+
+    if let Err(sigerr) = edpk.verify_strict(verify, &sig) {
+        warn!("Request signature verification failed: {}", sigerr);
+        return Err(Error::ValidationFailed);
+    }
+    Ok(())
+}
+
+
+//pub fn verify_xed25519(

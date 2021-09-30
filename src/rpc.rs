@@ -81,7 +81,7 @@ pub async fn handle_rpc_call(mut rpc_call: RpcCall) -> Result<Response, Rejectio
         );
         let sig = ed25519_dalek::Signature::new(sig_bytes);
 
-        if let Err(sigerr) = handlers::verify_signature(&edpk, &sig, &vec![
+        if let Err(sigerr) = crypto::verify_signature(&edpk, &sig, &vec![
             rpc_call.endpoint.as_bytes(),
             rpc_call.method.as_bytes(),
             rpc_call.body.as_bytes(),

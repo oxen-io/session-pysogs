@@ -1,14 +1,16 @@
 use std::fs;
+use std::collections::HashMap;
+use std::path::Path;
 use std::time::{Duration, SystemTime};
 
 use log::{error, info, warn};
 use r2d2_sqlite::SqliteConnectionManager;
 use regex::Regex;
 use rusqlite::{config::DbConfig, params};
-//use rusqlite_migration::{Migrations, M};
 
 use super::errors::Error;
 use super::models::Room;
+use super::migration;
 
 pub type DatabaseConnection = r2d2::PooledConnection<SqliteConnectionManager>;
 pub type DatabaseConnectionPool = r2d2::Pool<SqliteConnectionManager>;
@@ -49,6 +51,14 @@ pub const ROOM_ACTIVE_PRUNE_THRESHOLD: Duration = Duration::from_secs(60 * 86400
 // How long we keep message edit/deletion history.
 pub const MESSAGE_HISTORY_PRUNE_THRESHOLD: Duration = Duration::from_secs(30 * 86400);
 
+
+// Migration support: when migrating to 0.2.x old room ids cannot be preserved, so we map the old
+// id range [1, max] to the new range [offset+1, offset+max].
+pub struct RoomMigrationMap {
+    pub max: i64,
+    pub offset: i64
+}
+
 lazy_static::lazy_static! {
 
     static ref DB_POOL: DatabaseConnectionPool = {
@@ -70,6 +80,41 @@ lazy_static::lazy_static! {
             });
         return r2d2::Pool::new(db_manager).unwrap();
     };
+
+    // True if we have a room import hacks table that we might need to use for room polling.
+    pub static ref ROOM_IMPORT_HACKS: Option<HashMap<i64, RoomMigrationMap>> = {
+        if let Ok(conn) = DB_POOL.get() {
+            if let Ok(hacks) = get_room_hacks(&conn) {
+                if !hacks.is_empty() {
+                    return Some(hacks);
+                }
+            }
+        }
+        None
+    };
+
+    pub static ref HAVE_FILE_ID_HACKS: bool = {
+        if let Ok(conn) = DB_POOL.get() {
+            if match conn.query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'file_id_hacks')",
+                [], |row| row.get::<_, bool>(0)) {
+                    Ok(exists) => exists,
+                    Err(_) => false
+                }
+            {
+                // If the table exists, but is empty, then drop it (it will be empty if all the
+                // files we had temporary id mappings for are now expired and deleted).
+                if let Ok(count) = conn.query_row("SELECT COUNT(*) FROM file_id_hacks", [], |row| row.get::<_, i64>(0)) {
+                    if count == 0 {
+                        let _ = conn.execute("DROP TABLE file_id_hacks", []);
+                        return false;
+                    }
+                }
+                return true;
+            }
+        }
+        return false;
+    };
 }
 
 pub fn get_conn() -> Result<DatabaseConnection, Error> {
@@ -80,6 +125,16 @@ pub fn get_conn() -> Result<DatabaseConnection, Error> {
             return Err(Error::DatabaseFailedInternally);
         }
     }
+}
+
+fn get_room_hacks(conn: &rusqlite::Connection) -> Result<HashMap<i64, RoomMigrationMap>, rusqlite::Error> {
+    let mut hacks = HashMap::new();
+    let mut st = conn.prepare("SELECT room, old_message_id_max, message_id_offset FROM room_import_hacks")?;
+    let mut query = st.query([])?;
+    while let Some(row) = query.next()? {
+        hacks.insert(row.get(0)?, RoomMigrationMap { max: row.get(1)?, offset: row.get(2)? });
+    }
+    Ok(hacks)
 }
 
 pub fn get_transaction<'a>(
@@ -94,12 +149,12 @@ pub fn db_error(e: rusqlite::Error) -> Error {
 }
 
 /// Initialize the database, creating and migrating its structure if necessary.
-pub fn create_database_if_needed() {
+pub fn setup_database() {
     if rusqlite::version_number() < 3035000 {
         panic!("SQLite 3.35.0+ is required!");
     }
 
-    let conn = get_conn().unwrap();
+    let mut conn = get_conn().unwrap();
 
     let have_messages = match conn.query_row(
         "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'messages')",
@@ -113,13 +168,31 @@ pub fn create_database_if_needed() {
     };
 
     if !have_messages {
+        warn!("No database detected; creating new database schema");
         conn.execute_batch(include_str!("schema.sql")).expect("Couldn't create database schema.");
-
-        // TODO: migration code from old multi-DB structure goes here
     }
 
-    // Future DB migration code goes here
+    let n_rooms = match conn.query_row("SELECT COUNT(*) FROM rooms", params![], |row| row.get::<_, i64>(0)) {
+        Ok(r) => r,
+        Err(e) => {
+            panic!("Error querying database for # of rooms: {}", e);
+        }
+    };
+
+    if n_rooms == 0 && Path::new("database.db").exists() {
+        // If we have no rooms then check to see if there is an old (pre-v0.2) set of databases to
+        // import from.
+        warn!("No rooms found, but database.db exists; attempting migration");
+        if let Err(e) = migration::migrate_0_2_0(&mut conn) {
+            panic!("\n\ndatabase.db exists but migration failed:\n\n    {}.\n\n\
+            Please report this bug!\n\n\
+            If no migration from 0.1.x is needed then rename or delete database.db to start up with a fresh (new) database.\n\n", e);
+        }
+    }
+
+    // Future migrations here
 }
+
 
 // Performs periodic DB maintenance: file pruning, delayed permission applying,
 // etc.

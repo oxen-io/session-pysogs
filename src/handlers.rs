@@ -432,10 +432,19 @@ pub fn get_file(room: Room, id: i64, user: User) -> Result<Response, Rejection> 
         ..Default::default()
     })?;
 
-    let row = conn
+    let mut row = conn
         .prepare_cached("SELECT path FROM files WHERE room = ? AND id = ?")
         .map_err(db_error)?
         .query_row(params![room.id, id], |row| row.get(0));
+    if row == Err(rusqlite::Error::QueryReturnedNoRows) && *storage::HAVE_FILE_ID_HACKS {
+        // Migration handling: we may have some file ID mappings from old IDs to new IDs in the
+        // file_id_hacks table, so try again using it
+        row = conn.prepare_cached("SELECT path FROM files WHERE id = \
+                                  (SELECT file FROM file_id_hacks WHERE room = ? AND old_file_id = ?)")
+            .map_err(db_error)?
+            .query_row(params![room.id, id], |row| row.get(0));
+    }
+
     file_response(row)
 }
 
@@ -502,32 +511,6 @@ pub fn decode_hex_or_b64(value: &str, byte_size: usize) -> Result<Vec<u8>, Error
     return Err(Error::InvalidRpcCall);
 }
 
-// Verifies a signature over the given byte parts, concatenated together.
-pub fn verify_signature(
-    edpk: &ed25519_dalek::PublicKey,
-    sig: &ed25519_dalek::Signature,
-    parts: &[&[u8]]
-) -> Result<(), Error>
-{
-    let mut verify_buf: Vec<u8> = Vec::new();
-    let verify: &[u8];
-    if parts.len() == 1 {
-        verify = &parts[0];
-    } else {
-        verify_buf.reserve_exact(parts.iter().map(|&x| x.len()).sum());
-        for &x in parts {
-            verify_buf.extend_from_slice(x);
-        }
-        verify = &verify_buf;
-    }
-
-    if let Err(sigerr) = edpk.verify_strict(verify, &sig) {
-        warn!("Request signature verification failed: {}", sigerr);
-        return Err(Error::ValidationFailed);
-    }
-    Ok(())
-}
-
 pub fn insert_or_update_user(conn: &rusqlite::Connection, session_id: &str) -> Result<User, Error> {
     Ok(conn
         .prepare_cached(
@@ -557,7 +540,7 @@ pub fn get_user_from_token(
     let session_id = hex::encode(session_id_bytes);
     let sig = ed25519_dalek::Signature::try_from(sig_bytes).map_err(|_| Error::NoAuthToken)?;
     if let Err(sigerr) =
-        verify_signature(&crypto::TOKEN_SIGNING_KEYS.public, &sig, &[session_id_bytes])
+        crypto::verify_signature(&crypto::TOKEN_SIGNING_KEYS.public, &sig, &[session_id_bytes])
     {
         warn!("Deprecated token signature verification failed for {}: {:?}", session_id, sigerr);
         return Err(Error::NoAuthToken);
@@ -637,7 +620,7 @@ pub fn insert_message(
     // we retrieve.
     let size = data.len();
     let trimmed = match data.iter().rposition(|&c| c != 0u8) {
-        Some(last) => &data[0..last + 1],
+        Some(last) => &data[0..=last],
         None => &data
     };
 
@@ -1290,8 +1273,8 @@ pub fn compact_poll(
         let mut get_deleted_msgs = tx
             .prepare_cached(
                 "SELECT id, updated FROM messages \
-            WHERE room = ? AND updated > ? AND data IS NULL \
-            ORDER BY updated LIMIT 256"
+                WHERE room = ? AND updated > ? AND data IS NULL \
+                ORDER BY updated LIMIT 256"
             )
             .map_err(db_error)?;
 
@@ -1343,11 +1326,21 @@ pub fn compact_poll(
 
             // Older Session clients ask us for messages since some ID & deletions since some
             // deletion ID, and can't handle edits at all:
-            response.messages = if let Some(since) = request.from_message_server_id {
+            response.messages = if let Some(mut since) = request.from_message_server_id {
                 debug!(
                     "Got deprecated poll request for room {} messages since {}",
                     room.token, since
                 );
+                // If this is an imported database then we might have room id maps for "since-id"
+                // requests made from a client before the migration, and if so, we need to offset
+                // the requested id.
+                if let Some(hacks) = storage::ROOM_IMPORT_HACKS.as_ref() {
+                    if let Some(map) = hacks.get(&room.id) {
+                        if since <= map.max {
+                            since += map.offset;
+                        }
+                    }
+                }
                 get_msgs_since.query_map(params![room.id, since], OldMessage::from_row)
             } else {
                 debug!(
@@ -1360,7 +1353,7 @@ pub fn compact_poll(
             .collect::<Result<Vec<models::OldMessage>, _>>()
             .map_err(db_error)?;
 
-            let make_delmsg = |row| {
+            let make_delmsg = |row: &rusqlite::Row| {
                 Ok(models::DeletedMessage { deleted_message_id: row.get(0)?, updated: row.get(1)? })
             };
 

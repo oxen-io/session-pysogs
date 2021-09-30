@@ -21,6 +21,7 @@ mod options;
 mod routes;
 mod rpc;
 mod storage;
+mod migration;
 
 #[cfg(test)]
 mod tests;
@@ -62,7 +63,7 @@ async fn main() {
         info!("Users can join rooms on this open group server using the following URL format:");
         info!("{}", get_url());
         // Create the main database
-        storage::create_database_if_needed();
+        storage::setup_database();
         // Create required folders
         fs::create_dir_all("./files").unwrap();
         // Set up pruning jobs
