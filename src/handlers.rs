@@ -746,7 +746,7 @@ pub async fn add_moderator_public(
     body: models::ChangeModeratorRequestBody, auth_token: &str,
 ) -> Result<Response, Rejection> {
     let room_id = storage::RoomId::new(&body.room_id).ok_or(Error::ValidationFailed)?;
-    let pool = storage::pool_by_room_id(&room_id);
+    let pool = storage::pool_by_room_id(&room_id)?;
     let (has_authorization_level, _) =
         has_authorization_level(auth_token, AuthorizationLevel::Moderator, &pool)?;
     if !has_authorization_level {
@@ -762,7 +762,7 @@ pub async fn add_moderator(
     // Get a database connection
     let pool = storage::pool_by_room_id(
         &storage::RoomId::new(&body.room_id).ok_or(Error::ValidationFailed)?,
-    );
+    )?;
     let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     // Insert the moderator
     let stmt = "INSERT INTO moderators (public_key) VALUES (?1)";
@@ -784,7 +784,7 @@ pub async fn delete_moderator_public(
 ) -> Result<Response, Rejection> {
     let pool = storage::pool_by_room_id(
         &storage::RoomId::new(&body.room_id).ok_or(Error::ValidationFailed)?,
-    );
+    )?;
     let (has_authorization_level, _) =
         has_authorization_level(auth_token, AuthorizationLevel::Moderator, &pool)?;
     if !has_authorization_level {
@@ -800,7 +800,7 @@ pub async fn delete_moderator(
     // Get a database connection
     let pool = storage::pool_by_room_id(
         &storage::RoomId::new(&body.room_id).ok_or(Error::ValidationFailed)?,
-    );
+    )?;
     let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
     // Insert the moderator
     let stmt = "DELETE FROM moderators WHERE public_key = (?1)";
@@ -1034,7 +1034,7 @@ pub fn compact_poll(
         // Get the database connection pool
         let pool = storage::pool_by_room_id(
             &storage::RoomId::new(&room_id).ok_or(Error::ValidationFailed)?,
-        );
+        )?;
         // Get the new messages
         let mut get_messages_query_params: HashMap<String, String> = HashMap::new();
         if let Some(from_message_server_id) = from_message_server_id {
@@ -1158,7 +1158,7 @@ pub async fn get_stats_for_room(
 
     let lowerbound = upperbound - window;
     let pool =
-        storage::pool_by_room_id(&storage::RoomId::new(&room_id).ok_or(Error::ValidationFailed)?);
+        storage::pool_by_room_id(&storage::RoomId::new(&room_id).ok_or(Error::ValidationFailed)?)?;
     let conn = pool.get().map_err(|_| Error::DatabaseFailedInternally)?;
 
     let raw_query_users =

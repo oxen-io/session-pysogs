@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Mutex;
 
-use log::{error, info};
+use log::{error, warn, info};
 use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::params;
 use rusqlite_migration::{Migrations, M};
@@ -74,23 +74,41 @@ lazy_static::lazy_static! {
     static ref POOLS: Mutex<HashMap<String, DatabaseConnectionPool>> = Mutex::new(HashMap::new());
 }
 
-pub fn pool_by_room_id(room_id: &RoomId) -> DatabaseConnectionPool {
+pub fn pool_by_room_id(room_id: &RoomId) -> Result<DatabaseConnectionPool, Error> {
     let mut pools = POOLS.lock().unwrap();
     if let Some(pool) = pools.get(room_id.get_id()) {
-        return pool.clone();
+        return Ok(pool.clone());
     } else {
-        let raw_path = format!("rooms/{}.db", room_id.get_id());
-        let path = Path::new(&raw_path);
-        let db_manager = r2d2_sqlite::SqliteConnectionManager::file(path);
-        let pool = r2d2::Pool::new(db_manager).unwrap();
-        pools.insert(room_id.get_id().to_string(), pool);
-        return pools[room_id.get_id()].clone();
+        let pool = &MAIN_POOL;
+        if let Ok(conn) = pool.get() {
+            if let Ok(count) = conn.query_row("SELECT COUNT(*) FROM main WHERE id = ?", params![room_id.get_id()],
+                |row| row.get::<_, i64>(0)) {
+                if count == 0 {
+                    warn!("Cannot access room database: room {} does not exist", room_id.get_id());
+                    return Err(Error::NoSuchRoom);
+                }
+                let raw_path = format!("rooms/{}.db", room_id.get_id());
+                let path = Path::new(&raw_path);
+                let db_manager = r2d2_sqlite::SqliteConnectionManager::file(path);
+                let pool = match r2d2::Pool::new(db_manager) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        error!("Unable to access {} database: {}", room_id.get_id(), e);
+                        return Err(Error::DatabaseFailedInternally);
+                    }
+                };
+                pools.insert(room_id.get_id().to_string(), pool);
+                return Ok(pools[room_id.get_id()].clone());
+            }
+        }
+        error!("Failed to query main database for room {} existence", room_id.get_id());
+        return Err(Error::DatabaseFailedInternally);
     }
 }
 
 pub fn create_database_if_needed(room_id: &RoomId) {
     let pool = pool_by_room_id(room_id);
-    let conn = pool.get().unwrap();
+    let conn = pool.unwrap().get().unwrap();
     create_room_tables_if_needed(&conn);
 }
 
@@ -194,7 +212,10 @@ async fn prune_tokens() {
         Err(_) => return,
     };
     for room in rooms {
-        let pool = pool_by_room_id(&room);
+        let pool = match pool_by_room_id(&room) {
+            Ok(p) => p,
+            Err(_) => return
+        };
         // It's not catastrophic if we fail to prune the database for a given room
         let conn = match pool.get() {
             Ok(conn) => conn,
@@ -217,7 +238,10 @@ async fn prune_pending_tokens() {
         Err(_) => return,
     };
     for room in rooms {
-        let pool = pool_by_room_id(&room);
+        let pool = match pool_by_room_id(&room) {
+            Ok(p) => p,
+            Err(_) => return
+        };
         // It's not catastrophic if we fail to prune the database for a given room
         let conn = match pool.get() {
             Ok(conn) => conn,
@@ -330,8 +354,9 @@ pub async fn prune_files(file_expiration: i64) {
     };
 
     let futs = rooms.into_iter().map(|room| async move {
-        let pool = pool_by_room_id(&room);
-        prune_files_for_room(&pool, &room, file_expiration).await;
+        if let Ok(pool) = pool_by_room_id(&room) {
+            prune_files_for_room(&pool, &room, file_expiration).await;
+        }
     });
 
     futures::future::join_all(futs).await;
@@ -356,7 +381,7 @@ pub fn perform_migration() {
     for room in rooms {
         create_database_if_needed(&room);
         let pool = pool_by_room_id(&room);
-        let mut conn = pool.get().unwrap();
+        let mut conn = pool.unwrap().get().unwrap();
         migrations.to_latest(&mut conn).unwrap();
     }
 }
