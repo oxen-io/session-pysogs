@@ -178,7 +178,7 @@ async fn handle_get_request(
     if components[0] == "rooms" {
         reject_if_file_server_mode(path)?;
         if components.len() == 1 {
-            return handlers::get_all_rooms();
+            return handlers::get_all_rooms_v01x();
         }
 
         let room_token = components[1];
@@ -194,7 +194,7 @@ async fn handle_get_request(
         };
 
         if components.len() == 2 {
-            return handlers::get_room(&room);
+            return handlers::get_room_v01x(&room);
         } else if components[2] == "image" && components.len() == 3 {
             return handlers::get_room_image(room).await;
         }

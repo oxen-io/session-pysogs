@@ -149,8 +149,15 @@ pub async fn delete_room(token: String) -> Result<Response, Rejection> {
 // The authentication level here could simply be that it requires nothing (which will become simply
 // !banned).
 
-pub fn get_room(room: &Room) -> Result<Response, Rejection> {
-    let response = json!({ "status_code": StatusCode::OK.as_u16(), "room": room });
+// Deprecated: returns just "id" (actually token) and name, as older Session clients expect.
+pub fn get_room_v01x(room: &Room) -> Result<Response, Rejection> {
+    let response = json!({
+        "status_code": StatusCode::OK.as_u16(),
+        "room": {
+            "id": room.token,
+            "name": room.name
+        }
+    });
     Ok(warp::reply::json(&response).into_response())
 }
 
@@ -158,8 +165,8 @@ pub fn get_room(room: &Room) -> Result<Response, Rejection> {
 // means we can't enforce bans at the global or room level.  This is undesirable: we should require
 // an authenticated request for *every* endpoint.  (Also: get_room, get_room_image).
 
-pub fn get_all_rooms() -> Result<Response, Rejection> {
-    let rooms = match storage::get_conn()?
+fn get_all_rooms_impl() -> Result<Vec<Room>, Rejection> {
+    match storage::get_conn()?
         .prepare_cached("SELECT * from rooms ORDER BY token")
         .map_err(db_error)?
         .query_map(params![], Room::from_row)
@@ -171,9 +178,20 @@ pub fn get_all_rooms() -> Result<Response, Rejection> {
         }
     }
     .collect::<Result<Vec<Room>, _>>()
-    .map_err(db_error)?;
+    .map_err(|e| db_error(e).into())
+}
 
-    // Return
+// Deprecated: returns just "id" (actually the token) and name for each room, as older Session
+// clients expect.
+pub fn get_all_rooms_v01x() -> Result<Response, Rejection> {
+    #[derive(Debug, Serialize)]
+    struct OldRoom {
+        id: String,
+        name: String
+    }
+
+    let rooms = get_all_rooms_impl()?.into_iter().map(|r| OldRoom{ id: r.token, name: r.name }).collect::<Vec<OldRoom>>();
+
     let response = json!({ "status_code": StatusCode::OK.as_u16(), "rooms": rooms });
     Ok(warp::reply::json(&response).into_response())
 }
