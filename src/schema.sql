@@ -10,9 +10,8 @@ CREATE TABLE rooms (
     description TEXT, /* Publicly visible room description */
     image INTEGER REFERENCES files(id) ON DELETE SET NULL,
     created FLOAT NOT NULL DEFAULT ((julianday('now') - 2440587.5)*86400.0), /* unix epoch */
-    pinned INTEGER REFERENCES messages(id) ON DELETE SET NULL,
     updates INTEGER NOT NULL DEFAULT 0, /* +1 for each new message, edit or deletion */
-    info_updated INTEGER NOT NULL DEFAULT 0, /* +1 for any room metadata update (name/desc/image/pinned/mods) */
+    info_updates INTEGER NOT NULL DEFAULT 0, /* +1 for any room metadata update (name/desc/image/pinned/mods) */
     read BOOLEAN NOT NULL DEFAULT TRUE, /* Whether users can read by default */
     write BOOLEAN NOT NULL DEFAULT TRUE, /* Whether users can post by default */
     upload BOOLEAN NOT NULL DEFAULT TRUE, /* Whether file uploads are allowed */
@@ -77,12 +76,13 @@ BEGIN
     WHERE id = NEW.id;
 END;
 
--- Trigger to remove the room's pinned message when that message is deleted
-CREATE TRIGGER messages_unpin_on_delete AFTER UPDATE OF data ON messages
-FOR EACH ROW WHEN NEW.data IS NULL
-BEGIN
-    UPDATE rooms SET pinned = NULL WHERE id = OLD.room AND pinned = OLD.id;
-END;
+CREATE TABLE pinned_messages (
+    room INTEGER NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+    message INTEGER NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+    updated INTEGER NOT NULL  DEFAULT 0, /* set to the room's `info_updated` counter when pinned (used for ordering). */
+    PRIMARY KEY(room, message)
+);
+
 
 -- Trigger to handle moving a message from one room to another; we reset the posted time to now, and
 -- reset the updated value to the new room's value so that the moved message is treated as a brand new message in
@@ -214,50 +214,62 @@ BEGIN
 END;
 
 
--- Triggers to update `rooms.info_updated` on metadata column changes
+-- Triggers to update `rooms.info_updates` on metadata column changes
 CREATE TRIGGER room_metadata_update AFTER UPDATE ON rooms
 FOR EACH ROW WHEN
     NEW.name IS NOT OLD.name OR
     NEW.description IS NOT OLD.description OR
-    NEW.image IS NOT OLD.image OR
-    NEW.pinned IS NOT OLD.pinned
+    NEW.image IS NOT OLD.image
 BEGIN
-    UPDATE rooms SET updates = updates + 1, info_updated = updates + 1 WHERE id = NEW.id;
+    UPDATE rooms SET updates = updates + 1, info_updates = info_updates + 1 WHERE id = NEW.id;
 END;
--- Triggers to update `info_updated` when the mod list changes:
+-- Triggers to update `info_updates` when the mod list changes:
 CREATE TRIGGER room_metadata_mods_insert AFTER INSERT ON user_permission_overrides
 FOR EACH ROW WHEN NEW.moderator OR NEW.admin
 BEGIN
-    UPDATE rooms SET updates = updates + 1, info_updated = updates + 1 WHERE id = NEW.room;
+    UPDATE rooms SET info_updates = info_updates + 1 WHERE id = NEW.room;
 END;
 CREATE TRIGGER room_metadata_mods_update AFTER UPDATE ON user_permission_overrides
 FOR EACH ROW WHEN NEW.moderator != OLD.moderator OR NEW.admin != OLD.admin
 BEGIN
-    UPDATE rooms SET updates = updates + 1, info_updated = updates + 1 WHERE id = NEW.room;
+    UPDATE rooms SET info_updates = info_updates + 1 WHERE id = NEW.room;
 END;
 CREATE TRIGGER room_metadata_mods_delete AFTER DELETE ON user_permission_overrides
 FOR EACH ROW WHEN OLD.moderator OR OLD.admin
 BEGIN
-    UPDATE rooms SET updates = updates + 1, info_updated = updates + 1 WHERE id = OLD.room;
+    UPDATE rooms SET info_updates = info_updates + 1 WHERE id = OLD.room;
 END;
--- Trigger to update `info_updated` of all rooms whenever we add/remove a global moderator/admin
+-- Trigger to update `info_updates` of all rooms whenever we add/remove a global moderator/admin
 -- because global mod settings affect the permissions of all rooms (and polling clients need to pick
 -- up on this).
 CREATE TRIGGER room_metadata_global_mods_insert AFTER INSERT ON users
 FOR EACH ROW WHEN (NEW.admin OR NEW.moderator) AND NEW.visible_mod
 BEGIN
-    UPDATE rooms SET updates = updates + 1, info_updated = updates + 1; -- WHERE everything!
+    UPDATE rooms SET info_updates = info_updates + 1; -- WHERE everything!
 END;
 CREATE TRIGGER room_metadata_global_mods_update AFTER UPDATE ON users
 FOR EACH ROW WHEN (NEW.moderator != OLD.moderator OR NEW.admin != OLD.admin) AND (NEW.visible_mod OR OLD.visible_mod)
 BEGIN
-    UPDATE rooms SET updates = updates + 1, info_updated = updates + 1; -- WHERE everything!
+    UPDATE rooms SET info_updates = info_updates + 1; -- WHERE everything!
 END;
 CREATE TRIGGER room_metadata_global_mods_delete AFTER DELETE ON users
 FOR EACH ROW WHEN (OLD.moderator OR OLD.admin) AND OLD.visible_mod
 BEGIN
-    UPDATE rooms SET updates = updates + 1, info_updated = updates + 1; -- WHERE everything!
+    UPDATE rooms SET info_updates = info_updates + 1; -- WHERE everything!
 END;
+-- Triggers for change to pinned messages
+CREATE TRIGGER room_metadata_pinned_add AFTER INSERT ON pinned_messages
+FOR EACH ROW
+BEGIN
+    UPDATE rooms SET info_updates = info_updates + 1 WHERE id = NEW.room;
+    UPDATE pinned_messages SET updated = (SELECT info_updates FROM rooms WHERE id = NEW.room) WHERE id = NEW.id;
+END;
+CREATE TRIGGER room_metadata_pinned_remove AFTER DELETE ON pinned_messages
+FOR EACH ROW
+BEGIN
+    UPDATE rooms SET info_updates = info_updates + 1 WHERE id = OLD.room;
+END;
+
 
 
 -- View of permissions; for users with an entry in user_permissions we use those values; for null

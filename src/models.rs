@@ -160,8 +160,6 @@ pub struct Room {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub pinned_message_id: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub image_file_id: Option<i64>,
     pub created: f64,
     pub updates: i64,
@@ -177,7 +175,6 @@ impl Room {
             token: row.get(row.column_index("token")?)?,
             name: row.get(row.column_index("name")?)?,
             description: row.get(row.column_index("description")?)?,
-            pinned_message_id: row.get(row.column_index("pinned")?)?,
             image_file_id: row.get(row.column_index("image")?)?,
             created: row.get(row.column_index("created")?)?,
             updates: row.get(row.column_index("updates")?)?,
@@ -232,11 +229,13 @@ pub struct RoomMetadata {
     /// The human-readable room name
     pub name: String,
     /// Text description of the room
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     /// ID of an uploaded file that contains the image for this room
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub image_id: Option<i64>,
-    /// ID of a pinned message in this room
-    pub pinned_id: Option<i64>,
+    /// IDs of any pinned message in this room.
+    pub pinned_messages: Vec<i64>,
     /// List of non-admin public moderator Session IDs.  This list includes both room-specific and
     /// global moderators, but not admins and only if the moderator is configured as visible.
     pub moderators: Vec<String>,
@@ -246,14 +245,17 @@ pub struct RoomMetadata {
     pub admins: Vec<String>,
     /// List of hidden moderator Session IDs.  This field is omitted if the requesting user is not
     /// a moderator or admin.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub hidden_mods: Option<Vec<String>>,
     /// List of hidden admin Session IDs.  This field is omitted if the requesting user is not a
     /// moderator or admin.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub hidden_admins: Option<Vec<String>>,
-    /// Whether or not the requesting user has moderator powers.
-    pub moderator: bool,
-    /// Whether or not the requesting user has admin powers.
-    pub admin: bool
+    /// Will be present and true if the requesting user has moderator powers, omitted otherwise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub moderator: Option<bool>,
+    /// Will be present and true if the requesting user has admin powers, omitted otherwise.
+    pub admin: Option<bool>
 }
 
 #[derive(Debug, Deserialize)]
