@@ -158,6 +158,8 @@ pub struct Room {
     pub token: String,
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub pinned_message_id: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub image_file_id: Option<i64>,
@@ -174,6 +176,7 @@ impl Room {
             id: row.get(row.column_index("id")?)?,
             token: row.get(row.column_index("token")?)?,
             name: row.get(row.column_index("name")?)?,
+            description: row.get(row.column_index("description")?)?,
             pinned_message_id: row.get(row.column_index("pinned")?)?,
             image_file_id: row.get(row.column_index("image")?)?,
             created: row.get(row.column_index("created")?)?,

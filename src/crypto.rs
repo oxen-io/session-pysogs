@@ -183,6 +183,3 @@ pub fn verify_signature(
     }
     Ok(())
 }
-
-
-//pub fn verify_xed25519(
