@@ -72,12 +72,12 @@ lazy_static::lazy_static! {
     };
 }
 
-pub fn get_conn() -> Result<DatabaseConnection, errors::Error> {
+pub fn get_conn() -> Result<DatabaseConnection, Error> {
     match DB_POOL.get() {
         Ok(conn) => Ok(conn),
         Err(e) => {
             error!("Unable to get database connection: {}", e);
-            return Err(errors::Error::DatabaseFailedInternally);
+            return Err(Error::DatabaseFailedInternally);
         }
     }
 }
