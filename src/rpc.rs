@@ -409,9 +409,9 @@ async fn handle_delete_request(
 
 fn get_pool_for_room(rpc_call: &RpcCall) -> Result<storage::DatabaseConnectionPool, Rejection> {
     let room_id = get_room_id(&rpc_call).ok_or(Error::ValidationFailed)?;
-    return Ok(storage::pool_by_room_id(
+    return storage::pool_by_room_id(
         &storage::RoomId::new(&room_id).ok_or(Error::ValidationFailed)?,
-    ));
+    ).map_err(|e| e.into());
 }
 
 fn get_auth_token(rpc_call: &RpcCall) -> Option<String> {
