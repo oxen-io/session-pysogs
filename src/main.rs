@@ -68,8 +68,6 @@ async fn main() {
         // Create required folders
         fs::create_dir_all("./rooms").unwrap();
         fs::create_dir_all("./files").unwrap();
-        // Create default rooms
-        create_default_rooms().await;
         // Perform migration
         storage::perform_migration();
         // Set up pruning jobs
@@ -169,14 +167,4 @@ fn get_url() -> String {
         if is_port_implicit { "".to_string() } else { format!(":{}", port) },
         hex_public_key
     );
-}
-
-async fn create_default_rooms() {
-    let info: Vec<(&str, &str)> = vec![("main", "Main")];
-    for info in info {
-        let id = info.0.to_string();
-        let name = info.1.to_string();
-        let room = models::Room { id, name };
-        handlers::create_room(room).await.unwrap();
-    }
 }
