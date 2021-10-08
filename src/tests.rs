@@ -1,18 +1,25 @@
-use std::collections::HashMap;
+//use std::collections::HashMap;
+use r2d2::PooledConnection;
+use r2d2_sqlite::SqliteConnectionManager;
 use std::fs;
+use std::time::{Duration, SystemTime};
 
-use rand::{thread_rng, Rng};
+//use rand::{thread_rng, Rng};
 use rusqlite::params;
 use rusqlite::OpenFlags;
 use warp::http::StatusCode;
+use warp::{hyper, Reply};
 
 use crate::storage::DatabaseConnectionPool;
 
 use super::crypto;
 use super::handlers;
+use super::handlers::CreateRoom;
+use super::models::User;
 use super::storage;
+use crate::handlers::GenericStringResponse;
 
-async fn set_up_test_room() -> DatabaseConnectionPool {
+async fn set_up_test_room() -> (PooledConnection<SqliteConnectionManager>, DatabaseConnectionPool) {
     let manager = r2d2_sqlite::SqliteConnectionManager::file("file::memory:?cache=shared");
     let mut flags = OpenFlags::default();
     flags.set(OpenFlags::SQLITE_OPEN_URI, true);
@@ -21,94 +28,71 @@ async fn set_up_test_room() -> DatabaseConnectionPool {
 
     let pool = r2d2::Pool::<r2d2_sqlite::SqliteConnectionManager>::new(manager).unwrap();
 
-    let conn = pool.get().unwrap();
+    let mut conn = pool.get().unwrap();
 
-    storage::create_room_tables_if_needed(&conn);
+    storage::setup_database_with_conn(&mut conn);
+    let success = handlers::create_room_with_conn(
+        &conn,
+        &CreateRoom { token: "test_room".to_string(), name: "Test".to_string() },
+    );
+    assert!(success.is_ok());
 
-    pool
+    return (conn, pool);
 }
 
-fn get_auth_token(pool: &DatabaseConnectionPool) -> (String, String) {
+fn get_user(conn: &rusqlite::Connection) -> User {
     // Generate a fake user key pair
-    let (user_private_key, user_public_key) = crypto::generate_x25519_key_pair();
+    let (_, user_public_key) = crypto::generate_x25519_key_pair();
     let hex_user_public_key = format!("05{}", hex::encode(user_public_key.to_bytes()));
-    // Get a challenge
-    let mut query_params: HashMap<String, String> = HashMap::new();
-    query_params.insert("public_key".to_string(), hex_user_public_key.clone());
-    let challenge = handlers::get_auth_token_challenge(query_params, &pool).unwrap();
-    // Generate a symmetric key
-    let ephemeral_public_key = base64::decode(challenge.ephemeral_public_key).unwrap();
-    let symmetric_key =
-        crypto::get_x25519_symmetric_key(&ephemeral_public_key, &user_private_key).unwrap();
-    // Decrypt the challenge
-    let ciphertext = base64::decode(challenge.ciphertext).unwrap();
-    let plaintext = crypto::decrypt_aes_gcm(&ciphertext, &symmetric_key).unwrap();
-    let auth_token = hex::encode(plaintext);
-    // Try to claim the token
-    let response = handlers::claim_auth_token(&hex_user_public_key, &auth_token, &pool).unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
-    // return
-    return (auth_token, hex_user_public_key);
-}
 
-#[tokio::test]
-async fn test_authorization() {
-    // Ensure the test room is set up and get a database connection pool
-
-    let pool = set_up_test_room().await;
-
-    // Get an auth token
-    // This tests claiming a token internally
-    let (_, hex_user_public_key) = get_auth_token(&pool);
-    // Try to claim an incorrect token
-    let mut incorrect_token = [0u8; 48];
-    thread_rng().fill(&mut incorrect_token[..]);
-    let hex_incorrect_token = hex::encode(incorrect_token);
-    match handlers::claim_auth_token(&hex_user_public_key, &hex_incorrect_token, &pool) {
-        Ok(_) => assert!(false),
-        Err(_) => ()
-    }
+    let result = handlers::insert_or_update_user(conn, &hex_user_public_key);
+    assert!(result.is_ok());
+    return result.unwrap();
 }
 
 #[tokio::test]
 async fn test_file_handling() {
     // Ensure the test room is set up and get a database connection pool
-    let pool = set_up_test_room().await;
+    let (mut conn, pool) = set_up_test_room().await;
 
-    let test_room_id = storage::RoomId::new("test_room").unwrap();
+    let room = storage::get_room_from_token(&conn, "test_room").unwrap();
     // Get an auth token
-    let (auth_token, _) = get_auth_token(&pool);
+    let user = get_user(&conn);
+
     // Store the test file
-    handlers::store_file(
-        Some(test_room_id.get_id().to_string()),
-        TEST_FILE,
-        Some(auth_token.clone()),
-        &pool
-    )
-    .await
-    .unwrap();
-    // Check that there's a file record
-    let conn = pool.get().unwrap();
-    let raw_query = "SELECT id FROM files";
-    let id_as_string: String =
-        conn.query_row(&raw_query, params![], |row| Ok(row.get(0)?)).unwrap();
-    let id = id_as_string.parse::<u64>().unwrap();
+    let filename: Option<&str> = None;
+    let auth = handlers::AuthorizationRequired { upload: true, write: true, ..Default::default() };
+    let id =
+        match handlers::store_file_impl(&mut conn, &room, &user, auth, TEST_FILE, filename, true)
+            .ok()
+        {
+            Some(mut upload) => {
+                let result = upload.commit();
+                assert!(result.is_ok());
+                Some(upload.id)
+            }
+            _ => None,
+        }
+        .unwrap();
+
     // Retrieve the file and check the content
-    let base64_encoded_file = handlers::get_file(
-        Some(test_room_id.get_id().to_string()),
-        id,
-        Some(auth_token.clone()),
-        &pool,
-    )
-    .await
-    .unwrap()
-    .result;
-    assert_eq!(base64_encoded_file, TEST_FILE);
+    let room_id = room.id;
+    let response = handlers::get_file_conn(&mut conn, &room, id, user).unwrap();
+    let response_bytes = hyper::body::to_bytes(response).await.ok();
+    // The expected json response
+    let json = GenericStringResponse {
+        status_code: StatusCode::OK.as_u16(),
+        result: TEST_FILE.to_string(),
+    };
+    let expected_result = warp::reply::json(&json).into_response();
+    let expected_result_bytes = hyper::body::to_bytes(expected_result).await.ok();
+    assert_eq!(response_bytes, expected_result_bytes);
     // Prune the file and check that it's gone
     // Will evaluate to now + 60
-    storage::prune_files_for_room(&pool, &test_room_id, -60).await;
+    let sixty_seconds_ago = SystemTime::now() - Duration::new(60, 0);
+    storage::prune_files(&mut conn, &sixty_seconds_ago);
     // It should be gone now
-    fs::read(format!("files/{}_files/{}", test_room_id.get_id(), id)).unwrap_err();
+    fs::read(format!("files/{}_files/{}", room_id, id)).unwrap_err();
     // Check that the file record is also gone
     let conn = pool.get().unwrap();
     let raw_query = "SELECT id FROM files";

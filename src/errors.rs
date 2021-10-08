@@ -16,7 +16,7 @@ pub enum Error {
     /// The requesting user provided a valid auth token, but they don't have a
     /// high enough permission level.
     Unauthorized,
-    ValidationFailed
+    ValidationFailed,
 }
 impl Reject for Error {}
 

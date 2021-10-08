@@ -1,9 +1,13 @@
 use log::LevelFilter;
-use log4rs::{append::{console::ConsoleAppender,
-                      rolling_file::{policy::compound, RollingFileAppender}},
-             config::{Appender, Logger, Root},
-             encode::pattern::PatternEncoder,
-             filter::threshold::ThresholdFilter};
+use log4rs::{
+    append::{
+        console::ConsoleAppender,
+        rolling_file::{policy::compound, RollingFileAppender},
+    },
+    config::{Appender, Logger, Root},
+    encode::pattern::PatternEncoder,
+    filter::threshold::ThresholdFilter,
+};
 use std::str::FromStr;
 
 pub fn init(log_file: Option<String>, log_level: Option<String>) {

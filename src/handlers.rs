@@ -8,6 +8,8 @@ use base64;
 use ed25519_dalek::Signer;
 use log::{debug, error, info, warn};
 use parking_lot::RwLock;
+use r2d2::PooledConnection;
+use r2d2_sqlite::SqliteConnectionManager;
 use regex::Regex;
 use rusqlite::{params, params_from_iter};
 use serde::{Deserialize, Serialize};
@@ -29,17 +31,17 @@ use super::storage::{self, db_error};
 // for moderators/admins.
 #[derive(Default)]
 pub struct AuthorizationRequired {
-    admin: bool,     // Required admin permission (server or room)
-    moderator: bool, // Requires moderator or admin permission (server or room)
-    read: bool,      // Requires read permission
-    write: bool,     // Requires write permission
-    upload: bool     // Requires upload permission
+    pub admin: bool,     // Required admin permission (server or room)
+    pub moderator: bool, // Requires moderator or admin permission (server or room)
+    pub read: bool,      // Requires read permission
+    pub write: bool,     // Requires write permission
+    pub upload: bool,    // Requires upload permission
 }
 
 #[derive(Debug, Serialize)]
 pub struct GenericStringResponse {
     pub status_code: u16,
-    pub result: String
+    pub result: String,
 }
 
 // FIXME: this is used to query the github API periodically to find new releases.  Ew.
@@ -86,14 +88,12 @@ pub const TOKEN_ID_SIZE: usize = 33;
 pub const TOKEN_SIG_SIZE: usize = 64;
 pub const TOKEN_SIZE: usize = TOKEN_ID_SIZE + TOKEN_SIG_SIZE;
 
-
-
 // Rooms
 //
 #[derive(Deserialize)]
 pub struct CreateRoom {
     pub token: String,
-    pub name: String
+    pub name: String,
 }
 
 // Not publicly exposed.
@@ -103,10 +103,7 @@ pub async fn create_room(room: CreateRoom) -> Result<Response, Rejection> {
 
     // Get a connection
     let conn = storage::get_conn()?;
-    // Insert the room
-    let stmt = "INSERT INTO rooms (token, name) VALUES (?, ?) \
-                ON CONFLICT DO UPDATE SET token = excluded.token, name = excluded.name";
-    if let Err(e) = conn.execute(&stmt, params![room.token, room.name]) {
+    if let Err(e) = create_room_with_conn(&conn, &room) {
         error!("Couldn't create room: {}.", e);
         return Err(warp::reject::custom(Error::DatabaseFailedInternally));
     }
@@ -115,6 +112,16 @@ pub async fn create_room(room: CreateRoom) -> Result<Response, Rejection> {
     info!("Added room with ID: {}", room.token);
     let json = models::StatusCode { status_code: StatusCode::OK.as_u16() };
     Ok(warp::reply::json(&json).into_response())
+}
+
+pub fn create_room_with_conn(
+    conn: &PooledConnection<SqliteConnectionManager>,
+    room: &CreateRoom,
+) -> Result<usize, rusqlite::Error> {
+    // Insert the room
+    let stmt = "INSERT INTO rooms (token, name) VALUES (?, ?) \
+                ON CONFLICT DO UPDATE SET token = excluded.token, name = excluded.name";
+    return conn.execute(&stmt, params![room.token, room.name]);
 }
 
 // Not publicly exposed.
@@ -187,10 +194,13 @@ pub fn get_all_rooms_v01x() -> Result<Response, Rejection> {
     #[derive(Debug, Serialize)]
     struct OldRoom {
         id: String,
-        name: String
+        name: String,
     }
 
-    let rooms = get_all_rooms_impl()?.into_iter().map(|r| OldRoom{ id: r.token, name: r.name }).collect::<Vec<OldRoom>>();
+    let rooms = get_all_rooms_impl()?
+        .into_iter()
+        .map(|r| OldRoom { id: r.token, name: r.name })
+        .collect::<Vec<OldRoom>>();
 
     let response = json!({ "status_code": StatusCode::OK.as_u16(), "rooms": rooms });
     Ok(warp::reply::json(&response).into_response())
@@ -201,12 +211,12 @@ pub fn get_all_rooms_v01x() -> Result<Response, Rejection> {
 /// RAII class holding an in-progress upload transaction and path details.  If this is dropped
 /// without `commit()` being called we remove the file from disk and abort the transaction
 /// inserting the upload into the database.
-struct FileUpload<'a> {
+pub struct FileUpload<'a> {
     pub id: i64,        // The value of `id` in the `files` table for this new file
     pub room: &'a Room, // The room the file is uploaded to
     pub path: String,   // The relative path containing the in-progress file upload
     tx: Option<rusqlite::Transaction<'a>>,
-    committed: bool
+    committed: bool,
 }
 impl FileUpload<'_> {
     pub fn new<'a>(tx: rusqlite::Transaction<'a>, room: &'a Room) -> FileUpload<'a> {
@@ -232,22 +242,20 @@ impl Drop for FileUpload<'_> {
     }
 }
 
-
 /// Does the actual work involved in storing a file, inserting into the database, etc.
 ///
 /// Returns a FileUpload on success.  The caller may optionally use this to perform additional
 /// actions, but *must* call `.commit()` on success -- if dropped the FileUpload will clean up the
 /// temporary file and drop the transaction inserting the records.
-fn store_file_impl<'a>(
+pub fn store_file_impl<'a>(
     conn: &'a mut storage::DatabaseConnection,
     room: &'a Room,
     user: &User,
     auth: AuthorizationRequired,
     data_b64: &str,
     filename: Option<&str>,
-    expires: bool
-) -> Result<FileUpload<'a>, Rejection>
-{
+    expires: bool,
+) -> Result<FileUpload<'a>, Rejection> {
     // Determine the file size from the base64 data without decoding it (we'll do that later
     // directly to the destination file).
     let mut bytes: usize = data_b64.len() / 4 * 3;
@@ -293,7 +301,7 @@ fn store_file_impl<'a>(
             (SystemTime::now() + UPLOAD_DEFAULT_EXPIRY)
                 .duration_since(SystemTime::UNIX_EPOCH)
                 .unwrap()
-                .as_secs_f64()
+                .as_secs_f64(),
         )
     } else {
         None
@@ -305,7 +313,7 @@ fn store_file_impl<'a>(
         .prepare_cached(
             "INSERT INTO files (room, uploader, size, expiry, filename, path) \
              VALUES (?, ?, ?, ?, ?, 'tmp') \
-             RETURNING id"
+             RETURNING id",
         )
         .map_err(db_error)?
         .query_row(params![room.id, user.id, bytes, db_filename, expiry], |row| row.get(0))
@@ -323,7 +331,7 @@ fn store_file_impl<'a>(
     if fs_filename.len() > UPLOAD_FILENAME_MAX {
         fs_filename.replace_range(
             UPLOAD_FILENAME_KEEP_PREFIX..fs_filename.len() - UPLOAD_FILENAME_KEEP_SUFFIX,
-            "..."
+            "...",
         );
     }
     fs_filename = format!("{}/{}_{}", files_dir, upload.id, fs_filename);
@@ -373,12 +381,12 @@ fn store_file_impl<'a>(
 }
 
 pub fn store_file(
-    room: Room,
-    user: User,
+    room: &Room,
+    user: &User,
     data_b64: &str,
-    filename: Option<&str>
-) -> Result<Response, Rejection>
-{
+    filename: Option<&str>,
+) -> Result<Response, Rejection> {
+    let mut conn = storage::get_conn()?;
     if !matches!(rpc::MODE, rpc::Mode::OpenGroupServer) {
         panic!("FIXME file mode FIXME FIXME TODO!");
         // FIXME TODO
@@ -386,18 +394,16 @@ pub fn store_file(
 
     let auth = AuthorizationRequired { upload: true, write: true, ..Default::default() };
 
-    let mut conn = storage::get_conn()?;
     let mut upload = match store_file_impl(&mut conn, &room, &user, auth, data_b64, filename, true)
     {
         Ok(id) => id,
-        Err(e) => return Err(e)
+        Err(e) => return Err(e),
     };
 
     if let Err(e) = upload.commit() {
         error!("File upload failed: {}", e);
         return Err(Error::DatabaseFailedInternally.into());
     }
-
     let response = json!({ "status_code": StatusCode::OK.as_u16(), "result": upload.id });
     Ok(warp::reply::json(&response).into_response())
 }
@@ -437,18 +443,28 @@ fn file_response(path_row: rusqlite::Result<String>) -> Result<Response, Rejecti
     // Return
     let json = GenericStringResponse {
         status_code: StatusCode::OK.as_u16(),
-        result: base64_encoded_bytes
+        result: base64_encoded_bytes,
     };
     Ok(warp::reply::json(&json).into_response())
 }
 
 pub fn get_file(room: Room, id: i64, user: User) -> Result<Response, Rejection> {
     let conn = storage::get_conn()?;
+    return get_file_conn(&conn, &room, id, user);
+}
 
-    require_authorization(&conn, &user, &room, AuthorizationRequired {
-        read: true,
-        ..Default::default()
-    })?;
+pub fn get_file_conn(
+    conn: &PooledConnection<SqliteConnectionManager>,
+    room: &Room,
+    id: i64,
+    user: User,
+) -> Result<Response, Rejection> {
+    require_authorization(
+        &conn,
+        &user,
+        &room,
+        AuthorizationRequired { read: true, ..Default::default() },
+    )?;
 
     let mut row = conn
         .prepare_cached("SELECT path FROM files WHERE room = ? AND id = ?")
@@ -474,7 +490,7 @@ pub async fn get_room_image(room: Room) -> Result<Response, Rejection> {
 
     let row = conn
         .prepare_cached(
-            "SELECT path FROM rooms JOIN files ON rooms.image = files.id WHERE rooms.id = ?"
+            "SELECT path FROM rooms JOIN files ON rooms.image = files.id WHERE rooms.id = ?",
         )
         .map_err(db_error)?
         .query_row(params![room.id], |row| row.get(0));
@@ -485,9 +501,8 @@ pub async fn set_room_image(
     room: Room,
     user: User,
     data_b64: &str,
-    filename: Option<&str>
-) -> Result<Response, Rejection>
-{
+    filename: Option<&str>,
+) -> Result<Response, Rejection> {
     let auth = AuthorizationRequired { moderator: true, ..Default::default() };
 
     let mut conn = storage::get_conn()?;
@@ -534,20 +549,18 @@ pub fn insert_or_update_user(conn: &rusqlite::Connection, session_id: &str) -> R
         .prepare_cached(
             "INSERT INTO users (session_id) VALUES (?) \
              ON CONFLICT DO UPDATE SET last_active = ((julianday('now') - 2440587.5)*86400.0) \
-             RETURNING *"
+             RETURNING *",
         )
         .map_err(db_error)?
         .query_row(params![&session_id], User::from_row)
         .map_err(db_error)?)
 }
 
-
 // Validates a (backwards compat) token string.
 pub fn get_user_from_token(
     conn: &rusqlite::Connection,
-    auth_token_str: &str
-) -> Result<User, Error>
-{
+    auth_token_str: &str,
+) -> Result<User, Error> {
     let auth_token =
         decode_hex_or_b64(auth_token_str, TOKEN_SIZE).map_err(|_| Error::NoAuthToken)?;
     if auth_token[0] != 0x05 {
@@ -565,7 +578,6 @@ pub fn get_user_from_token(
     }
     insert_or_update_user(conn, &session_id)
 }
-
 
 pub fn get_auth_token_challenge(public_key: &str) -> Result<models::Challenge, Rejection> {
     // Doesn't return a response directly for testing purposes
@@ -597,7 +609,7 @@ pub fn get_auth_token_challenge(public_key: &str) -> Result<models::Challenge, R
     // Return
     Ok(models::Challenge {
         ciphertext: base64::encode(ciphertext),
-        ephemeral_public_key: base64::encode(ephemeral_public_key.to_bytes())
+        ephemeral_public_key: base64::encode(ephemeral_public_key.to_bytes()),
     })
 }
 
@@ -611,15 +623,16 @@ pub fn insert_message(
     room: Room,
     user: User,
     data: &[u8],
-    signature: &[u8]
-) -> Result<Response, Rejection>
-{
+    signature: &[u8],
+) -> Result<Response, Rejection> {
     let mut conn = storage::get_conn()?;
     let tx = storage::get_transaction(&mut conn)?;
-    require_authorization(&tx, &user, &room, AuthorizationRequired {
-        write: true,
-        ..Default::default()
-    })?;
+    require_authorization(
+        &tx,
+        &user,
+        &room,
+        AuthorizationRequired { write: true, ..Default::default() },
+    )?;
 
     // Check if the requesting user needs to be rate limited
 
@@ -639,7 +652,7 @@ pub fn insert_message(
     let size = data.len();
     let trimmed = match data.iter().rposition(|&c| c != 0u8) {
         Some(last) => &data[0..=last],
-        None => &data
+        None => &data,
     };
 
     // Insert the message
@@ -647,7 +660,7 @@ pub fn insert_message(
         .prepare_cached(
             "INSERT INTO messages (room, user, data, data_size, signature) \
              VALUES (?, ?, ?, ?, ?) \
-             RETURNING *"
+             RETURNING *",
         )
         .map_err(db_error)?
         .query_row(params![room.id, user.id, trimmed, size, signature], OldMessage::from_row)
@@ -701,15 +714,16 @@ fn get_messages_params(query_params: &HashMap<String, String>) -> (Option<i64>, 
 pub fn get_messages(
     query_params: HashMap<String, String>,
     user: User,
-    room: Room
-) -> Result<Vec<OldMessage>, Rejection>
-{
+    room: Room,
+) -> Result<Vec<OldMessage>, Rejection> {
     let conn = storage::get_conn()?;
 
-    require_authorization(&conn, &user, &room, AuthorizationRequired {
-        read: true,
-        ..Default::default()
-    })?;
+    require_authorization(
+        &conn,
+        &user,
+        &room,
+        AuthorizationRequired { read: true, ..Default::default() },
+    )?;
 
     let (from_server_id, limit) = get_messages_params(&query_params);
 
@@ -757,9 +771,8 @@ pub fn delete_message(
     conn: &rusqlite::Connection,
     id: i64,
     user: &User,
-    room: &Room
-) -> Result<Response, Rejection>
-{
+    room: &Room,
+) -> Result<Response, Rejection> {
     let mut auth_req = AuthorizationRequired { read: true, ..Default::default() };
 
     // Check to see if the message to be deleted is owned by someone else: if it is, we require
@@ -778,14 +791,14 @@ pub fn delete_message(
             let response = json!({"status_code": StatusCode::NOT_FOUND.as_u16()});
             return Ok(warp::reply::json(&response).into_response());
         }
-        Err(_) => return Err(Error::DatabaseFailedInternally.into())
+        Err(_) => return Err(Error::DatabaseFailedInternally.into()),
     };
 
     require_authorization(conn, user, room, auth_req)?;
 
     let mut del_st = conn
         .prepare_cached(
-            "UPDATE messages SET data = NULL, data_size = NULL, signature = NULL WHERE id = ?"
+            "UPDATE messages SET data = NULL, data_size = NULL, signature = NULL WHERE id = ?",
         )
         .map_err(db_error)?;
 
@@ -805,17 +818,18 @@ pub fn delete_message(
 pub fn get_deleted_messages(
     query_params: HashMap<String, String>,
     user: User,
-    room: Room
-) -> Result<Vec<models::DeletedMessage>, Rejection>
-{
+    room: Room,
+) -> Result<Vec<models::DeletedMessage>, Rejection> {
     let conn = storage::get_conn()?;
 
     let (from_server_id, limit) = get_messages_params(&query_params);
 
-    require_authorization(&conn, &user, &room, AuthorizationRequired {
-        read: true,
-        ..Default::default()
-    })?;
+    require_authorization(
+        &conn,
+        &user,
+        &room,
+        AuthorizationRequired { read: true, ..Default::default() },
+    )?;
 
     // Query the database
     let mut st = conn.prepare_cached(if from_server_id.is_some() {
@@ -843,13 +857,14 @@ pub fn add_moderator_public(
     room: Room,
     user: User,
     session_id: &str,
-    admin: bool
-) -> Result<Response, Rejection>
-{
-    require_authorization(&*storage::get_conn()?, &user, &room, AuthorizationRequired {
-        admin: true,
-        ..Default::default()
-    })?;
+    admin: bool,
+) -> Result<Response, Rejection> {
+    require_authorization(
+        &*storage::get_conn()?,
+        &user,
+        &room,
+        AuthorizationRequired { admin: true, ..Default::default() },
+    )?;
     add_moderator_impl(session_id, admin, room)
 }
 
@@ -858,21 +873,20 @@ pub fn add_moderator_public(
 
 // Not publicly exposed.
 pub async fn add_moderator(
-    body: models::ChangeModeratorRequestBody
+    body: models::ChangeModeratorRequestBody,
 ) -> Result<Response, Rejection> {
     add_moderator_impl(
         &body.session_id,
         body.admin.unwrap_or(false),
-        storage::get_room_from_token(&*storage::get_conn()?, &body.room_token)?
+        storage::get_room_from_token(&*storage::get_conn()?, &body.room_token)?,
     )
 }
 
 pub fn add_moderator_impl(
     session_id: &str,
     admin: bool,
-    room: Room
-) -> Result<Response, Rejection>
-{
+    room: Room,
+) -> Result<Response, Rejection> {
     require_session_id(session_id)?;
 
     let mut conn = storage::get_conn()?;
@@ -913,23 +927,24 @@ pub fn add_moderator_impl(
 pub fn delete_moderator_public(
     session_id: &str,
     user: User,
-    room: Room
-) -> Result<Response, Rejection>
-{
-    require_authorization(&*storage::get_conn()?, &user, &room, AuthorizationRequired {
-        admin: true,
-        ..Default::default()
-    })?;
+    room: Room,
+) -> Result<Response, Rejection> {
+    require_authorization(
+        &*storage::get_conn()?,
+        &user,
+        &room,
+        AuthorizationRequired { admin: true, ..Default::default() },
+    )?;
     delete_moderator_impl(session_id, room)
 }
 
 // Not publicly exposed.
 pub async fn delete_moderator(
-    body: models::ChangeModeratorRequestBody
+    body: models::ChangeModeratorRequestBody,
 ) -> Result<Response, Rejection> {
     delete_moderator_impl(
         &body.session_id,
-        storage::get_room_from_token(&*storage::get_conn()?, &body.room_token)?
+        storage::get_room_from_token(&*storage::get_conn()?, &body.room_token)?,
     )
 }
 
@@ -951,7 +966,7 @@ pub fn delete_moderator_impl(session_id: &str, room: Room) -> Result<Response, R
         Ok(count) if count > 0 => {
             info!("Removed moderator {} from room {}", session_id, room.token)
         }
-        Ok(_count) => info!("{} is not a moderator of room {}", session_id, room.token)
+        Ok(_count) => info!("{} is not a moderator of room {}", session_id, room.token),
     }
 
     let json = models::StatusCode { status_code: StatusCode::OK.as_u16() };
@@ -962,17 +977,18 @@ pub fn delete_moderator_impl(session_id: &str, room: Room) -> Result<Response, R
 pub fn get_moderators(
     conn: &rusqlite::Connection,
     user: &User,
-    room: &Room
-) -> Result<Vec<String>, Rejection>
-{
-    require_authorization(conn, user, room, AuthorizationRequired {
-        read: true,
-        ..Default::default()
-    })?;
+    room: &Room,
+) -> Result<Vec<String>, Rejection> {
+    require_authorization(
+        conn,
+        user,
+        room,
+        AuthorizationRequired { read: true, ..Default::default() },
+    )?;
 
     let mut st = conn
         .prepare_cached(
-            "SELECT session_id FROM user_permissions WHERE room = ? AND moderator AND visible_mod"
+            "SELECT session_id FROM user_permissions WHERE room = ? AND moderator AND visible_mod",
         )
         .map_err(db_error)?;
 
@@ -999,9 +1015,8 @@ pub async fn ban(
     session_id: &str,
     delete_all: bool,
     user: &User,
-    room: &Room
-) -> Result<Response, Rejection>
-{
+    room: &Room,
+) -> Result<Response, Rejection> {
     if !is_session_id(&session_id) {
         warn!("Ignoring ban request: invalid session_id.");
         return Err(Error::ValidationFailed.into());
@@ -1022,7 +1037,7 @@ pub async fn ban(
     match tx
         .prepare_cached(
             "SELECT user, moderator, global_moderator FROM user_permissions \
-            WHERE room = ? AND session_id = ?"
+            WHERE room = ? AND session_id = ?",
         )
         .map_err(db_error)?
         .query_row(params![room.id, session_id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
@@ -1042,7 +1057,7 @@ pub async fn ban(
             let response = json!({"status_code": StatusCode::NOT_FOUND.as_u16()});
             return Ok(warp::reply::json(&response).into_response());
         }
-        Err(_) => return Err(Error::DatabaseFailedInternally.into())
+        Err(_) => return Err(Error::DatabaseFailedInternally.into()),
     };
 
     require_authorization(&tx, user, room, auth)?;
@@ -1053,7 +1068,7 @@ pub async fn ban(
             INSERT INTO user_permission_overrides (room, user, banned, moderator, admin) \
             VALUES (?, ?, TRUE, FALSE, FALSE) \
             ON CONFLICT DO UPDATE SET banned = TRUE, moderator = FALSE, admin = FALSE
-            "
+            ",
         )
         .map_err(db_error)?
         .execute(params![room.id, userid])
@@ -1068,7 +1083,7 @@ pub async fn ban(
         posts_removed += match tx
             .prepare_cached(
                 "UPDATE messages SET data = NULL, data_size = NULL, signature = NULL \
-                WHERE room = ? AND user = ?"
+                WHERE room = ? AND user = ?",
             )
             .map_err(db_error)?
             .execute(params![room.id, userid])
@@ -1085,7 +1100,7 @@ pub async fn ban(
         // from disk).
         files_removed = tx
             .prepare_cached(
-                "UPDATE files SET room = NULL, expiry = ? WHERE room = ? AND uploader = ?"
+                "UPDATE files SET room = NULL, expiry = ? WHERE room = ? AND uploader = ?",
             )
             .map_err(db_error)?
             .execute(params![unixtime_f64(), room.id, userid])
@@ -1114,15 +1129,17 @@ pub fn unban(session_id: &str, user: &User, room: &Room) -> Result<Response, Rej
     }
 
     let conn = storage::get_conn()?;
-    require_authorization(&conn, user, room, AuthorizationRequired {
-        moderator: true,
-        ..Default::default()
-    })?;
+    require_authorization(
+        &conn,
+        user,
+        room,
+        AuthorizationRequired { moderator: true, ..Default::default() },
+    )?;
 
     let count = match conn
         .prepare_cached(
             "UPDATE user_permission_overrides SET banned = FALSE \
-            WHERE room = ? AND user IN (SELECT id FROM users WHERE session_id = ?)"
+            WHERE room = ? AND user IN (SELECT id FROM users WHERE session_id = ?)",
         )
         .map_err(db_error)?
         .execute(params![room.id, session_id])
@@ -1148,10 +1165,12 @@ pub fn unban(session_id: &str, user: &User, room: &Room) -> Result<Response, Rej
 /// Returns the full list of banned public keys.
 pub fn get_banned_public_keys(user: &User, room: &Room) -> Result<Response, Rejection> {
     let conn = storage::get_conn()?;
-    require_authorization(&conn, user, room, AuthorizationRequired {
-        moderator: true,
-        ..Default::default()
-    })?;
+    require_authorization(
+        &conn,
+        user,
+        room,
+        AuthorizationRequired { moderator: true, ..Default::default() },
+    )?;
 
     let banned_members: Result<Vec<String>, _> = match conn
         .prepare_cached("SELECT session_id FROM user_permissions WHERE room = ? AND banned")
@@ -1184,14 +1203,15 @@ pub fn get_member_count(user: User, room: Room) -> Result<Response, Rejection> {
 pub fn get_member_count_since(
     user: User,
     room: Room,
-    ago: Duration
-) -> Result<Response, Rejection>
-{
+    ago: Duration,
+) -> Result<Response, Rejection> {
     let conn = storage::get_conn()?;
-    require_authorization(&conn, &user, &room, AuthorizationRequired {
-        read: true,
-        ..Default::default()
-    })?;
+    require_authorization(
+        &conn,
+        &user,
+        &room,
+        AuthorizationRequired { read: true, ..Default::default() },
+    )?;
 
     let mut st = conn
         .prepare_cached("SELECT COUNT(*) FROM room_users WHERE room = ? AND last_active >= ?")
@@ -1236,15 +1256,13 @@ pub fn get_room_updates(user: User, room: Room, since_update: i64) {
     */
 }
 
-
 /// Deprecated room polling; unlike the above, this does not handle metadata (except for
 /// moderators, which are *always* included even though they rarely change), does not support
 /// message edits, and has non-obvious alternate modes of operation.
 pub fn compact_poll(
     user: Option<User>,
-    request_bodies: Vec<models::CompactPollRequestBody>
-) -> Result<Response, Rejection>
-{
+    request_bodies: Vec<models::CompactPollRequestBody>,
+) -> Result<Response, Rejection> {
     let mut response_bodies = Vec::<models::CompactPollResponseBody>::new();
 
     let mut conn = storage::get_conn()?;
@@ -1275,7 +1293,7 @@ pub fn compact_poll(
             .prepare_cached(
                 "SELECT * FROM message_details \
                 WHERE room = ? AND data IS NOT NULL \
-                ORDER BY id DESC LIMIT 256"
+                ORDER BY id DESC LIMIT 256",
             )
             .map_err(db_error)?;
 
@@ -1283,7 +1301,7 @@ pub fn compact_poll(
             .prepare_cached(
                 "SELECT id, updated FROM messages \
                 WHERE room = ? AND data IS NULL \
-                ORDER BY updated DESC LIMIT 256"
+                ORDER BY updated DESC LIMIT 256",
             )
             .map_err(db_error)?;
 
@@ -1292,7 +1310,7 @@ pub fn compact_poll(
             .prepare_cached(
                 "SELECT id, updated FROM messages \
                 WHERE room = ? AND updated > ? AND data IS NULL \
-                ORDER BY updated LIMIT 256"
+                ORDER BY updated LIMIT 256",
             )
             .map_err(db_error)?;
 
@@ -1300,10 +1318,9 @@ pub fn compact_poll(
             .prepare_cached(
                 "SELECT * FROM message_details \
                 WHERE room = ? AND id > ? AND data IS NOT NULL \
-                ORDER BY id LIMIT 256"
+                ORDER BY id LIMIT 256",
             )
             .map_err(db_error)?;
-
 
         for request in request_bodies {
             let mut response = models::CompactPollResponseBody {
@@ -1311,7 +1328,7 @@ pub fn compact_poll(
                 status_code: StatusCode::OK.as_u16(),
                 messages: vec![],
                 deletions: vec![],
-                moderators: vec![]
+                moderators: vec![],
             };
 
             let room: &Room = match rooms.get(&request.room_token) {
@@ -1449,13 +1466,12 @@ pub async fn get_session_version(platform: &str) -> Result<String, Rejection> {
 // not publicly exposed.
 pub async fn get_stats_for_room(
     room_token: String,
-    query_map: HashMap<String, i64>
-) -> Result<Response, Rejection>
-{
+    query_map: HashMap<String, i64>,
+) -> Result<Response, Rejection> {
     let window = *query_map.get("window").unwrap_or(&3600) as f64;
     let upperbound = match query_map.get("start") {
         Some(ts) => *ts as f64,
-        None => unixtime_f64()
+        None => unixtime_f64(),
     };
     let lowerbound = upperbound - window;
 
@@ -1466,7 +1482,7 @@ pub async fn get_stats_for_room(
 
     let active = tx
         .prepare_cached(
-            "SELECT COUNT(*) FROM room_users WHERE room = ? AND last_active BETWEEN ? AND ?"
+            "SELECT COUNT(*) FROM room_users WHERE room = ? AND last_active BETWEEN ? AND ?",
         )
         .map_err(db_error)?
         .query_row(params![room.id, lowerbound, upperbound], |row| Ok(row.get::<_, i64>(0)?))
@@ -1511,9 +1527,8 @@ fn require_authorization(
     conn: &rusqlite::Connection,
     user: &User,
     room: &Room,
-    req: AuthorizationRequired
-) -> Result<(), Error>
-{
+    req: AuthorizationRequired,
+) -> Result<(), Error> {
     require_authorization_impl(conn, &user, &room, req, true)
 }
 /// Same as above, but does not update the room/user last activity timestamp.
@@ -1522,9 +1537,8 @@ fn require_authorization_no_activity(
     conn: &rusqlite::Connection,
     user: &User,
     room: &Room,
-    req: AuthorizationRequired
-) -> Result<(), Error>
-{
+    req: AuthorizationRequired,
+) -> Result<(), Error> {
     return require_authorization_impl(conn, &user, &room, req, false);
 }
 
@@ -1533,9 +1547,8 @@ fn require_authorization_impl(
     user: &User,
     room: &Room,
     need: AuthorizationRequired,
-    log_active: bool
-) -> Result<(), Error>
-{
+    log_active: bool,
+) -> Result<(), Error> {
     let mut st = conn
         .prepare_cached(
             "SELECT banned, read, write, upload, moderator, admin FROM user_permissions WHERE room = ? AND user = ?"

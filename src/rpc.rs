@@ -15,7 +15,7 @@ use super::storage;
 #[allow(dead_code)]
 pub enum Mode {
     FileServer,
-    OpenGroupServer
+    OpenGroupServer,
 }
 
 #[derive(Deserialize, Debug)]
@@ -34,7 +34,7 @@ pub struct RpcCall {
     /// Arbitrary string; must be different on each request
     pub nonce: Option<String>,
     /// Ed25519 signature (in base64 or hex) of (method || endpoint || body || nonce)
-    pub signature: Option<String>
+    pub signature: Option<String>,
 }
 
 pub const MODE: Mode = Mode::OpenGroupServer;
@@ -43,9 +43,8 @@ pub const MODE: Mode = Mode::OpenGroupServer;
 // is a parseable auth token, and an error for anything else.
 fn get_user_from_auth_header(
     conn: &rusqlite::Connection,
-    rpc: &RpcCall
-) -> Result<Option<User>, Error>
-{
+    rpc: &RpcCall,
+) -> Result<Option<User>, Error> {
     if let Some(auth_token_str) = rpc.headers.get("Authorization") {
         return Ok(Some(handlers::get_user_from_token(conn, auth_token_str)?));
     }
@@ -77,16 +76,20 @@ pub async fn handle_rpc_call(mut rpc_call: RpcCall) -> Result<Response, Rejectio
 
         let mut sig_bytes: [u8; 64] = [0; 64];
         sig_bytes.copy_from_slice(
-            &handlers::decode_hex_or_b64(rpc_call.signature.as_ref().unwrap(), 64)?[0..64]
+            &handlers::decode_hex_or_b64(rpc_call.signature.as_ref().unwrap(), 64)?[0..64],
         );
         let sig = ed25519_dalek::Signature::new(sig_bytes);
 
-        if let Err(sigerr) = crypto::verify_signature(&edpk, &sig, &vec![
-            rpc_call.endpoint.as_bytes(),
-            rpc_call.method.as_bytes(),
-            rpc_call.body.as_bytes(),
-            nonce.as_bytes(),
-        ]) {
+        if let Err(sigerr) = crypto::verify_signature(
+            &edpk,
+            &sig,
+            &vec![
+                rpc_call.endpoint.as_bytes(),
+                rpc_call.method.as_bytes(),
+                rpc_call.body.as_bytes(),
+                nonce.as_bytes(),
+            ],
+        ) {
             warn!("Signature verification failed for request from {}", sessionid);
             return Err(sigerr.into());
         }
@@ -111,7 +114,7 @@ pub async fn handle_rpc_call(mut rpc_call: RpcCall) -> Result<Response, Rejectio
             path = uri.path().trim_start_matches('/').to_string();
             query_params = match uri.query() {
                 Some(qs) => form_urlencoded::parse(qs.as_bytes()).into_owned().collect(),
-                None => HashMap::new()
+                None => HashMap::new(),
             };
         }
         Err(e) => {
@@ -153,9 +156,8 @@ async fn handle_get_request(
     rpc_call: RpcCall,
     path: &str,
     user: Option<User>,
-    query_params: HashMap<String, String>
-) -> Result<Response, Rejection>
-{
+    query_params: HashMap<String, String>,
+) -> Result<Response, Rejection> {
     let mut components: Vec<&str> = path.split('/').collect();
     if components.len() == 0 {
         components.push("");
@@ -165,7 +167,7 @@ async fn handle_get_request(
     if components[0] == "auth_token_challenge" && components.len() == 1 {
         reject_if_file_server_mode(path)?;
         let challenge = handlers::get_auth_token_challenge(
-            query_params.get("public_key").ok_or(Error::InvalidRpcCall)?
+            query_params.get("public_key").ok_or(Error::InvalidRpcCall)?,
         )?;
         let response = json!({ "status_code": StatusCode::OK.as_u16(), "challenge": challenge });
         return Ok(warp::reply::json(&response).into_response());
@@ -208,7 +210,7 @@ async fn handle_get_request(
                 warn!("Ignoring RPC call with invalid or unused endpoint: {}.", path);
                 return Err(Error::InvalidRpcCall.into());
             }
-            Mode::FileServer => ()
+            Mode::FileServer => (),
         }
         let platform = query_params
             .get("platform")
@@ -216,7 +218,7 @@ async fn handle_get_request(
         let version = handlers::get_session_version(platform).await?;
         let response = handlers::GenericStringResponse {
             status_code: StatusCode::OK.as_u16(),
-            result: version
+            result: version,
         };
         return Ok(warp::reply::json(&response).into_response());
     }
@@ -299,9 +301,8 @@ async fn handle_post_request(
     room: Option<Room>,
     rpc_call: RpcCall,
     path: &str,
-    user: Option<User>
-) -> Result<Response, Rejection>
-{
+    user: Option<User>,
+) -> Result<Response, Rejection> {
     // Handle routes that don't require authorization first
 
     // The compact poll endpoint expects the auth token to be in the request body; not in the
@@ -314,7 +315,7 @@ async fn handle_post_request(
         reject_if_file_server_mode(path)?;
         #[derive(Debug, Deserialize)]
         struct CompactPollRequestBodyWrapper {
-            requests: Vec<models::CompactPollRequestBody>
+            requests: Vec<models::CompactPollRequestBody>,
         }
         let wrapper: CompactPollRequestBodyWrapper = match serde_json::from_str(&rpc_call.body) {
             Ok(bodies) => bodies,
@@ -344,7 +345,7 @@ async fn handle_post_request(
         if components.len() == 3 && components[2] == "image" {
             #[derive(Debug, Deserialize)]
             struct JSON {
-                file: String
+                file: String,
             }
             let json: JSON = match serde_json::from_str(&rpc_call.body) {
                 Ok(json) => json,
@@ -405,7 +406,7 @@ async fn handle_post_request(
             // filename
             #[derive(Debug, Deserialize)]
             struct JSON {
-                file: String
+                file: String,
             }
             let json: JSON = match serde_json::from_str(&rpc_call.body) {
                 Ok(json) => json,
@@ -418,7 +419,7 @@ async fn handle_post_request(
             // FIXME TODO: add an input field so that the uploader can pass the filename
             let filename: Option<&str> = None;
 
-            return handlers::store_file(room, user, &json.file, filename);
+            return handlers::store_file(&room, &user, &json.file, filename);
         }
 
         // FIXME: deprecate these next two separate endpoints and replace with a single
@@ -428,7 +429,7 @@ async fn handle_post_request(
             reject_if_file_server_mode(path)?;
             #[derive(Debug, Deserialize)]
             struct JSON {
-                public_key: String
+                public_key: String,
             }
             let json: JSON = match serde_json::from_str(&rpc_call.body) {
                 Ok(json) => json,
@@ -443,7 +444,7 @@ async fn handle_post_request(
             reject_if_file_server_mode(path)?;
             #[derive(Debug, Deserialize)]
             struct JSON {
-                public_key: String
+                public_key: String,
             }
             let json: JSON = match serde_json::from_str(&rpc_call.body) {
                 Ok(json) => json,
@@ -478,7 +479,7 @@ async fn handle_post_request(
                 room,
                 user,
                 &body.session_id,
-                body.admin.unwrap_or(false)
+                body.admin.unwrap_or(false),
             );
         }
         "delete_messages" => {
@@ -488,7 +489,7 @@ async fn handle_post_request(
             reject_if_file_server_mode(path)?;
             #[derive(Debug, Deserialize)]
             struct JSON {
-                ids: Vec<i64>
+                ids: Vec<i64>,
             }
             let json: JSON = match serde_json::from_str(&rpc_call.body) {
                 Ok(json) => json,
@@ -510,9 +511,8 @@ async fn handle_delete_request(
     room: Room,
     rpc_call: RpcCall,
     path: &str,
-    user: Option<User>
-) -> Result<Response, Rejection>
-{
+    user: Option<User>,
+) -> Result<Response, Rejection> {
     // Check that the auth token is present
     let user = user.ok_or(Error::NoAuthToken)?;
     // DELETE /messages/:server_id
@@ -594,7 +594,7 @@ fn get_room(rpc_call: &RpcCall) -> Result<Option<Room>, Error> {
 
     let room_token = match rpc_call.headers.get("Room") {
         Some(s) => s,
-        None => return Ok(None)
+        None => return Ok(None),
     };
     return Ok(Some(storage::get_room_from_token(&*storage::get_conn()?, room_token)?));
 }
@@ -605,6 +605,6 @@ fn reject_if_file_server_mode(path: &str) -> Result<(), Rejection> {
             warn!("Ignoring RPC call with invalid or unused endpoint: {}.", path);
             return Err(Error::InvalidRpcCall.into());
         }
-        Mode::OpenGroupServer => return Ok(())
+        Mode::OpenGroupServer => return Ok(()),
     }
 }

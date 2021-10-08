@@ -9,7 +9,7 @@ pub struct User {
     pub last_active: f64,
     pub banned: bool,
     pub moderator: bool,
-    pub admin: bool
+    pub admin: bool,
 }
 
 impl User {
@@ -21,13 +21,15 @@ impl User {
             last_active: row.get(row.column_index("last_active")?)?,
             banned: row.get(row.column_index("banned")?)?,
             moderator: row.get(row.column_index("moderator")?)?,
-            admin: row.get(row.column_index("admin")?)?
+            admin: row.get(row.column_index("admin")?)?,
         });
     }
 }
 
 fn as_opt_base64<S>(val: &Option<Vec<u8>>, s: S) -> Result<S::Ok, S::Error>
-where S: Serializer {
+where
+    S: Serializer,
+{
     s.serialize_str(&base64::encode(val.as_ref().unwrap()))
 }
 
@@ -50,7 +52,7 @@ pub struct OldMessage {
     /// XEd25519 message signature of the `data` bytes (not the base64 representation), encoded in
     /// base64
     #[serde(serialize_with = "as_opt_base64")]
-    pub signature: Option<Vec<u8>>
+    pub signature: Option<Vec<u8>>,
 }
 
 impl OldMessage {
@@ -59,18 +61,17 @@ impl OldMessage {
         repad(&mut data, row.get::<_, Option<usize>>(row.column_index("data_size")?)?);
         let session_id = match row.column_index("session_id") {
             Ok(index) => Some(row.get(index)?),
-            Err(_) => None
+            Err(_) => None,
         };
         return Ok(OldMessage {
             server_id: row.get(row.column_index("id")?)?,
             public_key: session_id,
             timestamp: (row.get::<_, f64>(row.column_index("posted")?)? * 1000.0) as i64,
             data,
-            signature: row.get(row.column_index("signature")?)?
+            signature: row.get(row.column_index("signature")?)?,
         });
     }
 }
-
 
 #[derive(Debug, Serialize)]
 pub struct Message {
@@ -95,7 +96,7 @@ pub struct Message {
     pub signature: Option<Vec<u8>>,
     /// Flag set to true if the message is deleted, and omitted otherwise.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub deleted: Option<bool>
+    pub deleted: Option<bool>,
 }
 
 fn repad(data: &mut Option<Vec<u8>>, size: Option<usize>) {
@@ -113,7 +114,7 @@ impl Message {
         let deleted = if data.is_none() { Some(true) } else { None };
         let session_id = match row.column_index("session_id") {
             Ok(index) => Some(row.get(index)?),
-            Err(_) => None
+            Err(_) => None,
         };
         return Ok(Message {
             id: row.get(row.column_index("id")?)?,
@@ -123,13 +124,15 @@ impl Message {
             updated: row.get(row.column_index("updated")?)?,
             data,
             signature: row.get(row.column_index("signature")?)?,
-            deleted
+            deleted,
         });
     }
 }
 
 fn bytes_from_base64<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
-where D: Deserializer<'de> {
+where
+    D: Deserializer<'de>,
+{
     use serde::de::Error;
     String::deserialize(deserializer)
         .and_then(|str| base64::decode(&str).map_err(|err| Error::custom(err.to_string())))
@@ -140,14 +143,14 @@ pub struct PostMessage {
     #[serde(deserialize_with = "bytes_from_base64")]
     pub data: Vec<u8>,
     #[serde(deserialize_with = "bytes_from_base64")]
-    pub signature: Vec<u8>
+    pub signature: Vec<u8>,
 }
 
 #[derive(Debug, Serialize)]
 pub struct DeletedMessage {
     #[serde(rename = "id")]
     pub updated: i64,
-    pub deleted_message_id: i64
+    pub deleted_message_id: i64,
 }
 
 #[derive(Debug, Serialize)]
@@ -165,7 +168,7 @@ pub struct Room {
     pub updates: i64,
     pub default_read: bool,
     pub default_write: bool,
-    pub default_upload: bool
+    pub default_upload: bool,
 }
 
 impl Room {
@@ -180,12 +183,10 @@ impl Room {
             updates: row.get(row.column_index("updates")?)?,
             default_read: row.get(row.column_index("read")?)?,
             default_write: row.get(row.column_index("write")?)?,
-            default_upload: row.get(row.column_index("upload")?)?
+            default_upload: row.get(row.column_index("upload")?)?,
         });
     }
 }
-
-
 
 // FIXME: this appears to be used for both add/remove.  But what if we want to promote to admin, or
 // demote to moderator?
@@ -195,7 +196,7 @@ pub struct ChangeModeratorRequestBody {
     pub room_token: String,
     #[serde(rename = "public_key")]
     pub session_id: String,
-    pub admin: Option<bool>
+    pub admin: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -204,7 +205,7 @@ pub struct PollRoomMetadata {
     pub room: String,
     /// The last `info_update` value the client has; results are only returned if the room has been
     /// modified since the value provided by the client.
-    pub since_update: i64
+    pub since_update: i64,
 }
 
 #[derive(Debug, Serialize)]
@@ -216,7 +217,7 @@ pub struct RoomDetails {
     /// Metadata of the room; this omitted from the response when polling if the room metadata
     /// (other than active user count) has not changed since the request update counter.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub details: Option<RoomMetadata>
+    pub details: Option<RoomMetadata>,
 }
 
 #[derive(Debug, Serialize)]
@@ -255,7 +256,7 @@ pub struct RoomMetadata {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub moderator: Option<bool>,
     /// Will be present and true if the requesting user has admin powers, omitted otherwise.
-    pub admin: Option<bool>
+    pub admin: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -264,7 +265,7 @@ pub struct PollRoomMessages {
     pub room: String,
     /// Return new messages, edit, and deletions posted since this `updates` value.  Clients should
     /// poll with the most recent updates value they have received.
-    pub since_update: i64
+    pub since_update: i64,
 }
 
 #[derive(Debug, Serialize)]
@@ -272,7 +273,7 @@ pub struct RoomMessages {
     /// The token of this room
     pub room: String,
     /// Vector of new/edited/deleted message posted to the room since the requested update.
-    pub messages: Vec<Message>
+    pub messages: Vec<Message>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -288,7 +289,7 @@ pub struct CompactPollRequestBody {
     // messages/deletions, in reverse order from what you get with regular polling.  New clients
     // should update to the new polling endpoints ASAP.
     pub from_message_server_id: Option<i64>,
-    pub from_deletion_server_id: Option<i64>
+    pub from_deletion_server_id: Option<i64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -298,16 +299,16 @@ pub struct CompactPollResponseBody {
     pub status_code: u16,
     pub deletions: Vec<DeletedMessage>,
     pub messages: Vec<OldMessage>,
-    pub moderators: Vec<String>
+    pub moderators: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Challenge {
     pub ciphertext: String,
-    pub ephemeral_public_key: String
+    pub ephemeral_public_key: String,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct StatusCode {
-    pub status_code: u16
+    pub status_code: u16,
 }

@@ -62,7 +62,7 @@ lazy_static::lazy_static! {
 /// Takes hex string representation of an ed25519 pubkey, returns the ed25519
 /// pubkey, derived x25519 pubkey, and the Session id in hex.
 pub fn get_pubkeys(
-    edpk_hex: &str
+    edpk_hex: &str,
 ) -> Result<(ed25519_dalek::PublicKey, x25519_dalek::PublicKey, String), warp::reject::Rejection> {
     if edpk_hex.len() != 64 {
         return Err(warp::reject::custom(Error::DecryptionFailed));
@@ -92,9 +92,8 @@ pub fn get_pubkeys(
 
 pub fn get_x25519_symmetric_key(
     public_key: &[u8],
-    private_key: &x25519_dalek::StaticSecret
-) -> Result<Vec<u8>, warp::reject::Rejection>
-{
+    private_key: &x25519_dalek::StaticSecret,
+) -> Result<Vec<u8>, warp::reject::Rejection> {
     if public_key.len() != 32 {
         error!(
             "Couldn't create symmetric key using public key of invalid length: {}.",
@@ -112,9 +111,8 @@ pub fn get_x25519_symmetric_key(
 
 pub fn encrypt_aes_gcm(
     plaintext: &[u8],
-    symmetric_key: &[u8]
-) -> Result<Vec<u8>, warp::reject::Rejection>
-{
+    symmetric_key: &[u8],
+) -> Result<Vec<u8>, warp::reject::Rejection> {
     let mut iv = [0u8; IV_SIZE];
     thread_rng().fill(&mut iv[..]);
     let cipher = Aes256Gcm::new(&GenericArray::from_slice(symmetric_key));
@@ -133,9 +131,8 @@ pub fn encrypt_aes_gcm(
 
 pub fn decrypt_aes_gcm(
     iv_and_ciphertext: &[u8],
-    symmetric_key: &[u8]
-) -> Result<Vec<u8>, warp::reject::Rejection>
-{
+    symmetric_key: &[u8],
+) -> Result<Vec<u8>, warp::reject::Rejection> {
     if iv_and_ciphertext.len() < IV_SIZE {
         warn!("Ignoring ciphertext of invalid size: {}.", iv_and_ciphertext.len());
         return Err(warp::reject::custom(Error::DecryptionFailed));
@@ -162,9 +159,8 @@ pub fn generate_x25519_key_pair() -> (x25519_dalek::StaticSecret, x25519_dalek::
 pub fn verify_signature(
     edpk: &ed25519_dalek::PublicKey,
     sig: &ed25519_dalek::Signature,
-    parts: &[&[u8]]
-) -> Result<(), Error>
-{
+    parts: &[&[u8]],
+) -> Result<(), Error> {
     let mut verify_buf: Vec<u8> = Vec::new();
     let verify: &[u8];
     if parts.len() == 1 {

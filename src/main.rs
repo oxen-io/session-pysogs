@@ -3,8 +3,10 @@
 use parking_lot::RwLock;
 use std::fs;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::{collections::HashMap,
-          sync::atomic::{AtomicBool, AtomicU16, Ordering}};
+use std::{
+    collections::HashMap,
+    sync::atomic::{AtomicBool, AtomicU16, Ordering},
+};
 
 use futures::join;
 use log::info;
@@ -15,13 +17,13 @@ mod crypto;
 mod errors;
 mod handlers;
 mod logging;
+mod migration;
 mod models;
 mod onion_requests;
 mod options;
 mod routes;
 mod rpc;
 mod storage;
-mod migration;
 
 #[cfg(test)]
 mod tests;

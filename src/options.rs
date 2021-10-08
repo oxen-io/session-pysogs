@@ -64,5 +64,5 @@ pub struct Opt {
 
     /// Prints the URL format users can use to join rooms on this open group server.
     #[structopt(long = "print-url")]
-    pub print_url: bool
+    pub print_url: bool,
 }

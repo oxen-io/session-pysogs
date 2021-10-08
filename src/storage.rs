@@ -1,16 +1,17 @@
-use std::fs;
 use std::collections::HashMap;
+use std::fs;
 use std::path::Path;
 use std::time::{Duration, SystemTime};
 
 use log::{error, info, warn};
+use r2d2::PooledConnection;
 use r2d2_sqlite::SqliteConnectionManager;
 use regex::Regex;
 use rusqlite::{config::DbConfig, params};
 
 use super::errors::Error;
-use super::models::Room;
 use super::migration;
+use super::models::Room;
 
 pub type DatabaseConnection = r2d2::PooledConnection<SqliteConnectionManager>;
 pub type DatabaseConnectionPool = r2d2::Pool<SqliteConnectionManager>;
@@ -32,7 +33,7 @@ impl RoomId {
             Ok(())
         } else {
             Err(Error::ValidationFailed)
-        }
+        };
     }
 
     pub fn new(room_id: &str) -> Result<RoomId, Error> {
@@ -51,12 +52,11 @@ pub const ROOM_ACTIVE_PRUNE_THRESHOLD: Duration = Duration::from_secs(60 * 86400
 // How long we keep message edit/deletion history.
 pub const MESSAGE_HISTORY_PRUNE_THRESHOLD: Duration = Duration::from_secs(30 * 86400);
 
-
 // Migration support: when migrating to 0.2.x old room ids cannot be preserved, so we map the old
 // id range [1, max] to the new range [offset+1, offset+max].
 pub struct RoomMigrationMap {
     pub max: i64,
-    pub offset: i64
+    pub offset: i64,
 }
 
 lazy_static::lazy_static! {
@@ -127,9 +127,12 @@ pub fn get_conn() -> Result<DatabaseConnection, Error> {
     }
 }
 
-fn get_room_hacks(conn: &rusqlite::Connection) -> Result<HashMap<i64, RoomMigrationMap>, rusqlite::Error> {
+fn get_room_hacks(
+    conn: &rusqlite::Connection,
+) -> Result<HashMap<i64, RoomMigrationMap>, rusqlite::Error> {
     let mut hacks = HashMap::new();
-    let mut st = conn.prepare("SELECT room, old_message_id_max, message_id_offset FROM room_import_hacks")?;
+    let mut st =
+        conn.prepare("SELECT room, old_message_id_max, message_id_offset FROM room_import_hacks")?;
     let mut query = st.query([])?;
     while let Some(row) = query.next()? {
         hacks.insert(row.get(0)?, RoomMigrationMap { max: row.get(1)?, offset: row.get(2)? });
@@ -138,7 +141,7 @@ fn get_room_hacks(conn: &rusqlite::Connection) -> Result<HashMap<i64, RoomMigrat
 }
 
 pub fn get_transaction<'a>(
-    conn: &'a mut DatabaseConnection
+    conn: &'a mut DatabaseConnection,
 ) -> Result<DatabaseTransaction<'a>, Error> {
     conn.transaction().map_err(db_error)
 }
@@ -150,16 +153,19 @@ pub fn db_error(e: rusqlite::Error) -> Error {
 
 /// Initialize the database, creating and migrating its structure if necessary.
 pub fn setup_database() {
+    let mut conn = get_conn().unwrap();
+    setup_database_with_conn(&mut conn);
+}
+
+pub fn setup_database_with_conn(conn: &mut PooledConnection<SqliteConnectionManager>) {
     if rusqlite::version_number() < 3035000 {
         panic!("SQLite 3.35.0+ is required!");
     }
 
-    let mut conn = get_conn().unwrap();
-
     let have_messages = match conn.query_row(
         "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'messages')",
         params![],
-        |row| row.get::<_, bool>(0)
+        |row| row.get::<_, bool>(0),
     ) {
         Ok(exists) => exists,
         Err(e) => {
@@ -172,18 +178,19 @@ pub fn setup_database() {
         conn.execute_batch(include_str!("schema.sql")).expect("Couldn't create database schema.");
     }
 
-    let n_rooms = match conn.query_row("SELECT COUNT(*) FROM rooms", params![], |row| row.get::<_, i64>(0)) {
-        Ok(r) => r,
-        Err(e) => {
-            panic!("Error querying database for # of rooms: {}", e);
-        }
-    };
+    let n_rooms =
+        match conn.query_row("SELECT COUNT(*) FROM rooms", params![], |row| row.get::<_, i64>(0)) {
+            Ok(r) => r,
+            Err(e) => {
+                panic!("Error querying database for # of rooms: {}", e);
+            }
+        };
 
     if n_rooms == 0 && Path::new("database.db").exists() {
         // If we have no rooms then check to see if there is an old (pre-v0.2) set of databases to
         // import from.
         warn!("No rooms found, but database.db exists; attempting migration");
-        if let Err(e) = migration::migrate_0_2_0(&mut conn) {
+        if let Err(e) = migration::migrate_0_2_0(conn) {
             panic!("\n\ndatabase.db exists but migration failed:\n\n    {}.\n\n\
             Please report this bug!\n\n\
             If no migration from 0.1.x is needed then rename or delete database.db to start up with a fresh (new) database.\n\n", e);
@@ -192,7 +199,6 @@ pub fn setup_database() {
 
     // Future migrations here
 }
-
 
 // Performs periodic DB maintenance: file pruning, delayed permission applying,
 // etc.
@@ -216,7 +222,7 @@ pub async fn db_maintenance_job() {
 
 /// Removes all files with expiries <= the given time (which should generally by
 /// `SystemTime::now()`, except in the test suite).
-fn prune_files(conn: &mut DatabaseConnection, now: &SystemTime) {
+pub fn prune_files(conn: &mut DatabaseConnection, now: &SystemTime) {
     let mut st = match conn.prepare_cached("DELETE FROM files WHERE expiry <= ? RETURNING path") {
         Ok(st) => st,
         Err(e) => {
@@ -315,7 +321,7 @@ fn apply_permission_updates(conn: &mut DatabaseConnection, now: &SystemTime) {
                 ON CONFLICT DO UPDATE SET
                     read = COALESCE(excluded.read, read),
                     write = COALESCE(excluded.write, write),
-                    upload = COALESCE(excluded.upload, upload)"
+                    upload = COALESCE(excluded.upload, upload)",
         ) {
             Ok(st) => st,
             Err(e) => {
@@ -355,11 +361,7 @@ fn apply_permission_updates(conn: &mut DatabaseConnection, now: &SystemTime) {
 
 // Utilities
 
-pub fn get_room_from_token(
-    conn: &rusqlite::Connection,
-    token: &str
-) -> Result<Room, Error>
-{
+pub fn get_room_from_token(conn: &rusqlite::Connection, token: &str) -> Result<Room, Error> {
     match conn
         .prepare_cached("SELECT * FROM rooms WHERE token = ?")
         .map_err(db_error)?
@@ -367,6 +369,6 @@ pub fn get_room_from_token(
     {
         Ok(room) => return Ok(room),
         Err(rusqlite::Error::QueryReturnedNoRows) => return Err(Error::NoSuchRoom.into()),
-        Err(_) => return Err(Error::DatabaseFailedInternally.into())
+        Err(_) => return Err(Error::DatabaseFailedInternally.into()),
     }
 }
