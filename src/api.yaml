@@ -1259,10 +1259,11 @@ components:
       name: X-SOGS-Nonce
       in: header
       description: >
-        A unique nonce string, in base64, of up to 16 base64 characters (96 bits).  This must be
+        A unique nonce string, in base64, of exactly 16 base64 characters (96 bits).  This must be
         unique for every request from this pubkey within the last 24 hours; nonce reuse will result
-        in failed requests.  It is typically sufficient to generate a full size random nonce for each
-        request, but clients are free to use other nonce generation mechanisms.
+        in failed requests.  It is typically sufficient to generate 96 bits (12 bytes) or random
+        data for each request, but clients are free to use other nonce generation mechanisms if
+        desired.
     timestamp:
       type: apiKey
       name: X-SOGS-Timestamp
