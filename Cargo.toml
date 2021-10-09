@@ -11,6 +11,7 @@ systemd-units = { enable = true, start = true }
 maintainer-scripts = "debian/"
 depends = "libssl1.1, openssl"
 section = "net"
+revision = "1"
 
 [dependencies]
 aes-gcm = "0.8"
