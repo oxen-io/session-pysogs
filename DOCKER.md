@@ -13,7 +13,7 @@ In some instances it might be more beginner-friendly, however it is also slightl
 ### Step 1: Clone the repository
 
 ```bash
-git clone https://github.com/nielsandriesse/session-open-group-server.git
+git clone https://github.com/oxen-io/session-open-group-server.git
 cd session-open-group-server
 ```
 
@@ -56,7 +56,7 @@ And this one will take you to the path where the server binary is stored:
 cd /session-open-group-server/target/release
 ```
 
-You can now edit the configuration as you please. You can follow the [steps indicated in the README.md](https://github.com/nielsandriesse/session-open-group-server#step-2-add-a-room) and [the CLI reference](https://github.com/nielsandriesse/session-open-group-server/blob/main/CLI.md), just **remember to use** `./session-open-group-server` **instead of** `session-open-group-server` **or** `/usr/bin/session-open-group-server`**.** Examples:
+You can now edit the configuration as you please. You can follow the [steps indicated in the README.md](https://github.com/oxen-io/session-open-group-server#step-2-add-a-room) and [the CLI reference](https://github.com/oxen-io/session-open-group-server/blob/main/CLI.md), just **remember to use** `./session-open-group-server` **instead of** `session-open-group-server` **or** `/usr/bin/session-open-group-server`**.** Examples:
 
 - Print the server URL: `./session-open-group-server --print-url`
 - Become moderator of a room: `./session-open-group-server --add-moderator {your_session_id} {room_id}`
