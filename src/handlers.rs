@@ -388,8 +388,8 @@ pub fn store_file(
 ) -> Result<Response, Rejection> {
     let mut conn = storage::get_conn()?;
     if !matches!(rpc::MODE, rpc::Mode::OpenGroupServer) {
-        panic!("FIXME file mode FIXME FIXME TODO!");
         // FIXME TODO
+        todo!("FIXME file mode FIXME FIXME TODO!");
     }
 
     let auth = AuthorizationRequired { upload: true, write: true, ..Default::default() };
@@ -1233,13 +1233,13 @@ pub fn get_member_count_since(
 /// since the given update value (or always, if since_update is omitted).
 pub fn poll_room_metadata(user: &User, room: Room, since_update: Option<i64>) {
     // FIXME TODO
-    panic!("FIXME TODO");
+    todo!("FIXME TODO");
 }
 
 /// Polls a room for new/updated/deleted messages posted since a given update id.
 pub fn get_room_updates(user: User, room: Room, since_update: i64) {
     // FIXME TODO - implement this
-    panic!("FIXME TODO");
+    todo!("FIXME TODO");
 
     /*
     debug!("Got unified poll request for room {} since update {}", room.token, since);

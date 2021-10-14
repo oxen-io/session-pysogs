@@ -94,12 +94,12 @@ pub async fn handle_rpc_call(mut rpc_call: RpcCall) -> Result<Response, Rejectio
             return Err(sigerr.into());
         }
 
-        user = Some(handlers::insert_or_update_user(&*storage::get_conn()?, &sessionid)?);
-
+        let usr = handlers::insert_or_update_user(&*storage::get_conn()?, &sessionid)?;
         // Check for a global ban, and if so, terminate the request right away.
-        if user.as_ref().unwrap().banned {
+        if usr.banned {
             return Err(Error::Unauthorized.into());
         }
+        user = Some(usr);
     }
 
     // Check that the endpoint is a valid URI and deconstruct it into a path
