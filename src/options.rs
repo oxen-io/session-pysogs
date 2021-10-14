@@ -2,8 +2,8 @@ use std::net::Ipv4Addr;
 
 use structopt::StructOpt;
 
-// The default is * not * to run in TLS mode. This is because normally the server communicates through
-// onion requests, eliminating the need for TLS.
+// The default is *not* to run in TLS mode. This is because normally the server communicates
+// through onion requests, eliminating the need for TLS.
 
 #[derive(StructOpt)]
 #[structopt(name = "Session Open Group Server")]
@@ -28,6 +28,10 @@ pub struct Opt {
     #[structopt(long = "log-file")]
     pub log_file: Option<String>,
 
+    /// Log level, one of: trace, debug, info, warn, error.  If omitted the default is info.
+    #[structopt(long = "log-level")]
+    pub log_level: Option<String>,
+
     /// Run in TLS mode.
     #[structopt(long = "tls")]
     pub tls: bool,
@@ -40,19 +44,21 @@ pub struct Opt {
     #[structopt(long = "tls-private-key", default_value = "tls_private_key.pem")]
     pub tls_private_key: String,
 
-    /// Add a room with the given ID and name.
+    /// Add a room: call with the token string followed by a descriptive room name.
     #[structopt(long = "add-room")]
     pub add_room: Option<Vec<String>>,
 
-    /// Deletes the room with the given ID.
+    /// Deletes the room with the given token.
     #[structopt(long = "delete-room")]
     pub delete_room: Option<String>,
 
-    /// Makes the given public key a moderator for the room with the given ID.
+    /// Makes the given public key a moderator for the given room.  Call with the moderator public
+    /// key followed by the room token.
     #[structopt(long = "add-moderator")]
     pub add_moderator: Option<Vec<String>>,
 
-    /// Removes moderator permission for the given public key in the room with the given ID.
+    /// Removes moderator permission for the given public key in the given room.  Call with the
+    /// moderator public key followed by the room token.
     #[structopt(long = "delete-moderator")]
     pub delete_moderator: Option<Vec<String>>,
 

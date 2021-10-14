@@ -17,6 +17,7 @@ mod crypto;
 mod errors;
 mod handlers;
 mod logging;
+mod migration;
 mod models;
 mod onion_requests;
 mod options;
@@ -53,7 +54,7 @@ async fn main() {
         PORT.store(opt.port, Ordering::SeqCst);
         USES_TLS.store(opt.tls, Ordering::SeqCst);
         // Run in server mode
-        logging::init(opt.log_file);
+        logging::init(opt.log_file, opt.log_level);
         let addr = SocketAddr::new(IpAddr::V4(opt.host), opt.port);
         let localhost = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), LOCALHOST_PORT);
         *crypto::PRIVATE_KEY_PATH.lock().unwrap() = opt.x25519_private_key;
@@ -64,16 +65,11 @@ async fn main() {
         info!("Users can join rooms on this open group server using the following URL format:");
         info!("{}", get_url());
         // Create the main database
-        storage::create_main_database_if_needed();
+        storage::setup_database();
         // Create required folders
-        fs::create_dir_all("./rooms").unwrap();
         fs::create_dir_all("./files").unwrap();
-        // Perform migration
-        storage::perform_migration();
         // Set up pruning jobs
-        let prune_pending_tokens_future = storage::prune_pending_tokens_periodically();
-        let prune_tokens_future = storage::prune_tokens_periodically();
-        let prune_files_future = storage::prune_files_periodically();
+        let db_maintenance_future = storage::db_maintenance_job();
         // Serve routes
         let public_routes = routes::root().or(routes::fallback()).or(routes::lsrpc());
         let private_routes = routes::create_room()
@@ -91,25 +87,13 @@ async fn main() {
                 .run(addr);
             let serve_private_routes_future = warp::serve(private_routes).run(localhost);
             // Keep futures alive
-            join!(
-                prune_pending_tokens_future,
-                prune_tokens_future,
-                prune_files_future,
-                serve_public_routes_future,
-                serve_private_routes_future
-            );
+            join!(db_maintenance_future, serve_public_routes_future, serve_private_routes_future);
         } else {
             info!("Running on {}.", addr);
             let serve_public_routes_future = warp::serve(public_routes).run(addr);
             let serve_private_routes_future = warp::serve(private_routes).run(localhost);
             // Keep futures alive
-            join!(
-                prune_pending_tokens_future,
-                prune_tokens_future,
-                prune_files_future,
-                serve_public_routes_future,
-                serve_private_routes_future
-            );
+            join!(db_maintenance_future, serve_public_routes_future, serve_private_routes_future);
         }
     }
 }
@@ -120,7 +104,7 @@ async fn execute_commands(opt: options::Opt) {
     // Add a room
     if let Some(args) = opt.add_room {
         let mut params = HashMap::new();
-        params.insert("id", &args[0]);
+        params.insert("token", &args[0]);
         params.insert("name", &args[1]);
         client.post(format!("{}/rooms", localhost)).json(&params).send().await.unwrap();
         println!("Added room with ID: {}", &args[0]);
@@ -132,6 +116,8 @@ async fn execute_commands(opt: options::Opt) {
     }
     // Add a moderator
     if let Some(args) = opt.add_moderator {
+        // FIXME: need to add an ability to add an admin instead of moderator (by setting the
+        // "admin" param to true)
         let mut params = HashMap::new();
         params.insert("public_key", &args[0]);
         params.insert("room_id", &args[1]);

@@ -23,25 +23,25 @@ struct OnionRequestPayloadMetadata {
 pub async fn handle_onion_request(blob: warp::hyper::body::Bytes) -> Result<Response, Rejection> {
     let payload = parse_onion_request_payload(blob)?;
     let (plaintext, symmetric_key) = decrypt_onion_request_payload(payload)?;
-    // From this point on we can wrap any error that occurs in a HTTP response that's
-    // encrypted with the given symmetric key, so that the error that occurred is
-    // propagated back to the client that made the onion request.
+    // From this point on we can wrap any error that occurs in a HTTP response that's encrypted
+    // with the given symmetric key, so that the error that occurred is propagated back to the
+    // client that made the onion request.
     //
-    // If an error occurred before this point we'll have responded to the Service Node
-    // with a unsuccessful status code, which it'll have propagated back to the client
-    // as a "Loki server error" (i.e. the actual error is hidden from the client that
-    // made the onion request). This is unfortunate but cannot be solved without
-    // fundamentally changing how onion requests work.
+    // If an error occurred before this point we'll have responded to the Service Node with a
+    // unsuccessful status code, which it'll have propagated back to the client as a "Loki server
+    // error" (i.e. the actual error is hidden from the client that made the onion request). This
+    // is unfortunate but cannot be solved without fundamentally changing how onion requests work.
     return handle_decrypted_onion_request(&plaintext, &symmetric_key).await;
 }
 
 async fn handle_decrypted_onion_request(
-    plaintext: &[u8], symmetric_key: &[u8],
+    plaintext: &[u8],
+    symmetric_key: &[u8],
 ) -> Result<Response, Rejection> {
     let rpc_call = match serde_json::from_slice(plaintext) {
         Ok(rpc_call) => rpc_call,
         Err(e) => {
-            warn!("Couldn't parse RPC call from JSON due to error: {}.", e);
+            warn!("Couldn't parse RPC call from JSON: {}.", e);
             return Err(warp::reject::custom(Error::InvalidOnionRequest));
         }
     };
@@ -49,16 +49,20 @@ async fn handle_decrypted_onion_request(
     let result = rpc::handle_rpc_call(rpc_call)
         .await
         // Turn any error that occurred into an HTTP response
-        // Unwrapping is safe because at this point any error should be caught and turned into an HTTP response (i.e. an OK result)
+        // Unwrapping is safe because at this point any error should be caught and turned into an
+        // HTTP response (i.e. an OK result)
         .or_else(super::errors::into_response)?;
-    // Encrypt the HTTP response so that it's propagated back to the client that made the onion request
+    // Encrypt the HTTP response so that it's propagated back to the client that made the onion
+    // request
     return encrypt_response(result, symmetric_key).await;
 }
 
 fn parse_onion_request_payload(
     blob: warp::hyper::body::Bytes,
 ) -> Result<OnionRequestPayload, Rejection> {
-    // The encoding of an onion request looks like: | 4 bytes: size N of ciphertext | N bytes: ciphertext | json as utf8 |
+    // The encoding of an onion request looks like:
+    //
+    //     | 4 bytes: size N of ciphertext | N bytes: ciphertext | json as utf8 |
     if blob.len() < 4 {
         warn!("Ignoring blob of invalid size.");
         return Err(warp::reject::custom(Error::InvalidOnionRequest));
@@ -78,7 +82,7 @@ fn parse_onion_request_payload(
     let json = match String::from_utf8(utf8_json) {
         Ok(json) => json,
         Err(e) => {
-            warn!("Couldn't parse onion request payload metadata due to error: {}.", e);
+            warn!("Couldn't parse onion request payload metadata: {}.", e);
             return Err(warp::reject::custom(Error::InvalidOnionRequest));
         }
     };
@@ -86,7 +90,7 @@ fn parse_onion_request_payload(
     let metadata: OnionRequestPayloadMetadata = match serde_json::from_str(&json) {
         Ok(metadata) => metadata,
         Err(e) => {
-            warn!("Couldn't parse onion request payload metadata due to error: {}.", e);
+            warn!("Couldn't parse onion request payload metadata: {}.", e);
             return Err(warp::reject::custom(Error::InvalidOnionRequest));
         }
     };
@@ -99,7 +103,8 @@ fn parse_onion_request_payload(
     return Ok(OnionRequestPayload { ciphertext, metadata });
 }
 
-/// Returns the decrypted `payload.ciphertext` plus the `symmetric_key` that was used for decryption if successful.
+/// Returns the decrypted `payload.ciphertext` plus the `symmetric_key` that was used for
+/// decryption if successful.
 fn decrypt_onion_request_payload(
     payload: OnionRequestPayload,
 ) -> Result<(Vec<u8>, Vec<u8>), Rejection> {

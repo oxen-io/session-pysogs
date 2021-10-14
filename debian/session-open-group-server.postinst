@@ -21,10 +21,12 @@ if [ "$1" = configure ]; then
     # Generate the key pair if needed
     if ! [ -f $SOGS/x25519_private_key.pem ]; then
         openssl genpkey -algorithm x25519 -out $SOGS/x25519_private_key.pem
+        chown _loki $SOGS/x25519_private_key.pem
         rm -f $SOGS/x25519_public_key.pem
     fi
     if ! [ -f $SOGS/x25519_public_key.pem ]; then
         openssl pkey -in $SOGS/x25519_private_key.pem -pubout -out $SOGS/x25519_public_key.pem
+        chown _loki $SOGS/x25519_public_key.pem
     fi
     # Set permissions
     su -s /bin/sh _loki -c "test -O $SOGS && test -G $SOGS" || \

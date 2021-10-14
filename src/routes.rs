@@ -104,7 +104,8 @@ pub async fn root_html() -> Result<Response, Rejection> {
 }
 
 pub async fn fallback_html(
-    room: String, query_map: HashMap<String, String>,
+    room: String,
+    query_map: HashMap<String, String>,
 ) -> Result<Response, Rejection> {
     if !query_map.contains_key("public_key") || room == "" {
         return fallback_nopubkey_html().await;
