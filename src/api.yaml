@@ -1,0 +1,1303 @@
+openapi: 3.0.1
+info:
+  title: Session Open Group Server
+  description: >
+    API documentation for Session open groups.  This is the API that
+    [Session](https://getsession.org) and related tools use to interface with open groups.
+  contact:
+    name: The Oxen Project
+    email: team@oxen.io
+    url: https://getsession.org
+  license:
+    name: GPL v3.0
+    url: https://www.gnu.org/licenses/gpl-3.0.en.html
+  version: "3.0"
+externalDocs:
+  description: Find out more about the Oxen project
+  url: http://oxen.io
+tags:
+- name: Rooms
+  description: Access to a server's rooms (AKA open groups) and room management
+- name: Messages
+  description: Message-related endpoints for accessing, submitting, deleting, etc.
+- name: Batch
+  description: Endpoint for submitting a batch of requests at once.
+- name: Users
+  description: Management of users and user-related info.
+security:
+  - pubkey: []
+    nonce: []
+    timestamp: []
+    signature: []
+paths:
+  /rooms:
+    get:
+      tags: [Rooms]
+      summary: "Returns a list of available rooms on the server."
+      description: >
+        Rooms to which the user does not have access (e.g. because they are banned) are not
+        included.
+      responses:
+        200:
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Room"
+  /room/{roomToken}:
+    get:
+      tags: [Rooms]
+      summary: Returns information about the given room.
+      parameters:
+        - $ref: "#/components/parameters/pathRoomToken"
+      responses:
+        200:
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Room"
+        403:
+          description: >
+            Forbidden. Returned if the user is banned from the room or otherwise does not have read
+            access to the room.
+          content: {}
+  /room/{roomToken}/pollInfo:
+    get:
+      tags: [Rooms]
+      summary: Polls a room for metadata updates.
+      parameters:
+        - $ref: "#/components/parameters/pathRoomToken"
+        - name: info_updated
+          description: >
+            The client's current `info_updates` value for the room.  The full room metadata is
+            returned in the response if the room's last update count does not equal the given value.
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: int64
+          example: 4567
+      description: >
+        Retrives room metadata for this room, including the instantaneous room details (such as the
+        user's permission and current number of active users)
+        
+      responses:
+        200:
+          description: >
+            Results of polling the room for updated information.  This endpoint always returns
+            ephemeral data, such as the number of active users and the current user's permissions,
+            and will include the full room details if changed since the client's last update.
+            
+            
+            Note that the `details` field is only present and populated if it differs from the
+            provided `info_updated` value; otherwise the values are unchanged and so it is omitted.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    $ref: "#/components/schemas/RoomToken"
+                  active_users:
+                    $ref: "#/components/schemas/Room/properties/active_users"
+                  read:
+                    $ref: "#/components/schemas/Room/properties/read"
+                  write:
+                    $ref: "#/components/schemas/Room/properties/write"
+                  upload:
+                    $ref: "#/components/schemas/Room/properties/upload"
+                  info_updates:
+                    $ref: "#/components/schemas/Room/properties/info_updates"
+                  details:
+                    allOf:
+                      - $ref: "#/components/schemas/Room"
+
+  /room/{roomToken}/message:
+    post:
+      tags: [Messages]
+      summary: Posts a new message to a room.
+      parameters:
+        - $ref: "#/components/parameters/pathRoomToken"
+      requestBody:
+        description: >
+          JSON body containing the message details to be submitted to the room. Note that the
+          `session_id` field is not contained in the response (since it is simply the client's own
+          ID).
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [data, signature]
+              properties:
+                data:
+                  type: string
+                  format: byte
+                  description: "Base64-encoded message data."
+                  example: bWFpbiBzY3JlZW4gdHVybiBvbg==
+                signature:
+                  type: string
+                  format: byte
+                  description: >
+                    Base64-encoded message data XEd25519 signature, signed by the poster's X25519
+                    key contained in the session ID.
+                  example: NjgwYzFjOGI0YTljNTliNDk1MDRmMzY5YzFmMzRkYjM4ZTU3Mzk2YzA2ODYwODk3MzI1ZmFhMjNkYTZmNzE3YTk3MmY4MTJjZDU1MGFkMTQ2Yzk1MTdlOGM1NzMyZjgxZDE3NWViODg5OGQxZjQyMjg5ZWNkNjNjODJiMDZjNzM=
+                files:
+                  type: array
+                  description: >
+                    Optional list of file IDs attached to this message.  The referenced file IDs
+                    must have been recently uploaded and not already referenced by another message.
+                    Referenced files will have their expiries updated to 15 days, and will be
+                    deleted if the message is deleted.
+                    
+                    
+                    If any of the files are already associated with another message then the
+                    association is ignored.
+                    
+                    
+                    When submitting a message *edit* this field must contain the IDs of any newly
+                    uploaded files that are part of the edit, existing attachment IDs may be omitted
+                    (but including them is not an error).
+                  items:
+                    type: integer
+                    format: int64
+                  example: [4571, 4572]
+      responses:
+        201:
+          description: Message created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        403:
+          description: >
+            Forbidden.  Returned if the user does not have permission to post messages to this room.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  banned:
+                    type: boolean
+                    description: >
+                      True if permission was denied because the user is banned, omitted otherwise.
+                  noWrite:
+                    type: boolean
+                    description: >
+                      True if permission was denied because the user is lacking write permission,
+                      for example because of default room settings or a restriction applied to the
+                      user.
+                  reason:
+                    type: string
+                    description: >
+                      A short, English-language string describing the reason the failure occured.
+                      This is for use as a fallback ONLY: clients should prefer to identify failure
+                      through examining the other fields in the response and only use `reason` as a
+                      user-facing failure description if no known failure is included (which might
+                      happen if the server speaks a new version of the protocol than the client
+                      understands).
+                    example: "Future horrible failure reason"
+
+  /room/{roomToken}/message/{messageId}:
+    get:
+      tags: [Messages]
+      summary: Returns a single posted message by ID.
+      parameters:
+        - $ref: "#/components/parameters/pathRoomToken"
+        - name: messageId
+          in: path
+          description: ID of the message to retrieve.
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        200:
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        403:
+          description: Forbidden
+    put:
+      tags: [Messages]
+      summary: Submits replacement message content (i.e. for edits).
+      description: >
+        Re-posts a message, replacing its existing content with new content and a new signature.
+        
+        
+        This edit may only be initiated by the creator of the post.
+      parameters:
+        - $ref: "#/components/parameters/pathRoomToken"
+        - name: messageId
+          in: path
+          description: ID of the message to replace.
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        $ref: "#/paths/~1room~1%7BroomToken%7D~1message/post/requestBody"
+      responses:
+        200:
+          description: Message updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        403:
+          description: >
+            Forbidden.  Returned if the user does not have permission to post messages to this room,
+            or isn't the owner of the message being edited.
+            
+            
+            Note: the `reason` string is provided only as a fallback for forwards compatibility:
+            clients should attempt to identify the reason using the given boolean flags first, and
+            only use `reason` as a fallback if it can find no known reasons in the boolean fields.
+            This situation may arise if a future version of the specification (that the client
+            doesn't yet support) adds new failure reasons.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  banned:
+                    type: boolean
+                    description: >
+                      True if the user is banned from the room and thus no longer has edit
+                      permissions.  Omitted when false.
+                  noWrite:
+                    type: boolean
+                    description: >
+                      True if the user does not have write permissions to the room, e.g. because the
+                      user has been restricted or room permissions have changed since the message
+                      was posted.  Omitted when false.
+                  notYours:
+                    type: boolean
+                    description: >
+                      True if the message was posted by another user, and thus cannot be edited by
+                      the current user.  Omitted when false.
+                  reason:
+                    $ref: "#/paths/~1room~1%7BroomToken%7D~1message/post/responses/403/content/application~1json/schema/properties/reason"
+
+  /room/{roomToken}/messages/recent:
+    get:
+      tags: [Messages]
+      summary: "Retrieves recent messages posted to this room."
+      description: >
+        Returns the most recent `limit` messages (100 if no limit is given).  This only returns
+        extant messages, and always returns the latest versions: that is, deleted message indicators
+        and pre-editing versions of messages are not returned. Messages are returned in order from
+        most recent to least recent.
+      parameters:
+        - $ref: "#/components/parameters/pathRoomToken"
+        - $ref: "#/components/parameters/queryMessagesLimit"
+      responses:
+        200:
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Message'
+  /room/{roomToken}/messages/before/{messageId}:
+    get:
+      tags: [Messages]
+      summary: "Retrieves messages from the room preceding a given id."
+      description: >
+        Retrieves messages from the room immediately preceding the given message ID.  This endpoint
+        is intended to be used with `.../recent` to allow a client to retrieve the most recent
+        messages and then walk backwards through batches of ever-older messages. As with
+        `.../recent`, messages are returned in order from most recent to least recent.
+        
+        As with `.../recent`, this endpoint does not include deleted messages and always returns the
+        current version (i.e. fully edited) of edited messages.
+      parameters:
+        - $ref: "#/components/parameters/pathRoomToken"
+        - $ref: "#/components/parameters/queryMessagesLimit"
+        - name: messageId
+          in: path
+          description: "The id of the message whose preceding messages are sought."
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        200:
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Message'
+  /room/{roomToken}/messages/since/{updateId}:
+    get:
+      tags: [Messages]
+      summary: "Retrieves message updates from a room."
+      description: >
+        This endpoint retrieves new, edited, and deleted messages posted to this room since the
+        given update id.  Returns `limit` messages at a time (100 if no limit is given).  Returned
+        messages include any new messages, updates to existing messages (i.e. edits), and message
+        deletions made to the room since the given update id.  Messages are returned in "update"
+        order, that is, in the order in which the change was applied to the room, from oldest the
+        newest.
+      parameters:
+        - $ref: "#/components/parameters/pathRoomToken"
+        - $ref: "#/components/parameters/queryMessagesLimit"
+        - name: updateId
+          in: path
+          required: true
+          description: >
+            The update id from which to retrieve message updates.  To retrieve from the beginning of
+            the room's message history use a value of 0 (the first room update will always be >= 1).
+          schema:
+            type: integer
+            format: int64
+      responses:
+        200:
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  more:
+                    type: integer
+                    format: int32
+                    description: >
+                      Indicates the number of additional message updates after the last one
+                      returned.  A positive value indicates that more messages are available (that
+                      is: that the limit was binding).
+                  messages:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Message'
+  /room/{roomToken}/file:
+    post:
+      tags: [Files]
+      summary: "Uploads a file to a room."
+      description: >
+        Takes the request as binary in the body and takes other properties via submitted headers.
+        This saves space, particularly for large uploads.  The user must have upload and posting
+        permissions for the room.  The file will have a default lifetime of 1 hour, but that is
+        extended to 15 days when the containing message referencing the uploaded file is posted.
+        
+        
+        See also the `.../fileJson` endpoint for submitting via a json body.
+      parameters:
+      - $ref: "#/components/parameters/pathRoomToken"
+      - name: X-Filename
+        in: header
+        description: >
+          Suggested filename of the upload.  Typically the basename of the file uploaded from the
+          user.
+        schema:
+          type: string
+      requestBody:
+        description: The file content, in bytes.
+        required: true
+        content:
+          '*/*':
+            {}
+      responses:
+        200:
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    format: int64
+                    description: "The id of the file on the server."
+        403:
+          description: >
+            Upload forbidden.  This response code indicates that the user does not have posting
+            and/or upload permissions in the room either because of room settings, user restriction,
+            or because the user is banned.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  banned:
+                    type: boolean
+                    description: >
+                      True if the upload was denied because the user is banned, omitted otherwise.
+                  noWrite:
+                    type: boolean
+                    description: >
+                      True if the upload was denied because the user does not have write access to
+                      the room (but is not banned).  Omitted otherwise.
+                  noUpload:
+                    type: boolean
+                    description: >
+                      True if the upload was denied because the user does not have upload access to
+                      the room (but is not banned and has write permissions).  Omitted otherwise.
+
+  /room/{roomToken}/fileJSON:
+    post:
+      tags: [Files]
+      summary: "Uploads a file to a room using a JSON encoded body."
+      description: >
+        This is less efficient when a binary upload is possible because the body must be passed as
+        base64-encoded data (which is 33% larger).  The user must have upload and posting
+        permissions for the room.  The file will have a default lifetime of 1 hour, but that is
+        extended to 15 days when the containing message referencing the upload is submitted.
+      parameters:
+      - $ref: "#/components/parameters/pathRoomToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [filename, content]
+              properties:
+                filename:
+                  type: string
+                  description: "Suggested filename of the upload.  Typically the basename of the file uploaded from the user."
+                content:
+                  type: string
+                  format: byte
+                  description: The file content, in base64 encoding.
+      responses:
+        200:
+          $ref: "#/paths/~1room~1%7BroomToken%7D~1file/post/responses/200"
+        403:
+          $ref: "#/paths/~1room~1%7BroomToken%7D~1file/post/responses/403"
+
+  /room/{roomToken}/file/{fileId}:
+    get:
+      tags: [Files]
+      summary: "Retrieves a file from the room via JSON."
+      description: >
+        Retrieves a file via a fileId from the room via a JSON object response.  This is noticeably
+        less efficient (particularly for large files) than the binary version when making direct
+        requests because the file data must be encoded using base64 encoding.
+      parameters:
+        - $ref: "#/components/parameters/pathRoomToken"
+        - $ref: "#/components/parameters/pathFileId"
+      responses:
+        200:
+          description: successful operation; returns the file in JSON.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  filename:
+                    type: string
+                    description: >
+                      The suggested filename of the file. Omitted if the file was uploaded without a
+                      filename (e.g. from older clients, or clients that specify an empty filename.)
+                  size:
+                    type: integer
+                    format: int64
+                    description: >
+                      The file size, in bytes. (*Not* the length of the base64-encoded data.)
+                  uploaded:
+                    type: number
+                    format: double
+                    description: The unix timestamp when the file was uploaded.
+                  expires:
+                    type: number
+                    format: double
+                    nullable: true
+                    description: >
+                      The unix timestamp when the file is scheduled to be removed.  Will be null if
+                      the attachment is permanent, such as for room images or attachments in pinned
+                      messages.
+        403:
+          $ref: "#/paths/~1room~1%7BroomToken%7D/get/responses/403"
+        404:
+          description: >
+            The referenced file does not exist.  (It may have expired, or may be invalid.)
+
+  /room/{roomToken}/file/{fileId}/{filename}:
+    get:
+      tags: [Files]
+      summary: "Retrieves a file from the room as binary."
+      description: >
+        Retrieves a file via a fileId from the room, returning the file content directly as the
+        binary response body.  The filename parameter is ignored and may be empty: it is primarily
+        included to aid in clients that want the request to include a filename, and differentiates
+        this as a request retrieving the file itself rather than the file as a JSON response.  See
+        the version without `/filename` for a JSON-returning version.
+      parameters:
+        - $ref: "#/components/parameters/pathRoomToken"
+        - $ref: "#/components/parameters/pathFileId"
+        - name: filename
+          in: path
+          required: true
+          description: >
+            Filename if known by the requesting client, and empty otherwise.  The value of this
+            parameter is ignored by the server itself: it is included to differentiate this request
+            from the JSON version, and so that clients may include a filename in the request URL for
+            contexts where that is useful.
+          schema:
+            type: integer
+            format: int64
+      responses:
+        200:
+          description: successful operation; returns the file, in raw bytes.
+          headers:
+            Content-Length:
+              description: The size of the file.
+              schema:
+                type: integer
+                format: int64
+              example: 12345
+            Date:
+              description: The HTTP timestamp at which the file was uploaded.
+              schema:
+                type: string
+                example: "Thu, 7 Oct 2021 00:42:00 GMT"
+            Expires:
+              description: >
+                The HTTP timestamp at which the file is scheduled to expire.  This header is omitted
+                if the attachment is non-expiring (e.g. for attachments in a pinned message).
+              schema:
+                type: string
+                example: "Fri, 22 Oct 2021 00:42:42 GMT"
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        403:
+          $ref: "#/paths/~1room~1%7BroomToken%7D~1file~1%7BfileId%7D/get/responses/403"
+        404:
+          $ref: "#/paths/~1room~1%7BroomToken%7D~1file~1%7BfileId%7D/get/responses/403"
+
+                    
+  /user/{sessionId}/ban:
+    post:
+      tags: [Users]
+      summary: Bans or unbans a user.
+      description: >
+        Applies or removes a ban of a user from specific rooms, or from the server globally.
+        
+        
+        Note that the given session ID does not have to exist: it is possible to preemptively ban
+        users who have never visited the server or room(s).
+        
+        
+        The user's messages are not deleted by this request.  In order to ban and delete all
+        messages use the `/sequence` endpoint to bundle a `/user/.../ban` with a
+        `/user/.../deleteMessages` request.
+      parameters:
+      - $ref: "#/components/parameters/pathSessionId"
+      requestBody:
+        description: Details of the ban to apply. To unban a user, specify a negative timeout.
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                rooms:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/RoomToken"
+                  minItems: 1
+                  description: >
+                    List of room tokens to which the ban should be applied. The invoking user must
+                    be a moderator (or admin) of all of the given rooms.
+                    
+                    
+                    Exclusive of `global`.
+                global:
+                  type: boolean
+                  description: >
+                    If true then apply the the ban at the global level, i.e. server-wide. The
+                    invoking user must be a server-level moderator or admin.
+                    
+                    
+                    Exclusive of `rooms`.
+                timeout:
+                  type: number
+                  format: double
+                  nullable: true
+                  example: 86400
+                  description: >
+                    How long the ban should apply, in seconds.  If there is an existing ban on the
+                    user in the given rooms or globally this updates the existing expiry to the
+                    given value. If omitted or `null` the ban does not expire.
+                    
+                    If this value is set to a negative value (`-1` is suggested) then any existing
+                    bans for this user are *removed* from the given rooms/server.  Note, however,
+                    that server bans and room bans are independent: removing a server-level ban does
+                    not remove room-specific bans, and removing a room-level ban will not grant room
+                    access to a user who also has a server-level ban.
+            examples:
+              tworooms:
+                summary: "1-day ban from two rooms"
+                value:
+                  rooms: ["session", "lokinet"]
+                  timeout: 86400
+              permaban:
+                summary: "Permanent server ban"
+                value:
+                  global: true
+                  timeout: null
+                  delete_all: true
+              unban:
+                summary: "Unban a user from a room"
+                value:
+                  rooms: ["lokinet"]
+                  global: false,
+                  timeout: -1
+      responses:
+        200:
+          description: Ban applied successfully.
+          content: {}
+        403:
+          description: >
+            Permission denied.  The user attempting to set the ban does not have moderator
+            permissions for one or more of the given rooms (or server moderator permission for a
+            global ban).
+          content: {}
+  /user/{sessionId}/permission:
+    post:
+      tags: [Users]
+      summary: Applies permissions or restrictions to a user.
+      description: >
+        Applies or removes a user's permissions to one or more rooms.
+        
+        
+        The request specifies grants (`true`) or revocations (`false`) of permissions to apply.
+        Granting or revoking a permission adds a specific override for the given user that overrides
+        the default room permissions.
+        
+        
+        You can explicitly clear one or more permission setting by specifying a timeout of `-1` (in
+        this case the actual true/false value of the permissions are ignored).
+        
+        
+        Note that the given session ID does not have to exist: it is possible to grant permissions
+        preemptively for a session ID that has never visited the server or room(s).
+      parameters:
+      - $ref: "#/components/parameters/pathSessionId"
+      requestBody:
+        description: "Details of the permission update to apply."
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [rooms]
+              properties:
+                rooms:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/RoomToken"
+                  minItems: 1
+                  description: >
+                    List of room tokens to which the permissions should be applied. The invoking
+                    user must be a moderator (or admin) of all of the given rooms.
+                timeout:
+                  type: number
+                  format: double
+                  nullable: true
+                  example: 86400
+                  description: >
+                    How long the new permission (or restriction) should apply, in seconds.  If the
+                    user already has future permission changes scheduled then they will be cancelled
+                    and replaced the changes scheduled here.
+                    
+                    
+                    When the timeout expires, the specific override will be removed and the user's
+                    permission will revert to the room's defaults.
+                    
+                    
+                    Using a timeout of -1 clears any given permission/restrictions immediately.
+                    Note that, in this case, the actual true/false value is ignored.  For instance,
+                    `timeout: -1, read: false` and `timeout: -1, read: true` both clear any existing
+                    user-specific permission for `read`.
+                read:
+                  type: boolean
+                  nullable: true
+                  example: false
+                  description: >
+                    If true this grants permission to read the room's messages even if the room
+                    defaults do not allow reading.  If false this restricts permission to read the
+                    room's messages even if the room's default allows reading.  Specifying this as
+                    null will explicitly delete any user-specific read override (effectively
+                    returning the user's read permission to the room's default).
+                write:
+                  type: boolean
+                  nullable: true
+                  example: true
+                  description: >
+                    If true this grants permission to post messages to the room, even if the room's
+                    default permissions do not allow posting.  If false this restricts the user from
+                    posting.  Specifying this as null will explicitly delete any user-specific write
+                    override, returning the user's effective permission to the room's default.
+                upload:
+                  type: boolean
+                  nullable: true
+                  example: true
+                  description: >
+                    If true this grants permission to upload files to the room for this user, even
+                    if the room's default permission does not allow uploads.  If false the user is
+                    restricted from uploading files.  Specifying as null will explicitly delete any
+                    user-specific override, returning the user's effective permission to the room's
+                    default.
+            examples:
+              tworooms:
+                summary: "1-day mute in two rooms"
+                value:
+                  rooms: ["session", "lokinet"]
+                  timeout: 86400
+                  write: false
+              allow-uploads:
+                summary: "Allow file attachments for 1 week"
+                value:
+                  rooms: ["session-help"]
+                  upload: true
+                  timeout: 604800
+              secretroom:
+                summary: "Grant access to a restricted room"
+                value:
+                  rooms: ["top-secret"]
+                  read: true
+                  write: true
+                  upload: true
+      responses:
+        200:
+          description: Permission update applied successfully.
+          content: {}
+        403:
+          description: >
+            Permission denied.  The user attempting to set the permissions does not have moderator
+            permissions for one or more of the given rooms.
+          content: {}
+  /user/{sessionId}/moderator:
+    post:
+      tags: [Users]
+      summary: Adds or removes moderator powers.
+      description: >
+        Adds or removes moderator or admin permissions to a user for specific rooms, or globally on
+        the server.
+        
+        
+        Note that the given session ID does not have to exist: it is possible to grant moderator
+        permissions preemptively for a session ID that has never visited the server or room(s).
+      parameters:
+      - $ref: "#/components/parameters/pathSessionId"
+      requestBody:
+        description: "Details of the permission update to apply."
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                rooms:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/RoomToken"
+                  minItems: 1
+                  description: >
+                    List of room tokens to which the moderator status should be applied. The
+                    invoking user must be an admin of all of the given rooms.
+                    
+                    
+                    Exclusive of `global`.
+                global:
+                  type: boolean
+                  description: >
+                    If true then appoint this user as a moderator or admin of the global server.
+                    The user will receive moderator/admin ability in all rooms on the server.
+                
+                moderator:
+                  type: boolean
+                  description: >
+                    If `true` then this user will be granted moderator permission to either the
+                    listed room or the server globally.
+                    
+                    
+                    If `false` then this user will have their moderator and admin permissions
+                    removed from the given rooms (or server).
+                admin:
+                  type: boolean
+                  description: >
+                    If `true` then this user will be granted moderator and admin permissions to the
+                    given rooms or server.  Admin permissions are required to appoint new moderators
+                    or administrators.
+                    
+                    
+                    If false then this user will have their admin permission removed, but will
+                    remain a moderator (if they were previously a moderator or admin).  To remove
+                    both moderator and admin status you can specify simply `moderator: false` rather
+                    than needing to specify both values as false.
+                visible:
+                  type: boolean
+                  description: >
+                    Whether this user should be a "visible" moderator in the server rooms.  Visible
+                    moderators are identified to all room users (e.g. via a special status badge in
+                    Session clients).
+                    
+                    
+                    Invisible moderators/admins have the same permission as as visible ones, but
+                    their moderator/admin status is only visible to other moderators but not to
+                    ordinary room participants.
+                    
+                    
+                    The default if this field is omitted is true for room-specific moderators/admins
+                    and false for server-level global moderators/admins.
+            examples:
+              tworooms:
+                summary: "1-day mute in two rooms"
+                value:
+                  rooms: ["session", "lokinet"]
+                  timeout: 86400
+                  write: false
+              allow-uploads:
+                summary: "Allow file attachments for 1 week"
+                value:
+                  rooms: ["session-help"]
+                  upload: true
+                  timeout: 604800
+              secretroom:
+                summary: "Grant access to a restricted room"
+                value:
+                  rooms: ["top-secret"]
+                  read: true
+                  write: true
+                  upload: true
+      responses:
+        200:
+          description: Permission update applied successfully.
+          content: {}
+        403:
+          description: >
+            Permission denied.  The user attempting to set the permissions does not have moderator
+            permissions for one or more of the given rooms.
+          content: {}
+  /user/{sessionId}/deleteMessages:
+    post:
+      tags: [Users]
+      summary: Deletes all of a user's messages.
+      description: >
+        Deletes all messages posted by the given user from one or more rooms, or from all rooms on
+        the server.
+        
+        
+        The caller must have moderator permission in all given rooms, or be a server moderator for
+        global server deletion.
+      parameters:
+      - $ref: "#/components/parameters/pathSessionId"
+      requestBody:
+        description: "Details of the deletion."
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                rooms:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/RoomToken"
+                  minItems: 1
+                  description: >
+                    List of room tokens from which messages should be deleted.  The invoking user
+                    must be a moderator (or admin) or all of the given rooms.
+                    
+                    
+                    Exclusive of `global`.
+                global:
+                  type: boolean
+                  description: >
+                    If true then delete all messages made by this user from all rooms on the server.
+                    The invoking user must be a server-level moderator or admin.  In particular,
+                    this does *not* allow a non-server moderator to delete the user's messages from
+                    all rooms they moderate.
+                    
+                    
+                    Exclusive of `rooms`.
+            examples:
+              tworooms:
+                summary: "Delete all messages from two rooms"
+                value:
+                  rooms: ["session", "lokinet"]
+              permaban:
+                summary: "Delete all messages from all rooms"
+                value:
+                  global: true
+      responses:
+        200:
+          description: Messages deleted successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    $ref: "#/components/schemas/SessionID"
+                  messages_deleted:
+                    type: integer
+                    format: int64
+                    description: The number of messages deleted.
+        403:
+          description: >
+            Permission denied.  The user attempting to set the ban does not have moderator
+            permissions for one or more of the given rooms (or server moderator permission for a
+            global ban).
+          content: {}
+  /batch:
+    post:
+      tags: [Batch]
+      summary: "Utility endpoint to allow submitting multiple independent requests at once."
+      description: "This is used, for example, to poll multiple rooms on the same server for updates in a single query rather than needing to make multiple requests for each room.\n\nNo guarantee is made as to the order in which sub-requests are processed; use the `/sequence` instead if you need that."
+      requestBody:
+        description: "List of sub-requests to issue for this batch request."
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: object
+                required: [method, path]
+                properties:
+                  method:
+                    type: string
+                    description: "The request method, usually GET for batched requests, though other methods are also permitted."
+                  path:
+                    type: string
+                    description: "The request path, e.g. `/room/123/messages/since/45678`"
+                  json:
+                    description: "Optional nested json structure containing a json body for the POST/PUT requests.  Exclusive of `bytes`, and may not be provided for methods that do not accept a body (such as GET)."
+                    oneOf:
+                    - type: object
+                    - type: array
+                  bytes:
+                    description: "Optional body, encoded in base64, for the POST/PUT request.  Exclusive of `json` and may not be provided for methods that do not accept a body (such as GET)."
+                    type: string
+                    format: byte
+      responses:
+        200:
+          description: "Batch jobs completed. Note that 200 only means the batch was processed; for individual sub-requests see the relevant sub-response code.  The returned array returns responses in exactly the same order as the request's list of sub-requests (regardless of the actual order jobs were processed)."
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [code, content-type, body]
+                  properties:
+                    code:
+                      type: integer
+                      format: int32
+                      description: "HTTP response code for the subrequest (e.g. 200, 404, etc.)"
+                    content-type:
+                      type: string
+                      description: "HTTP content-type of the subrequest response (e.g. `application/json`)"
+                    body:
+                      oneOf:
+                        - type: object
+                        - type: array
+                        - type: string
+                          format: byte
+                      description: "The response body.  For responses with `content-type` set to `application/json` this will be the direct object or array response; for any other content otherwise this will be a string containing the base64-encoded response data."
+
+  /sequence:
+    post:
+      tags: [Batch]
+      summary: "Utility endpoint to submit a batch of sequenced, dependent requests."
+      description: "The requests are guaranteed to be performed sequentially in the order given in the request and will abort if any request does not return a status-`2xx` response.\n\nFor example, this can be used to ban and delete all of a user's messages by sequencing the ban followed by the delete_all: if the ban fails (e.g. because permission is denied) then the delete_all will not occur. The batch body and response are identical to the `/batch` endpoint; requests that are not carried out because of an earlier failure will have a response code of `412` (Precondition Failed)."
+      requestBody:
+        $ref: "#/paths/~1batch/post/requestBody"
+      responses:
+        200:
+          $ref: "#/paths/~1batch/post/responses/200"
+
+components:
+  schemas:
+    RoomToken:
+      type: string
+      title: A room token used in URLs to identify the room.
+      pattern: "^[\\w-]{1,64}$"
+      example: "session-general"
+    SessionID:
+      type: string
+      title: A session ID, in hex.
+      description: >
+        The Session ID is the fixed byte `05` followed by the 32-byte X25519 pubkey used to sign and
+        encrypt messages.
+      pattern: "^05[0-9a-fA-F]{64}$"
+    Room:
+      title: Information about a room
+      type: object
+      properties:
+        token:
+          $ref: "#/components/schemas/RoomToken"
+        name:
+          type: string
+          description: Room name to display to users.
+          example: "Session General Discussion"
+        description:
+          type: string
+          description: Room description to display to users. Omitted if not set.
+          example: "General chat related to the Session messenger."
+        info_updates:
+          type: integer
+          format: int64
+          description: >
+            Monotonic room information counter that increases each time the room's metadata changes.
+          example: 12345
+        updates:
+          type: integer
+          format: int64
+          description: >
+            Monotonic room post counter that increases each time a message is posted, edited, or
+            deleted in this room.  (Note that changes to this field do *not* update the room's
+            `info_updates` value.)
+          example: 567890
+        created:
+          type: number
+          format: double
+          description: Unix timestamp when the room was created
+          example: 1633629915.34607
+        active_users:
+          type: object
+          description: >
+            Number of recently active users in the room over recent time periods.
+            
+            
+            Users are considered "active" if they have access the room (checking for new messages,
+            etc.) at least once in the given time periods.
+            
+            
+            Note that changes to this field do *not* update the room's `info_updates` value.
+          properties:
+            hour:
+              type: integer
+              format: int64
+              description: "Number of active users in the past hour."
+            day:
+              type: integer
+              format: int64
+              description: "Number of active users in the past 24 hours."
+            week:
+              type: integer
+              format: int64
+              description: "Number of active users in the past week."
+            month:
+              type: integer
+              format: int64
+              description: "Number of active users in the past 30 days."
+          example: { hour: 842, day: 1917, week: 3481, month: 5609 }
+        image_id:
+          type: integer
+          format: int64
+          description: >
+            File ID of an uploaded file containing the room's image.  Omitted if there is no image.
+          example: 42
+        pinned_messages:
+          type: array
+          items:
+            type: integer
+            format: int64
+          description: >
+            IDs of this room's pinned messages, in order of when they were pinned.
+          example: [512, 4998, 11]
+        moderators:
+          type: array
+          items:
+            type: string
+          description: >
+            Session IDs of the room's public moderators.
+          example:
+            - "050123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            - "05fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
+        admins:
+          type: array
+          items:
+            type: string
+          description: >
+            Session IDs of the room's public administrators.  (Administrators are moderators who
+            also have permission to add or remove other moderators.)
+          example:
+            - "050123456776543210012345677654321001234567765432100123456776543210"
+        hidden_mods:
+          type: array
+          items:
+            type: string
+          description: >
+            Session IDs of moderators who are not publicly displayed as moderators of the room.
+            This field is only present if the requestor is a moderator/admin of the room or server.
+          example:
+            - "0589abcdeffedcba9889abcdeffedcba9889abcdeffedcba9889abcdeffedcba98"
+        hidden_admins:
+          type: array
+          items:
+            type: string
+          description: >
+            Session IDs of admins who are not publicly displayed as administrators of the room.
+            This field is only present if the requestor is a moderator/admin of the room or server.
+          example:
+            - "050011223344556677001122334455667700112233445566770011223344556677"
+        moderator:
+          type: boolean
+          description: >
+            Will be set to true if the requestor is recognized with moderator permissions in the
+            room.  Omitted otherwise.
+          example: true
+        admin:
+          type: boolean
+          description: >
+            Will be set to true if the requestor is recognized with admin permissions in the room.
+            Omitted otherwise.
+          example: true
+        read:
+          type: boolean
+          description: >
+            Whether the user has permission to read messages in the room.  (Note that changes to
+            this property do not cause an `info_update` increment.)
+          example: true
+        write:
+          type: boolean
+          description: >
+            Whether the user has permission to post messages to the room.  (Note that changes to
+            this property do not cause an `info_update` increment.)
+          example: true
+        upload:
+          type: boolean
+          description: >
+            Whether the user has permissions to upload attachments to messages posted to the room.
+            (Note that changes to this property do not cause an `info_update` increment.)
+          example: true
+    Message:
+      title: The content of a posted message
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: The numeric message id.
+        session_id:
+          allOf:
+            - $ref: "#/components/schemas/SessionID"
+            - type: object
+              description: >
+                The session ID of the user who posted this message.  Omitted in contexts where the
+                information isn't available or isn't useful or available, such as in the
+                confirmation of submitting a post.
+        timestamp:
+          type: number
+          format: double
+          description: >
+            Unix timestamp of when the message was posted to the server.
+        edited:
+          type: number
+          format: double
+          description: >
+            Unix timestamp of the last edit to this message.  This field is omitted if the message
+            has never been edited.
+        updated:
+          type: integer
+          format: int64
+          description: >
+            Set to the room's current monotonic update counter when this message is first posted and
+            whenever the message is edited or deleted.  Thus an update to this value for the same
+            message indicates an update or deletion.
+        data:
+          type: string
+          format: byte
+          description: >
+            The posted message data, encoded in base64.  For a deleted message this field is
+            omitted.  For an edited message, this field contains the latest message value.
+        signature:
+          type: string
+          format: byte
+          description: >
+            An XEd25519 signature of the data contained in `data`, signed using the X25519 pubkey
+            contained in the user's Session ID.  This field is omitted when `data` is omitted (i.e.
+            for deleted messages.)
+  parameters:
+    pathRoomToken:
+      name: roomToken
+      in: path
+      description: "Token of the room to which the request is being made."
+      required: true
+      schema:
+        $ref: "#/components/schemas/RoomToken"
+    queryMessagesLimit:
+      name: limit
+      in: query
+      required: false
+      description: "Number of messages to return.  If omitted 100 messages are returned."
+      schema:
+        type: integer
+        format: int32
+        minimum: 1
+        maximum: 255
+    pathFileId:
+      name: fileId
+      in: path
+      required: true
+      description: "ID of a file uploaded to the room."
+      schema:
+        type: integer
+        format: int64
+    pathSessionId:
+      name: sessionId
+      in: path
+      required: true
+      description: "Session ID of a user."
+      schema:
+        $ref: "#/components/schemas/SessionID"
+        
+
+
+
+  securitySchemes:
+    pubkey:
+      type: apiKey
+      name: X-SOGS-Pubkey
+      in: header
+      description: "The Session ID of the requestor"
+    nonce:
+      type: apiKey
+      name: X-SOGS-Nonce
+      in: header
+      description: >
+        A unique nonce string, in base64, of exactly 16 base64 characters (96 bits).  This must be
+        unique for every request from this pubkey within the last 24 hours; nonce reuse will result
+        in failed requests.  It is typically sufficient to generate 96 bits (12 bytes) or random
+        data for each request, but clients are free to use other nonce generation mechanisms if
+        desired.
+    timestamp:
+      type: apiKey
+      name: X-SOGS-Timestamp
+      in: header
+      description: >
+        Unix timestamp integer (expressed as a string) of the time when the request was initiated
+        (to help avoid replay attacks).  This timestamp must be within ±24 hours of the server's
+        time when the request is received.
+    signature:
+      type: apiKey
+      name: X-SOGS-Signature
+      in: header
+      description: >
+        XEd25519 signature of
+        
+        
+        `METHOD || PATH || NONCE || TIMESTAMP || SERVER_PUBKEY || BODY`
+        
+        
+        signed using the client's Session ID pubkey, using base64 encoding (with or without
+        padding).
+
+# vim:sw=2:et:tw=100
