@@ -7,3 +7,6 @@
 /files
 /rooms
 /uploads
+*.bin
+__pycache__
+*.pyc
