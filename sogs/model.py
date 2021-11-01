@@ -12,16 +12,29 @@ def get_rooms():
         for row in result:
             room_info = dict()
             cols = list(row)
-            for key in ['id', 'name', 'description', 'image', 'created', 'updates', 'read', 'write', 'upload']:
+            for key in ['token', 'name', 'description', 'image', 'created', 'updates', 'read', 'write', 'upload']:
                 room_info[key] = cols[0]
                 cols.pop(0)
             rooms.append(room_info)
     return rooms
 
+
+def get_room(room_id):
+    with db.pool as conn:
+        result = conn.execute("SELECT token, name, description, image, created, updates, read, write, upload FROM rooms WHERE token=? LIMIT 1", [room_id])
+        row = result.fetchone()
+        cols = list(row)
+        room_info = dict()
+        for key in ['id', 'name', 'description', 'image', 'created', 'updates', 'read', 'write', 'upload']:
+            room_info[key] = cols[0]
+            cols.pop(0)
+        return room_info
+    
+
 def get_user(session_id):
     """ get a user by their session id """
     with db.pool as conn:
-        result = conn.execute("SELECT * FROM users WHERE session_id = ? LIMIT 1", session_id)
+        result = conn.execute("SELECT * FROM users WHERE session_id = ? LIMIT 1", [session_id])
         row = None
         try:
             row = result.fetchone()
@@ -44,7 +57,7 @@ def get_room_image_json_blob(room_id):
     filename = None
     with db.pool as conn:
         # todo: this query sucks
-        result = conn.execute("SELECT filename FROM files WHERE id IN ( SELECT image FROM rooms WHERE token = ? LIMIT 1 ) LIMIT 1", room_id)
+        result = conn.execute("SELECT filename FROM files WHERE id IN ( SELECT image FROM rooms WHERE token = ? LIMIT 1 ) LIMIT 1", [room_id])
         row = result.fetchone()
         if row:
             filename = row[0]
@@ -57,7 +70,7 @@ def get_room_image_json_blob(room_id):
 def get_mods_for_room(room_id):
     mods = list()
     with db.pool as conn:
-        result = conn.execute("SELECT session_id FROM user_permissions WHERE room = ? AND moderator AND visible_mod", room_id)
+        result = conn.execute("SELECT session_id FROM user_permissions WHERE room = ? AND moderator AND visible_mod", [room_id])
         for row in result:
             mods.append(row[0])
     return mods
@@ -70,7 +83,7 @@ def get_deletions_deprecated(room_id, since):
         if since:
             result = conn.execute("SELECT id, updated FROM messages WHERE room = ? AND updated > ? AND data IS NULL ORDER BY updated LIMIT 256", room_id, since)
         else:
-            result = conn.execute("SELECT id, updated FROM messages WHERE room = ? AND data IS NULL ORDER BY updated DESC LIMIT 256", room_id)
+            result = conn.execute("SELECT id, updated FROM messages WHERE room = ? AND data IS NULL ORDER BY updated DESC LIMIT 256", [room_id])
         for row in result:
             msgs.append({'id': row[0], 'updated': row[1]})
     return msgs
@@ -80,7 +93,7 @@ def get_message_deprecated(room_id, since):
     with db.pool as conn:
         result = None
         if since:
-            result = conn.execute("SELECT * FROM message_details WHERE room = ? AND id > ? AND data IS NOT NULL ORDER BY id LIMIT 256", room_id)
+            result = conn.execute("SELECT * FROM message_details WHERE room = ? AND id > ? AND data IS NOT NULL ORDER BY id LIMIT 256", [room_id])
         else:
             result = conn.execute("SELECT * FROM message_details WHERE room = ? AND data IS NOT NULL ORDER BY id DESC LIMIT 256", room_id, since)
         for row in result:

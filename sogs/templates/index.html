@@ -3,6 +3,10 @@
     <title> sogs </title>
   </head>
   <body>
-    <pre> sogs url is {{url_base}}/{{room}}?pubkey={{pubkey}} </pre>
+    <ul>
+      {% for room in rooms %}
+      <li><a href="{{url_base}}/{{room.token}}?public_key={{pubkey}}"></a></li>
+      {% endfor %}
+    </ul>
   </body>
 </html>

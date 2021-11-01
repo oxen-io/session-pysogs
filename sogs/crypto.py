@@ -2,32 +2,24 @@ from . import config
 
 import os
 
-from nacl.signing import SigningKey, VerifyKey
+from nacl.public import PrivateKey, PublicKey
+from nacl.signing import VerifyKey
 from nacl.encoding import HexEncoder
-try:
-    import pyonionreq
-except ImportError:
-    pyonionreq = None
-
+import pyonionreq
 
 # generate seed as needed
 if not os.path.exists(config.SEED_FILE):
     with open(config.SEED_FILE, 'wb') as f:
-        f.write(os.urandom(32))
+        f.write(PrivateKey.generate().encode())
 
 with open(config.SEED_FILE, 'rb') as f:
-    _privkey = SigningKey(seed=f.read())
+    _privkey = PrivateKey(f.read())
 
-server_pubkey = _privkey.verify_key
+server_pubkey = _privkey.public_key
 
 server_pubkey_hex = server_pubkey.encode(HexEncoder).decode('ascii')
 
-parse_junk = lambda data: None
-
-if pyonionreq:
-    _junk = pyonionreq.junk.Parser(_privkey.to_curve25519_private_key(), server_pubkey.to_curve25519_public_key())
-    parse_junk = _junk_parser.parse_junk
+_junk_parser = pyonionreq.junk.Parser(privkey=_privkey.encode(), pubkey=server_pubkey.encode())
+parse_junk = _junk_parser.parse_junk
 
 verify_sig_from_pk = lambda data, sig, pk: VerifyKey(pk).verify(data, sig)
-
-verify_sig_from_server = server_pubkey.verify

@@ -9,13 +9,13 @@ from . import config
 import json
 import random
 
+
 @app.route("/")
 def serve_index():
     rooms = model.get_rooms()
     if len(rooms) == 0:
         return render_template('setup.html')
-    room = random.choice(rooms).get('name')
-    return render_template("index.html", url_base=config.URL_BASE, room=room, pubkey=crypto.server_pubkey_hex)
+    return render_template("index.html", url_base=config.URL_BASE, rooms=rooms, pubkey=crypto.server_pubkey_hex)
 
 
 @app.route("/rooms")
@@ -24,14 +24,15 @@ def get_rooms():
     return jsonify(model.get_rooms())
 
 @app.route("/room/<room_id>")
+@app.route("/rooms/<room_id>")
 def get_room_info(room_id):
     """ serve room metadata """
     fallback = dict()
-    room = model.get_room(room_id)
-    room_info = room and room.json() or fallback
-    return jsonify(room_info)
+    room = model.get_room(room_id) or fallback
+    return jsonify(room)
 
 @app.route("/room/<room_id>/image")
+@app.route("/rooms/<room_id>/image")
 def serve_room_image(room_id):
     """ serve room icon """
     filename = None
@@ -77,62 +78,68 @@ def get_user_from_token(token):
         else:
             return model.get_user(hex(data))
 
-def get_user_from_auth_header(headers):
-    return headers and get_user_from_token(headers.get("Authorization", None)) or None
+def get_user_from_auth_header(headers=None):
+    if headers is None:
+        headers = request.header
+    return get_user_from_token(headers.get("Authorization", None)) or None
 
-def handle_onionreq_plaintext(plaintext):
+def handle_onionreq_plaintext(junk):
     """
     given a plaintext from a junk, parse it, handle the request and give the reply plaintext to encrypt
     """
-    obj = json.loads(plaintext)
+    obj = json.loads(junk.payload)
 
-    sig = utils.decode_hex_or_b64(obj.get('signature'))
-    if sig is None:
-        abort(400)
-    data = bytearray().join([obj.get(part).encode() for part in ['endpoint', 'method', 'body', 'nonce']])
-    pk = utils.decode_hex_or_b64(obj.get('ed25519_pubkey'))
+    sig = utils.decode_hex_or_b64(obj.get('signature', None))
+    if sig:
+        data = bytearray().join([obj.get(part).encode() for part in ['endpoint', 'method', 'body', 'nonce']])
+        pk = utils.decode_hex_or_b64(obj.get('ed25519_pubkey'))
 
-    try:
-        crypto.verify_sig_from_pk(data, sig, pk)
-    except:
-        # invalid sig
-        abort(403)
+        try:
+            crypto.verify_sig_from_pk(data, sig, pk)
+        except:
+            # invalid sig
+            abort(403)
 
-    ep = obj.get('endpoint')
-    if not ep:
-        # no endpoint?
-        abort(404)
-    # ensure prefix of /
-    if ep[0] != '/':
-        ep = '/{}'.format(ep)
+    cl = None
+    ct = None
+    meth, target = obj['method'], obj['endpoint']
+    if '?' in target:
+        target, query_string = target.split('?', 1)
+    else:
+        query_string = ''
 
-    endpoint = urlparse(ep)
-    user = get_user_from_auth_header(obj.get('headers', None))
-    methods = {
-        "GET": handle_deprecated_get,
-        "POST": handle_deprecated_post,
-        "DELETE": handle_deprecated_delete
+        subreq_body = obj.get('body', '').encode()
+        if meth in ('POST', 'PUT'):
+            ct = obj.get('contentType', 'application/json')
+            cl = len(subreq_body)
+    
+    if target[0] != '/':
+        target = '/{}'.format(target)
+
+    # Set up the wsgi environ variables for the subrequest (see PEP 0333)
+    subreq_env = {
+        **request.environ,
+        "REQUEST_METHOD": meth,
+        "PATH_INFO": target,
+        "QUERY_STRING": query_string,
+        "CONTENT_TYPE": ct,
+        "CONTENT_LENGTH": cl,
+        **{'HTTP_{}'.format(h.upper().replace('-', '_')): v for h, v in obj.get('headers', {}).items()},
+        'wsgi.input': input
     }
-    func = methods.get(obj.get("method"))
-    if not func:
-        abort(400)
-    ret = func(obj.get("room"), endpoint.path, user, endpoint.query, obj.get("body"))
-    if not ret:
-        abort(500)
-    return json.dumps(ret)
 
-def handle_deprecated_get(room_id, path, user, query_params, body):
-    path_parts = path.split('/')
-    if path_parts[0] == 'rooms':
-        plen = len(path_parts)
-        if plen == 1:
-            return model.get_rooms()
-        if plen == 2:
-            return model.get_room(path_parts[1])
-        if path_parts[-1] == 'image' and plen == 3:
-            return model.get_room_image_json_blob(path_parts[1])
+    with app.request_context(subreq_env) as subreq_ctx:
+        response = app.full_dispatch_request()
+        data = response.get_data()
+        app.logger.warn("response data: {}".format(data))
+        crap = junk.transformReply(data)
+        app.logger.warn("junk={}".format(crap))
+        return utils.encode_base64(crap)
 
-def handle_comapct_poll(user, req):
+@app.route("/compact_poll", methods=["POST"])
+def handle_comapct_poll():
+    req = request.json()
+    user = get_user_from_auth_header()
     room_id = req.get('room_token')
     if not room_id:
         return {'status_code': 500, 'error': 'no room provided'}
@@ -150,29 +157,17 @@ def handle_comapct_poll(user, req):
 
     return {'status_code': 200, 'room_id': room_id, 'messages': messages, 'deletions': deletions, 'moderators': mods}
 
-def handle_deprecated_post(room_id, path, user, query_params, body):
-    path_parts = path.split('/')
-    if path == '/compact_poll':
-        req = json.loads(body)
-        results = list()
-        for shit in req.get('requests'):
-            results.append(handle_compact_poll(user, shit))
-        return {'status_code': 200, 'results': result}
-
-def handle_deprecated_delete(room_id, path, user, query_params, body):
-    pass
-
 
 @app.route("/loki/v3/lsrpc", methods=["POST"])
 def handle_onionreq():
     """
     parse an onion request and process the request, shit out the reply after encrypting it
     """
-    junk = None
-    try:
-        junk = crypto.parse_junk(request.data)
-    except:
-        pass
-    if junk:
-        return junk.transform_reply(handle_onionreq_plaintext(junk.payload))
-    abort(400)
+    data = request.data
+    app.logger.warn("content length: {}".format(request.headers.get("Content-Length")))
+    app.logger.warn("content type: {}".format(request.headers.get("Content-Type")))
+    app.logger.warn("request data: {}".format(data))
+    junk = crypto.parse_junk(data)
+
+    app.logger.warn("got junk payload: {}".format(junk.payload))
+    return handle_onionreq_plaintext(junk)
