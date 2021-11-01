@@ -5,7 +5,7 @@
   <body>
     <ul>
       {% for room in rooms %}
-      <li><a href="{{url_base}}/{{room.token}}?public_key={{pubkey}}"></a></li>
+      <li><a href="{{url_base}}/{{room.token}}?public_key={{pubkey}}">{{room.token}}</a></li>
       {% endfor %}
     </ul>
   </body>

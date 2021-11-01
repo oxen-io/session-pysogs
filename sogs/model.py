@@ -15,6 +15,7 @@ def get_rooms():
             for key in ['token', 'name', 'description', 'image', 'created', 'updates', 'read', 'write', 'upload']:
                 room_info[key] = cols[0]
                 cols.pop(0)
+            room_info['id'] = room_info['token']
             rooms.append(room_info)
     return rooms
 
@@ -25,9 +26,10 @@ def get_room(room_id):
         row = result.fetchone()
         cols = list(row)
         room_info = dict()
-        for key in ['id', 'name', 'description', 'image', 'created', 'updates', 'read', 'write', 'upload']:
+        for key in ['token', 'name', 'description', 'image', 'created', 'updates', 'read', 'write', 'upload']:
             room_info[key] = cols[0]
             cols.pop(0)
+        room_info['id'] = room_info['token']
         return room_info
     
 

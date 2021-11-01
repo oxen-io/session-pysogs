@@ -9,6 +9,7 @@ from . import config
 import json
 import random
 
+from io import BytesIO
 
 @app.route("/")
 def serve_index():
@@ -18,26 +19,26 @@ def serve_index():
     return render_template("index.html", url_base=config.URL_BASE, rooms=rooms, pubkey=crypto.server_pubkey_hex)
 
 
-@app.route("/rooms")
+@app.route("/legacy/rooms")
 def get_rooms():
     """ serve room list """
     return jsonify(model.get_rooms())
 
-@app.route("/room/<room_id>")
-@app.route("/rooms/<room_id>")
+@app.route("/legacy/rooms/<room_id>")
 def get_room_info(room_id):
     """ serve room metadata """
-    fallback = dict()
-    room = model.get_room(room_id) or fallback
-    return jsonify(room)
+    room = model.get_room(room_id)
+    if not room:
+        abort(404)
+    room_info = {'id': room.get('token'), 'name': room.get('name'), 'image_id': None}
+    return jsonify({'room': room_info, 'status_code': 200})
 
-@app.route("/room/<room_id>/image")
-@app.route("/rooms/<room_id>/image")
+@app.route("/legacy/rooms/<room_id>/image")
 def serve_room_image(room_id):
     """ serve room icon """
     filename = None
     with db.pool as conn:
-        result = conn.execute("SELECT filename FROM files WHERE id IN ( SELECT image FROM rooms WHERE token = ? )", room_id)
+        result = conn.execute("SELECT filename FROM files WHERE id IN ( SELECT image FROM rooms WHERE token = ? )", [room_id])
         filename = result.fetchone()
     if not filename:
         abort(404)
@@ -66,13 +67,15 @@ def get_user_from_token(token):
     """
     get user model from database given a token
     """
+    if not token:
+        return
     if not token.startswith('05'):
         return
     token = utils.decode_hex_or_b64(token)
     if len(token) == (SESSION_ID_SIZE + SIG_SIZE):
         data, sig = token[0:SESSION_ID_SIZE], token[SESSION_ID_SIZE:SIG_SIZE]
         try:
-            crypto.verify_sig_from_server(data, sig)
+            crypto.server_sign(data, sig)
         except:
             abort(400)
         else:
@@ -80,7 +83,7 @@ def get_user_from_token(token):
 
 def get_user_from_auth_header(headers=None):
     if headers is None:
-        headers = request.header
+        headers = request.headers
     return get_user_from_token(headers.get("Authorization", None)) or None
 
 def handle_onionreq_plaintext(junk):
@@ -102,6 +105,7 @@ def handle_onionreq_plaintext(junk):
 
     cl = None
     ct = None
+    subreq_body = None
     meth, target = obj['method'], obj['endpoint']
     if '?' in target:
         target, query_string = target.split('?', 1)
@@ -112,9 +116,10 @@ def handle_onionreq_plaintext(junk):
         if meth in ('POST', 'PUT'):
             ct = obj.get('contentType', 'application/json')
             cl = len(subreq_body)
-    
+        subreq_body = BytesIO(subreq_body)
+
     if target[0] != '/':
-        target = '/{}'.format(target)
+        target = '/legacy/{}'.format(target)
 
     # Set up the wsgi environ variables for the subrequest (see PEP 0333)
     subreq_env = {
@@ -125,7 +130,7 @@ def handle_onionreq_plaintext(junk):
         "CONTENT_TYPE": ct,
         "CONTENT_LENGTH": cl,
         **{'HTTP_{}'.format(h.upper().replace('-', '_')): v for h, v in obj.get('headers', {}).items()},
-        'wsgi.input': input
+        'wsgi.input': subreq_body
     }
 
     with app.request_context(subreq_env) as subreq_ctx:
@@ -136,10 +141,22 @@ def handle_onionreq_plaintext(junk):
         app.logger.warn("junk={}".format(crap))
         return utils.encode_base64(crap)
 
-@app.route("/compact_poll", methods=["POST"])
+
+@app.route("/legacy/auth_token_challenge")
+def auth_token_challenge():
+    pubkey = request.args.get("public_key")
+    token = utils.make_legacy_token(pubkey)
+    pk = utils.decode_hex_or_b64(pubkey[2:])
+    app.logger.warn("pk={}".format(len(pk)))
+    ct = crypto.server_encrypt(pk, token)
+    return jsonify({'ciphertext': utils.encode_base64(ct), 'ephemeral_pubkey': crypto.server_pubkey_base64})
+
+@app.route("/legacy/compact_poll", methods=["POST"])
 def handle_comapct_poll():
-    req = request.json()
+    req = request.json
     user = get_user_from_auth_header()
+    if not user:
+        return {'status_code': 500, 'error': 'no user provided'}
     room_id = req.get('room_token')
     if not room_id:
         return {'status_code': 500, 'error': 'no room provided'}
