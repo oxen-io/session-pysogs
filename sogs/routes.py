@@ -1,4 +1,4 @@
-from flask import abort, request, jsonify, send_file, render_template
+from flask import abort, request, jsonify, send_file, render_template, Response
 from .web import app
 from . import crypto
 from . import model
@@ -10,6 +10,10 @@ import json
 import random
 
 from io import BytesIO
+
+import qrencode
+
+from PIL.Image import NEAREST
 
 @app.route("/")
 def serve_index():
@@ -44,6 +48,24 @@ def serve_room_image(room_id):
         abort(404)
     return send_file(filename)
 
+@app.route("/view/room/<room_id>")
+def view_room(room_id):
+    room = model.get_room(room_id)
+    if room is None:
+        abort(404)
+    return render_template("view_room.html", room=room.get('token'))
+
+@app.route("/view/<room_id>/invite.png")
+def serve_invite_qr(room_id):
+    room = model.get_room(room_id)
+    if not room:
+        abort(404)
+    img = qrencode.encode(utils.server_url(room.get('token')))
+    data = BytesIO()
+    img = img[-1].resize((512,512), NEAREST)
+    img.save(data, "PNG")
+    return Response(data.getvalue(), mimetype="image/png")
+
 @app.route("/room/<room_id>/message", methods=["POST"])
 def post_to_room(room_id):
     user = utils.get_session_id(request)
@@ -55,10 +77,10 @@ def get_recent_room_messages(room_id):
     # TODO: pass in via query paramter
     limit = 100
     with db.pool as conn:
-        rows = conn.execute("SELECT messages.*, user.session_id, FROM messages WHERE messages.room IN ( SELECT id FROM rooms WHERE token = ?1 ) JOIN users ON messages.user = users.id WHERE data IS NOT NULL ORDER BY id ASC LIMIT ?2", room_id, limit)
+        rows = conn.execute("SELECT messages.*, users.session_id FROM messages JOIN users ON messages.user = users.id WHERE data IS NOT NULL AND messages.room IN ( SELECT id FROM rooms WHERE token = ?1 ) ORDER BY id ASC LIMIT ?2", [room_id, limit])
         for row in rows:
             msgs += {'posted': row[3], 'edited': row[4], 'updated': row[5], 'message': row[6], 'signature': row[8], 'session_id': row[9]}
-    return msgs
+    return jsonify(msgs)
 
 
 # --- BEGIN OLD API ---

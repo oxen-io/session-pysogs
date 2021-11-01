@@ -24,13 +24,14 @@ def get_room(room_id):
     with db.pool as conn:
         result = conn.execute("SELECT token, name, description, image, created, updates, read, write, upload FROM rooms WHERE token=? LIMIT 1", [room_id])
         row = result.fetchone()
-        cols = list(row)
-        room_info = dict()
-        for key in ['token', 'name', 'description', 'image', 'created', 'updates', 'read', 'write', 'upload']:
-            room_info[key] = cols[0]
-            cols.pop(0)
-        room_info['id'] = room_info['token']
-        return room_info
+        if row:
+            cols = list(row)
+            room_info = dict()
+            for key in ['token', 'name', 'description', 'image', 'created', 'updates', 'read', 'write', 'upload']:
+                room_info[key] = cols[0]
+                cols.pop(0)
+            room_info['id'] = room_info['token']
+            return room_info
     
 
 def get_user(session_id):

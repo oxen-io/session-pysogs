@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block body %}
+<center>
+  <img src="/view/{{room}}/invite.png" />
+</center>
+<ul id="messages">
+  <li>loading...</li>
+</ul>
+
+<script>
+  const elem = document.getElementById("messages")
+  if(elem)
+  {
+      setInterval(async () => {
+          const req = await fetch("/room/{{room}}/messages/recent")
+          console.log(req)
+          const msgs = await req.json()
+
+
+
+          elem.replaceChildren();
+
+          if(msgs.length === 0)
+          {
+              elem.appendChild(document.createTextNode("the {{room}} room is empty"));
+          }
+
+          for(let msg of msgs)
+          {
+              let e = document.createElement("li")
+              e.innerText = document.createTextNode(msg.session_id +": "+msg.message);
+              elem.appendChild(e);
+          }
+      }, 1000);
+  }
+</script>
+
+{% endblock %}

@@ -22,7 +22,7 @@ def get_session_id(flask_request):
     return flask_request.headers.get("X-SOGS-Pubkey")
 
 
-server_url = lambda : config.URL_BASE
+server_url = lambda room: '{}/{}?public_key={}'.format(config.URL_BASE, room or '', crypto.server_pubkey_hex)
 
 
 def make_legacy_token(session_id):
