@@ -41,4 +41,4 @@ server_sign = lambda data: _server_signkey.sign(data)
 
 _derive_server = lambda pk, sk: hmac.new(key=b'LOKI', msg=X25519PrivateKey.from_private_bytes(sk).exchange(X25519PublicKey.from_public_bytes(pk)), digestmod=hashlib.sha256).digest()
 
-server_encrypt = lambda pk, data: AESGCM(_derive_server(pk, _privkey.encode())).encrypt(data[:12], data[12:], None)
+server_encrypt = lambda pk, data: AESGCM(_derive_server(pk, _privkey.encode())).encrypt(os.urandom(12), data, None)
