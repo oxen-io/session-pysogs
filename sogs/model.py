@@ -32,7 +32,6 @@ def get_room(room_id):
                 cols.pop(0)
             room_info['id'] = room_info['token']
             return room_info
-    
 
 def get_user(session_id):
     """ get a user by their session id """
@@ -43,16 +42,17 @@ def get_user(session_id):
             row = result.fetchone()
         except:
             return
-        user = dict()
-        for k in row.keys():
-            user[k] = row[k]
-        return user
+        if row:
+            user = dict()
+            for k in row.keys():
+                user[k] = row[k]
+            return user
 
 
 def add_post_to_room(user_id, room_id, data, sig):
     """ insert a post into a room from a user """
     with db.pool as conn:
-        conn.execute("INSERT INTO messages(user, room, data, signature) VALUES(?, ?, ?, ?)", user_id, room_id, data, sig)
+        conn.execute("INSERT INTO messages(user, room, data, signature) VALUES(?, ?, ?, ?)", [user_id, room_id, data, sig])
 
 
 def get_room_image_json_blob(room_id):
@@ -84,7 +84,7 @@ def get_deletions_deprecated(room_id, since):
     with db.pool as conn:
         result = None
         if since:
-            result = conn.execute("SELECT id, updated FROM messages WHERE room = ? AND updated > ? AND data IS NULL ORDER BY updated LIMIT 256", room_id, since)
+            result = conn.execute("SELECT id, updated FROM messages WHERE room = ? AND updated > ? AND data IS NULL ORDER BY updated LIMIT 256", [room_id, since])
         else:
             result = conn.execute("SELECT id, updated FROM messages WHERE room = ? AND data IS NULL ORDER BY updated DESC LIMIT 256", [room_id])
         for row in result:
@@ -96,9 +96,9 @@ def get_message_deprecated(room_id, since):
     with db.pool as conn:
         result = None
         if since:
-            result = conn.execute("SELECT * FROM message_details WHERE room = ? AND id > ? AND data IS NOT NULL ORDER BY id LIMIT 256", [room_id])
+            result = conn.execute("SELECT * FROM message_details WHERE room = ? AND id > ? AND data IS NOT NULL ORDER BY id LIMIT 256", [room_id, since])
         else:
-            result = conn.execute("SELECT * FROM message_details WHERE room = ? AND data IS NOT NULL ORDER BY id DESC LIMIT 256", room_id, since)
+            result = conn.execute("SELECT * FROM message_details WHERE room = ? AND data IS NOT NULL ORDER BY id DESC LIMIT 256", [room_id])
         for row in result:
             msgs.append({'server_id': row[0], 'public_key': row[-1], 'timestamp': row[3], 'data': row[6], 'signature': row[8]})
     return msgs

@@ -34,11 +34,16 @@ parse_junk = _junk_parser.parse_junk
 verify_sig_from_pk = lambda data, sig, pk: VerifyKey(pk).verify(data, sig)
 
 # todo: persist this key
-_server_signkey = SigningKey.generate()
+_server_signkey = SigningKey(_privkey.encode())
 
 server_verify = _server_signkey.verify_key.verify
 server_sign = lambda data: _server_signkey.sign(data)
 
 _derive_server = lambda pk, sk: hmac.new(key=b'LOKI', msg=X25519PrivateKey.from_private_bytes(sk).exchange(X25519PublicKey.from_public_bytes(pk)), digestmod=hashlib.sha256).digest()
 
-server_encrypt = lambda pk, data: AESGCM(_derive_server(pk, _privkey.encode())).encrypt(os.urandom(12), data, None)
+def server_encrypt(pk, data):
+    nounce = os.urandom(12)
+    pk = X25519PublicKey.from_public_bytes(pk)
+    sk = X25519PrivateKey.from_private_bytes(_privkey.encode())
+    secret = hmac.digest(b'LOKI', sk.exchange(pk), 'SHA256')
+    return nounce + AESGCM(secret).encrypt(nounce, data, None)

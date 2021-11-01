@@ -89,24 +89,20 @@ def get_user_from_token(token):
     """
     get user model from database given a token
     """
+
     if not token:
         return
-    if not token.startswith('05'):
-        return
-    token = utils.decode_hex_or_b64(token)
-    if len(token) == (SESSION_ID_SIZE + SIG_SIZE):
-        data, sig = token[0:SESSION_ID_SIZE], token[SESSION_ID_SIZE:SIG_SIZE]
-        try:
-            crypto.server_sign(data, sig)
-        except:
-            abort(400)
-        else:
-            return model.get_user(hex(data))
 
-def get_user_from_auth_header(headers=None):
-    if headers is None:
-        headers = request.headers
-    return get_user_from_token(headers.get("Authorization", None)) or None
+    rawtoken = utils.decode_hex_or_b64(token)
+    app.logger.warn('token={}'.format(rawtoken))
+
+    try:
+        crypto.server_verify(rawtoken)
+    except Exception as ex:
+        app.logger.error("failed to verify: {}".format(ex))
+        abort(400)
+    else:
+        return model.get_user(token) or dict()
 
 def handle_onionreq_plaintext(junk):
     """
@@ -164,33 +160,44 @@ def handle_onionreq_plaintext(junk):
         return utils.encode_base64(crap)
 
 
+@app.route("/legacy/claim_auth_token", methods=['POST'])
+def claim_auth():
+    return jsonify({'status_code':200})
+
 @app.route("/legacy/auth_token_challenge")
 def auth_token_challenge():
     pubkey = request.args.get("public_key")
     token = utils.make_legacy_token(pubkey)
     pk = utils.decode_hex_or_b64(pubkey[2:])
-    app.logger.warn("token={}".format(token))
+    app.logger.warn("token={} pk={}".format(token, pk))
     ct = crypto.server_encrypt(pk, token)
-    return jsonify({'ciphertext': utils.encode_base64(ct), 'ephemeral_pubkey': crypto.server_pubkey_base64})
+    return jsonify({'status_code': 200, 'challenge': {'ciphertext': utils.encode_base64(ct), 'ephemeral_public_key': crypto.server_pubkey_base64}})
 
 @app.route("/legacy/compact_poll", methods=["POST"])
 def handle_comapct_poll():
-    req = request.json
-    user = get_user_from_auth_header()
-    if not user:
-        return {'status_code': 500, 'error': 'no user provided'}
-    room_id = req.get('room_token')
+    req_list = request.json
+    result = list()
+    for req in req_list.get('requests', list()):
+        result.append(handle_one_compact_poll(req))
+    return jsonify(result)
+
+def handle_one_compact_poll(req):
+    app.logger.warn("req={}".format(req))
+    user = get_user_from_token(req.get('auth_token'))
+    #if not user:
+    #    return {'status_code': 500, 'error': 'no user provided'}
+    room_id = req.get('room_id')
     if not room_id:
         return {'status_code': 500, 'error': 'no room provided'}
 
-    if not model.user_read_allowed(user, room_id):
-        return {'status_code': 500, 'error': 'read access not permitted'}
+    #if not model.user_read_allowed(user, room_id):
+    #    return {'status_code': 500, 'error': 'read access not permitted'}
 
     result = {'room_id': room_id, 'status_code': 200}
 
     messages = model.get_message_deprecated(room_id, req.get('from_message_server_id'))
 
-    messages = model.get_deletion_deprecated(room_id, req.get('from_deletion_server_id'))
+    deletions = model.get_deletions_deprecated(room_id, req.get('from_deletion_server_id'))
 
     mods = model.get_mods_for_room(room_id)
 

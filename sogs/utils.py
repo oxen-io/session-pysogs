@@ -12,7 +12,7 @@ def decode_hex_or_b64(data):
     try:
         return binascii.unhexlify(data)
     except:
-        raise
+        pass
     try:
         return base64.b64decode(data)
     except:
@@ -27,4 +27,4 @@ server_url = lambda room: '{}/{}?public_key={}'.format(config.URL_BASE, room or 
 
 def make_legacy_token(session_id):
     session_id = binascii.unhexlify(session_id)
-    return session_id + crypto.server_sign(session_id)
+    return crypto.server_sign(session_id)
