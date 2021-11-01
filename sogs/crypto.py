@@ -5,6 +5,14 @@ import os
 from nacl.public import PrivateKey, PublicKey, Box
 from nacl.signing import SigningKey, VerifyKey
 from nacl.encoding import Base64Encoder, HexEncoder
+
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X25519PublicKey
+
+import hmac
+import hashlib
+
+
 import pyonionreq
 
 # generate seed as needed
@@ -31,4 +39,6 @@ _server_signkey = SigningKey.generate()
 server_verify = _server_signkey.verify_key.verify
 server_sign = lambda data: _server_signkey.sign(data)
 
-server_encrypt = lambda pk, data: Box(_privkey, PublicKey(pk)).encrypt(data)
+_derive_server = lambda pk, sk: hmac.new(key=b'LOKI', msg=X25519PrivateKey.from_private_bytes(sk).exchange(X25519PublicKey.from_public_bytes(pk)), digestmod=hashlib.sha256).digest()
+
+server_encrypt = lambda pk, data: AESGCM(_derive_server(pk, _privkey.encode())).encrypt(data[:12], data[12:], None)

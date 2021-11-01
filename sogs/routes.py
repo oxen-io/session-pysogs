@@ -53,7 +53,7 @@ def view_room(room_id):
     room = model.get_room(room_id)
     if room is None:
         abort(404)
-    return render_template("view_room.html", room=room.get('token'))
+    return render_template("view_room.html", room=room.get('token'), room_url=utils.server_url(room.get('token')))
 
 @app.route("/view/<room_id>/invite.png")
 def serve_invite_qr(room_id):
@@ -169,7 +169,7 @@ def auth_token_challenge():
     pubkey = request.args.get("public_key")
     token = utils.make_legacy_token(pubkey)
     pk = utils.decode_hex_or_b64(pubkey[2:])
-    app.logger.warn("pk={}".format(len(pk)))
+    app.logger.warn("token={}".format(token))
     ct = crypto.server_encrypt(pk, token)
     return jsonify({'ciphertext': utils.encode_base64(ct), 'ephemeral_pubkey': crypto.server_pubkey_base64})
 

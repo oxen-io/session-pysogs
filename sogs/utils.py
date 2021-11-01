@@ -26,5 +26,5 @@ server_url = lambda room: '{}/{}?public_key={}'.format(config.URL_BASE, room or 
 
 
 def make_legacy_token(session_id):
-    session_id = session_id.encode('ascii')
+    session_id = binascii.unhexlify(session_id)
     return session_id + crypto.server_sign(session_id)
