@@ -5,3 +5,6 @@ SEED_FILE = 'sogs-seed.bin'
 
 # base url for generating links
 URL_BASE = '/'
+
+import logging
+LOG_LEVEL=logging.DEBUG
