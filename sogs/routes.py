@@ -5,6 +5,7 @@ from . import model
 from . import db
 from . import utils
 from . import config
+from . import http
 
 import json
 import random
@@ -42,7 +43,7 @@ def get_room_info(room_token):
     """ serve room metadata """
     room = model.get_room(room_token)
     if not room:
-        abort(404)
+        abort(http.NOT_FOUND)
     room_info = {'id': room.get('token'), 'name': room.get('name'), 'image_id': None}
     return jsonify({'room': room_info, 'status_code': 200})
 
@@ -54,7 +55,7 @@ def serve_room_image(room_token):
         result = conn.execute("SELECT filename FROM files WHERE id IN ( SELECT image FROM rooms WHERE token = ? )", [room_token])
         filename = result.fetchone()
     if not filename:
-        abort(404)
+        abort(http.NOT_FOUND)
     return send_file(filename)
 
 @app.route("/view/room/<RoomToken:room_token>")
@@ -128,7 +129,7 @@ def handle_onionreq_plaintext(junk):
             crypto.verify_sig_from_pk(data, sig, pk)
         except:
             # invalid sig
-            abort(403)
+            abort(http.FORBIDDEN)
 
     cl = None
     ct = None
