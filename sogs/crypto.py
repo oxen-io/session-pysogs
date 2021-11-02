@@ -9,6 +9,7 @@ from nacl.encoding import Base64Encoder, HexEncoder
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X25519PublicKey
 
+import secrets
 import hmac
 import hashlib
 
@@ -43,8 +44,8 @@ _derive_server = lambda pk, sk: hmac.new(key=b'LOKI', msg=X25519PrivateKey.from_
 
 
 def server_encrypt(pk, data):
-    nounce = os.urandom(12)
+    nonce = secrets.token_bytes(12)
     pk = X25519PublicKey.from_public_bytes(pk)
     sk = X25519PrivateKey.from_private_bytes(_privkey.encode())
     secret = hmac.digest(b'LOKI', sk.exchange(pk), 'SHA256')
-    return nounce + AESGCM(secret).encrypt(nounce, data, None)
+    return nonce + AESGCM(secret).encrypt(nonce, data, None)
