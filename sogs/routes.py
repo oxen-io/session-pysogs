@@ -9,11 +9,20 @@ from . import config
 import json
 import random
 
+from werkzeug.routing import BaseConverter
+
 from io import BytesIO
 
 import qrencode
 
 from PIL.Image import NEAREST
+
+class RoomTokenConverter(BaseConverter):
+    def __init__(self, url_map):
+        super().__init__(url_map)
+        self.regex = "[\w-]{1,64}"
+
+app.url_map.converters['RoomToken'] = RoomTokenConverter
 
 @app.route("/")
 def serve_index():
@@ -28,36 +37,36 @@ def get_rooms():
     """ serve room list """
     return jsonify(model.get_rooms())
 
-@app.route("/legacy/rooms/<room_id>")
-def get_room_info(room_id):
+@app.route("/legacy/rooms/<RoomToken:room_token>")
+def get_room_info(room_token):
     """ serve room metadata """
-    room = model.get_room(room_id)
+    room = model.get_room(room_token)
     if not room:
         abort(404)
     room_info = {'id': room.get('token'), 'name': room.get('name'), 'image_id': None}
     return jsonify({'room': room_info, 'status_code': 200})
 
-@app.route("/legacy/rooms/<room_id>/image")
-def serve_room_image(room_id):
+@app.route("/legacy/rooms/<RoomToken:room_token>/image")
+def serve_room_image(room_token):
     """ serve room icon """
     filename = None
     with db.pool as conn:
-        result = conn.execute("SELECT filename FROM files WHERE id IN ( SELECT image FROM rooms WHERE token = ? )", [room_id])
+        result = conn.execute("SELECT filename FROM files WHERE id IN ( SELECT image FROM rooms WHERE token = ? )", [room_token])
         filename = result.fetchone()
     if not filename:
         abort(404)
     return send_file(filename)
 
-@app.route("/view/room/<room_id>")
-def view_room(room_id):
-    room = model.get_room(room_id)
+@app.route("/view/room/<RoomToken:room_token>")
+def view_room(room_token):
+    room = model.get_room(room_token)
     if room is None:
         abort(404)
     return render_template("view_room.html", room=room.get('token'), room_url=utils.server_url(room.get('token')))
 
-@app.route("/view/<room_id>/invite.png")
-def serve_invite_qr(room_id):
-    room = model.get_room(room_id)
+@app.route("/view/<RoomToken:room_token>/invite.png")
+def serve_invite_qr(room_token):
+    room = model.get_room(room_token)
     if not room:
         abort(404)
     img = qrencode.encode(utils.server_url(room.get('token')))
@@ -66,18 +75,18 @@ def serve_invite_qr(room_id):
     img.save(data, "PNG")
     return Response(data.getvalue(), mimetype="image/png")
 
-@app.route("/room/<room_id>/message", methods=["POST"])
-def post_to_room(room_id):
+@app.route("/room/<RoomToken:room_token>/message", methods=["POST"])
+def post_to_room(room_token):
     user = utils.get_session_id(request)
 
-@app.route("/room/<room_id>/messages/recent")
-def get_recent_room_messages(room_id):
+@app.route("/room/<RoomToken:room_token>/messages/recent")
+def get_recent_room_messages(room_token):
     """ get list of recent messages """
     msgs = list()
     # TODO: pass in via query paramter
     limit = 100
     with db.pool as conn:
-        rows = conn.execute("SELECT messages.*, users.session_id FROM messages JOIN users ON messages.user = users.id WHERE data IS NOT NULL AND messages.room IN ( SELECT id FROM rooms WHERE token = ?1 ) ORDER BY id ASC LIMIT ?2", [room_id, limit])
+        rows = conn.execute("SELECT messages.*, users.session_id FROM messages JOIN users ON messages.user = users.id WHERE data IS NOT NULL AND messages.room IN ( SELECT id FROM rooms WHERE token = ?1 ) ORDER BY id ASC LIMIT ?2", [room_token, limit])
         for row in rows:
             msgs += {'posted': row[3], 'edited': row[4], 'updated': row[5], 'message': row[6], 'signature': row[8], 'session_id': row[9]}
     return jsonify(msgs)
@@ -186,22 +195,20 @@ def handle_one_compact_poll(req):
     user = get_user_from_token(req.get('auth_token'))
     #if not user:
     #    return {'status_code': 500, 'error': 'no user provided'}
-    room_id = req.get('room_id')
-    if not room_id:
+    room_token = req.get('room_id')
+    if not room_token:
         return {'status_code': 500, 'error': 'no room provided'}
 
-    #if not model.user_read_allowed(user, room_id):
+    #if not model.user_read_allowed(user, room_token):
     #    return {'status_code': 500, 'error': 'read access not permitted'}
 
-    result = {'room_id': room_id, 'status_code': 200}
+    messages = model.get_message_deprecated(room_token, req.get('from_message_server_id'))
 
-    messages = model.get_message_deprecated(room_id, req.get('from_message_server_id'))
+    deletions = model.get_deletions_deprecated(room_token, req.get('from_deletion_server_id'))
 
-    deletions = model.get_deletions_deprecated(room_id, req.get('from_deletion_server_id'))
+    mods = model.get_mods_for_room(room_token)
 
-    mods = model.get_mods_for_room(room_id)
-
-    return {'status_code': 200, 'room_id': room_id, 'messages': messages, 'deletions': deletions, 'moderators': mods}
+    return {'status_code': 200, 'room_id': room_token, 'messages': messages, 'deletions': deletions, 'moderators': mods}
 
 
 @app.route("/loki/v3/lsrpc", methods=["POST"])
