@@ -7,7 +7,7 @@ from . import http
 from . import crypto
 from . import utils
 
-def handle_onionreq_plaintext(junk):
+def handle_onionreq_plaintext(body):
     """
     Handles a decrypted onion request; this injects a subrequest to process it then returns the
     result of that subrequest (as bytes).
@@ -15,7 +15,6 @@ def handle_onionreq_plaintext(junk):
     Note that this does not throw: if errors occur we map them into "success" responses with a body
     of {"status_code":xxx} as onion requests have no ability at all to signal a request failure.
     """
-    body = junk.payload
     try:
         if body.startswith(b'{'):
             # JSON input
@@ -98,5 +97,5 @@ def handle_onion_request():
         app.logger.warn("Failed to decrypt onion request: {}".format(e))
         abort(http.ERROR_INTERNAL_SERVER_ERROR)
 
-    response = handle_onionreq_plaintext(junk)
-    return utils.encode_base64(response)
+    response = handle_onionreq_plaintext(junk.payload)
+    return utils.encode_base64(junk.transformReply(response))
