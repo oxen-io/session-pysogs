@@ -10,7 +10,7 @@ from . import http
 import json
 import random
 
-from werkzeug.routing import BaseConverter
+from werkzeug.routing import BaseConverter, ValidationError
 
 from io import BytesIO
 
