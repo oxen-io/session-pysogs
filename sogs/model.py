@@ -3,6 +3,8 @@ from . import db
 from base64 import b64encode
 
 import os
+import time
+
 
 def get_rooms():
     """ get a list of rooms with their full info filled out """
@@ -49,10 +51,22 @@ def get_user(session_id):
             return user
 
 
-def add_post_to_room(user_id, room_id, data, sig):
-    """ insert a post into a room from a user """
+def add_post_to_room(user_id, room_id, data, sig, rate_limit_size=5, rate_limit_interval=16.0):
+    """ insert a post into a room from a user given room id and user id
+    trims off padding and stores as needed
+    """
     with db.pool as conn:
-        conn.execute("INSERT INTO messages(user, room, data, signature) VALUES(?, ?, ?, ?)", [user_id, room_id, data, sig])
+        since_limit = time.time() - rate_limit_interval
+        result = conn.execute("SELECT COUNT(*) FROM messages WHERE room = ? AND user = ? AND posted >= ?", [room_id, user_id, since_limit])
+        row = result.fetchone()
+        if row[0] >= rate_limit_size:
+            # rate limit hit
+            return
+
+        result = conn.execute("INSERT INTO messages(room, user, data, data_size, signature) VALUES(?, ?, ?, ?, ?) RETURNING *", [user_id, room_id, data.rtrim(b'\x00'), len(data), sig])
+        row = result.fetchone()
+        msg = {'timestamp': row['posted'], 'server_id': row['id']}
+        return msg
 
 
 def get_room_image_json_blob(room_id):
@@ -102,3 +116,11 @@ def get_message_deprecated(room_id, since):
         for row in result:
             msgs.append({'server_id': row[0], 'public_key': row[-1], 'timestamp': row[3], 'data': row[6], 'signature': row[8]})
     return msgs
+
+
+def ensure_user_exists(session_id):
+    """
+    make sure a user exists in the database
+    """
+    with db.pool as conn:
+        conn.execute("INSERT INTO users(session_id) VALUES(?) ON CONFLICT DO NOTHING", [session_id])
