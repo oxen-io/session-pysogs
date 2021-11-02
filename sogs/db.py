@@ -8,7 +8,7 @@ import sqlite3
 # - if the *old* table structure exists we should migrate (there is rust code that does this that
 #   needs to be converted).
 _should_init = config.DB_PATH != ':memory:' and not os.path.exists(config.DB_PATH)
-pool = sqlite3.Connection(config.DB_PATH)
+pool = sqlite3.connect(config.DB_PATH)
 pool.row_factory = sqlite3.Row
 
 # initialize database as needed
