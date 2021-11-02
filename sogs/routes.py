@@ -217,9 +217,9 @@ def handle_one_compact_poll(req):
 
     user = model.get_user(pk)
 
-    messages = model.get_message_deprecated(room_token, req.get('from_message_server_id'))
+    messages = model.get_message_deprecated(room.get('id'), req.get('from_message_server_id'))
 
-    deletions = model.get_deletions_deprecated(room_token, req.get('from_deletion_server_id'))
+    deletions = model.get_deletions_deprecated(room.get('id'), req.get('from_deletion_server_id'))
 
     mods = model.get_mods_for_room(room_token)
 

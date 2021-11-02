@@ -1,6 +1,7 @@
 from . import db
+from . import utils
+b64encode = utils.encode_base64
 
-from base64 import b64encode
 
 import os
 import time
@@ -134,7 +135,13 @@ def get_message_deprecated(room_id, since):
         else:
             result = conn.execute("SELECT * FROM message_details WHERE room = ? AND data IS NOT NULL ORDER BY id DESC LIMIT 256", [room_id])
         for row in result:
-            msgs.append({'server_id': row[0], 'public_key': row[-1], 'timestamp': row[3], 'data': row[6], 'signature': row[8]})
+            data = row['data']
+            data_size = row['data_size']
+            if len(data) < data_size:
+                # Re-pad the message (we strip off padding when storing)
+                data += b'\x00' * (data_size - len(data))
+
+            msgs.append({'server_id': row[0], 'public_key': row[-1], 'timestamp': row['posted'], 'data': utils.encode_base64(data), 'signature': utils.encode_base64(row['signature'])})
     return msgs
 
 
