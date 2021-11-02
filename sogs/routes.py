@@ -25,7 +25,7 @@ class RoomTokenConverter(BaseConverter):
 
 app.url_map.converters['RoomToken'] = RoomTokenConverter
 
-@app.route("/")
+@app.get("/")
 def serve_index():
     rooms = model.get_rooms()
     if len(rooms) == 0:
@@ -33,12 +33,12 @@ def serve_index():
     return render_template("index.html", url_base=config.URL_BASE, rooms=rooms, pubkey=crypto.server_pubkey_hex)
 
 
-@app.route("/legacy/rooms")
+@app.get("/legacy/rooms")
 def get_rooms():
     """ serve room list """
     return jsonify(model.get_rooms())
 
-@app.route("/legacy/rooms/<RoomToken:room_token>")
+@app.get("/legacy/rooms/<RoomToken:room_token>")
 def get_room_info(room_token):
     """ serve room metadata """
     room = model.get_room(room_token)
@@ -47,7 +47,7 @@ def get_room_info(room_token):
     room_info = {'id': room.get('token'), 'name': room.get('name'), 'image_id': None}
     return jsonify({'room': room_info, 'status_code': 200})
 
-@app.route("/legacy/rooms/<RoomToken:room_token>/image")
+@app.get("/legacy/rooms/<RoomToken:room_token>/image")
 def serve_room_image(room_token):
     """ serve room icon """
     filename = None
@@ -58,14 +58,14 @@ def serve_room_image(room_token):
         abort(http.NOT_FOUND)
     return send_file(filename)
 
-@app.route("/view/room/<RoomToken:room_token>")
+@app.get("/view/room/<RoomToken:room_token>")
 def view_room(room_token):
     room = model.get_room(room_token)
     if room is None:
         abort(404)
     return render_template("view_room.html", room=room.get('token'), room_url=utils.server_url(room.get('token')))
 
-@app.route("/view/<RoomToken:room_token>/invite.png")
+@app.get("/view/<RoomToken:room_token>/invite.png")
 def serve_invite_qr(room_token):
     room = model.get_room(room_token)
     if not room:
@@ -76,11 +76,11 @@ def serve_invite_qr(room_token):
     img.save(data, "PNG")
     return Response(data.getvalue(), mimetype="image/png")
 
-@app.route("/room/<RoomToken:room_token>/message", methods=["POST"])
+@app.post("/room/<RoomToken:room_token>/message")
 def post_to_room(room_token):
     user = utils.get_session_id(request)
 
-@app.route("/room/<RoomToken:room_token>/messages/recent")
+@app.get("/room/<RoomToken:room_token>/messages/recent")
 def get_recent_room_messages(room_token):
     """ get list of recent messages """
     msgs = list()
@@ -170,11 +170,11 @@ def handle_onionreq_plaintext(junk):
         return utils.encode_base64(crap)
 
 
-@app.route("/legacy/claim_auth_token", methods=['POST'])
+@app.post("/legacy/claim_auth_token")
 def claim_auth():
     return jsonify({'status_code':200})
 
-@app.route("/legacy/auth_token_challenge")
+@app.get("/legacy/auth_token_challenge")
 def auth_token_challenge():
     pubkey = request.args.get("public_key")
     token = utils.make_legacy_token(pubkey)
@@ -183,7 +183,7 @@ def auth_token_challenge():
     ct = crypto.server_encrypt(pk, token)
     return jsonify({'status_code': 200, 'challenge': {'ciphertext': utils.encode_base64(ct), 'ephemeral_public_key': crypto.server_pubkey_base64}})
 
-@app.route("/legacy/compact_poll", methods=["POST"])
+@app.post("/legacy/compact_poll")
 def handle_comapct_poll():
     req_list = request.json
     result = list()
@@ -212,7 +212,7 @@ def handle_one_compact_poll(req):
     return {'status_code': 200, 'room_id': room_token, 'messages': messages, 'deletions': deletions, 'moderators': mods}
 
 
-@app.route("/loki/v3/lsrpc", methods=["POST"])
+@app.post("/loki/v3/lsrpc")
 def handle_onionreq():
     """
     parse an onion request and process the request, shit out the reply after encrypting it
