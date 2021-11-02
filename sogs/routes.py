@@ -24,7 +24,7 @@ class RoomTokenConverter(BaseConverter):
         self.regex = "[\w-]{1,64}"
 
     def to_python(self, value):
-        room = models.get_room(value)
+        room = model.get_room(value)
         if room is None:
             raise ValidationError()
         return room
@@ -51,7 +51,8 @@ def get_rooms():
 @app.get("/legacy/rooms/<RoomToken:room>")
 def get_room_info(room):
     """ serve room metadata """
-    room_info = {'id': room.get('token'), 'name': room.get('name'), 'image_id': None}
+    room_info = {'id': room.get('token'), 'name': room.get('name')}
+    app.logger.warn(room_info)
     return jsonify({'room': room_info, 'status_code': 200})
 
 @app.get("/legacy/rooms/<RoomToken:room>/image")
@@ -104,7 +105,7 @@ def get_recent_room_messages(room):
             FROM messages JOIN users ON messages.user = users.id
             WHERE messages.room = (SELECT id FROM rooms WHERE token = ?1)
                 AND data IS NOT NULL
-            ORDER BY id DESC LIMIT ?2
+            ORDER BY messages.id DESC LIMIT ?2
             """,
             (room.get('token'), limit))
         for id, session_id, posted, edited, data, data_size, signature in rows:
@@ -132,13 +133,13 @@ def get_user_from_token(token):
 
     try:
         rawtoken = utils.decode_hex_or_b64(token, utils.LEGACY_TOKEN_SIZE)
-        app.logger.warn('token={}'.format(rawtoken))
         crypto.server_verify(rawtoken)
     except Exception as ex:
         app.logger.error("failed to decode/verify token: {}".format(ex))
         abort(http.UNAUTHORIZED)
     else:
-        return model.get_user(token) or dict()
+        session_id = utils.encode_hex(rawtoken[utils.SIGNATURE_SIZE:])
+        return model.get_user(session_id)
 
 
 
@@ -149,13 +150,14 @@ def claim_auth():
 @app.get("/legacy/auth_token_challenge")
 def auth_token_challenge():
     pubkey = request.args.get("public_key")
-    if len(pubkey) != 66 or not pubkey.startswith('05'):
+    if len(pubkey) != (utils.SESSION_ID_SIZE * 2) or not pubkey.startswith('05'):
         abort(http.BAD_REQUEST)
     token = utils.make_legacy_token(pubkey)
     pk = utils.decode_hex_or_b64(pubkey[2:], 32)
     app.logger.warn("token={} pk={}".format(token, pk))
     ct = crypto.server_encrypt(pk, token)
-    assert len(ct) == utils.LEGACY_TOKEN_SIZE
+    app.logger.warn("ct={} len={}".format(ct, len(ct)))
+    # assert len(ct) == utils.LEGACY_TOKEN_SIZE
 
     model.ensure_user_exists(session_id=pubkey)
 
@@ -163,10 +165,15 @@ def auth_token_challenge():
 
 @app.post("/legacy/messages")
 def handle_post_legacy_message():
-    room = models.get_room(request.headers.get("Room"))
+    room = model.get_room(request.headers.get("Room"))
     if not room:
         abort(http.NOT_FOUND)
-    user = get_user_from_token(request.headers.get("Authorization"))
+    token = request.headers.get("Authorization")
+    app.logger.warn('posting shit token={}'.format(token))
+    if not token:
+        abort(http.FORBIDDEN)
+    user = get_user_from_token(token)
+    app.logger.warn('user={}'.format(user))
     if not user:
         abort(http.NOT_AUTHORIZED)
     req = request.json
@@ -189,7 +196,6 @@ def handle_comapct_poll():
     return jsonify(result)
 
 def handle_one_compact_poll(req):
-    app.logger.warn("req={}".format(req))
     user = get_user_from_token(req.get('auth_token'))
     #if not user:
     #    return {'status_code': 500, 'error': 'no user provided'}

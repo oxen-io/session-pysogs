@@ -1,10 +1,12 @@
 import base64
+import binascii
 
 from . import crypto
 from . import config
 
 
-encode_base64 = base64.b64encode
+encode_base64 = lambda data: base64.b64encode(data).decode('ascii')
+encode_hex = lambda data: binascii.hexlify(data).decode('ascii')
 
 
 def decode_base64(b64: str):
@@ -48,8 +50,10 @@ def get_session_id(flask_request):
 server_url = lambda room: '{}/{}?public_key={}'.format(config.URL_BASE, room or '', crypto.server_pubkey_hex)
 
 
+SIGNATURE_SIZE = 64
+SESSION_ID_SIZE = 33
 # Size returned by make_legacy_token (assuming it is given a standard 66-hex (33 byte) session id):
-LEGACY_TOKEN_SIZE = 64 + 33
+LEGACY_TOKEN_SIZE = SIGNATURE_SIZE + SESSION_ID_SIZE
 
 def make_legacy_token(session_id):
     session_id = bytes.fromhex(session_id)
