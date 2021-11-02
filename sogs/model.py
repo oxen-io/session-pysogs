@@ -8,47 +8,29 @@ import time
 
 def get_rooms():
     """ get a list of rooms with their full info filled out """
-    rooms = list()
     with db.pool as conn:
-        result = conn.execute("SELECT token, name, description, image, created, updates, read, write, upload FROM rooms ORDER BY token")
-        for row in result:
-            room_info = dict()
-            cols = list(row)
-            for key in ['token', 'name', 'description', 'image', 'created', 'updates', 'read', 'write', 'upload']:
-                room_info[key] = cols[0]
-                cols.pop(0)
-            room_info['id'] = room_info['token']
-            rooms.append(room_info)
-    return rooms
+        result = conn.execute("SELECT * FROM rooms ORDER BY token")
+        return [{k: row[k] for k in row.keys()} for row in result]
 
 
-def get_room(room_id):
+def get_room(room_token):
+    """ Looks up a room by token and returns its info; returns None if the room doesn't exist """
     with db.pool as conn:
-        result = conn.execute("SELECT token, name, description, image, created, updates, read, write, upload FROM rooms WHERE token=? LIMIT 1", [room_id])
+        result = conn.execute("SELECT * FROM rooms WHERE token = ?", [room_token])
         row = result.fetchone()
         if row:
-            cols = list(row)
-            room_info = dict()
-            for key in ['token', 'name', 'description', 'image', 'created', 'updates', 'read', 'write', 'upload']:
-                room_info[key] = cols[0]
-                cols.pop(0)
-            room_info['id'] = room_info['token']
-            return room_info
+            return {k: row[k] for k in row.keys()}
+        return None
+
 
 def get_user(session_id):
     """ get a user by their session id """
     with db.pool as conn:
-        result = conn.execute("SELECT * FROM users WHERE session_id = ? LIMIT 1", [session_id])
-        row = None
-        try:
-            row = result.fetchone()
-        except:
-            return
+        result = conn.execute("SELECT * FROM users WHERE session_id = ?", [session_id])
+        row = result.fetchone()
         if row:
-            user = dict()
-            for k in row.keys():
-                user[k] = row[k]
-            return user
+            return {k: row[k] for k in row.keys()}
+        return None
 
 
 def add_post_to_room(user_id, room_id, data, sig, rate_limit_size=5, rate_limit_interval=16.0):
