@@ -83,13 +83,34 @@ def post_to_room(room_token):
 @app.get("/room/<RoomToken:room_token>/messages/recent")
 def get_recent_room_messages(room_token):
     """ get list of recent messages """
+    if 'public_key' in request.args:
+        limit = int(request.args['public_key'])
+        if not 1 <= limit <= 255:
+            abort(http.BAD_REQUEST)
+    else:
+        limit = 100
+
     msgs = list()
-    # TODO: pass in via query paramter
-    limit = 100
     with db.pool as conn:
-        rows = conn.execute("SELECT messages.*, users.session_id FROM messages JOIN users ON messages.user = users.id WHERE data IS NOT NULL AND messages.room IN ( SELECT id FROM rooms WHERE token = ?1 ) ORDER BY id ASC LIMIT ?2", [room_token, limit])
-        for row in rows:
-            msgs += {'posted': row[3], 'edited': row[4], 'updated': row[5], 'message': row[6], 'signature': row[8], 'session_id': row[9]}
+        rows = conn.execute("""
+            SELECT
+                messages.id, session_id, posted, edited, data, data_size, signature
+            FROM messages JOIN users ON messages.user = users.id
+            WHERE messages.room = (SELECT id FROM rooms WHERE token = ?1)
+                AND data IS NOT NULL
+            ORDER BY id DESC LIMIT ?2
+            """,
+            (room_token, limit))
+        for id, session_id, posted, edited, data, data_size, signature in rows:
+            m = { 'id': id, 'session_id': session_id, 'timestamp': posted, 'signature': utils.encode_base64(signature) }
+            if edited is not None:
+                m['edited'] = edited
+            if len(data) < data_size:
+                # Re-pad the message (we strip off padding when storing)
+                data += b'\x00' * (data_size - len(data))
+            m['data'] = utils.encode_base64(data)
+            msgs += m
+
     return jsonify(msgs)
 
 
