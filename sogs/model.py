@@ -9,14 +9,14 @@ import time
 
 def get_rooms():
     """ get a list of rooms with their full info filled out """
-    with db.pool as conn:
+    with db.conn as conn:
         result = conn.execute("SELECT * FROM rooms ORDER BY token")
         return [{k: row[k] for k in row.keys()} for row in result]
 
 
 def get_room(room_token):
     """ Looks up a room by token and returns its info; returns None if the room doesn't exist """
-    with db.pool as conn:
+    with db.conn as conn:
         result = conn.execute("SELECT * FROM rooms WHERE token = ?", [room_token])
         row = result.fetchone()
         if row:
@@ -26,7 +26,7 @@ def get_room(room_token):
 
 def get_user(session_id):
     """ get a user by their session id """
-    with db.pool as conn:
+    with db.conn as conn:
         result = conn.execute("SELECT * FROM users WHERE session_id = ?", [session_id])
         row = result.fetchone()
         if row:
@@ -50,7 +50,7 @@ def check_permission(session_id, room_id, *,
     no flags as required then the check only checks whether a user is banned but otherwise requires
     no specific permission.
     """
-    with db.pool as conn:
+    with db.conn as conn:
         # ensure the user exists
         conn.execute("INSERT INTO users(session_id) VALUES(?) ON CONFLICT DO NOTHING", [session_id])
 
@@ -75,7 +75,7 @@ def add_post_to_room(user_id, room_id, data, sig, rate_limit_size=5, rate_limit_
     """ insert a post into a room from a user given room id and user id
     trims off padding and stores as needed
     """
-    with db.pool as conn:
+    with db.conn as conn:
         since_limit = time.time() - rate_limit_interval
         result = conn.execute("SELECT COUNT(*) FROM messages WHERE room = ? AND user = ? AND posted >= ?", [room_id, user_id, since_limit])
         row = result.fetchone()
@@ -93,7 +93,7 @@ def add_post_to_room(user_id, room_id, data, sig, rate_limit_size=5, rate_limit_
 def get_room_image_json_blob(room_id):
     """ return a json object with base64'd file contents for the image of a room """
     filename = None
-    with db.pool as conn:
+    with db.conn as conn:
         # todo: this query sucks
         result = conn.execute("SELECT filename FROM files WHERE id IN ( SELECT image FROM rooms WHERE token = ? LIMIT 1 ) LIMIT 1", [room_id])
         row = result.fetchone()
@@ -107,7 +107,7 @@ def get_room_image_json_blob(room_id):
 
 def get_mods_for_room(room_id):
     mods = list()
-    with db.pool as conn:
+    with db.conn as conn:
         result = conn.execute("SELECT session_id FROM user_permissions WHERE room = ? AND moderator AND visible_mod", [room_id])
         for row in result:
             mods.append(row[0])
@@ -116,7 +116,7 @@ def get_mods_for_room(room_id):
 
 def get_deletions_deprecated(room_id, since):
     msgs = list()
-    with db.pool as conn:
+    with db.conn as conn:
         result = None
         if since:
             result = conn.execute("SELECT id, updated FROM messages WHERE room = ? AND updated > ? AND data IS NULL ORDER BY updated ASC LIMIT 256", [room_id, since])
@@ -128,7 +128,7 @@ def get_deletions_deprecated(room_id, since):
 
 def get_message_deprecated(room_id, since, limit=256):
     msgs = list()
-    with db.pool as conn:
+    with db.conn as conn:
         result = None
         if since:
             result = conn.execute("SELECT * FROM message_details WHERE room = ? AND id > ? AND data IS NOT NULL ORDER BY id ASC LIMIT ?", [room_id, since, limit])
@@ -149,5 +149,5 @@ def ensure_user_exists(session_id):
     """
     make sure a user exists in the database
     """
-    with db.pool as conn:
+    with db.conn as conn:
         conn.execute("INSERT INTO users(session_id) VALUES(?) ON CONFLICT DO NOTHING", [session_id])

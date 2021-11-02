@@ -58,7 +58,7 @@ def get_room_info(room):
 def serve_room_image(room):
     """ serve room icon """
     filename = None
-    with db.pool as conn:
+    with db.conn as conn:
         result = conn.execute("SELECT path FROM files WHERE id = (SELECT image FROM rooms WHERE token = ?)", [room.get('token')])
         filename = result.fetchone()
     if not filename:
@@ -93,7 +93,7 @@ def get_recent_room_messages(room):
     limit = utils.get_int_param('limit', 100, min=1, max=256)
 
     msgs = list()
-    with db.pool as conn:
+    with db.conn as conn:
         rows = conn.execute("""
             SELECT
                 messages.id, session_id, posted, edited, data, data_size, signature
