@@ -11,6 +11,10 @@ _should_init = config.DB_PATH != ':memory:' and not os.path.exists(config.DB_PAT
 pool = sqlite3.connect(config.DB_PATH)
 pool.row_factory = sqlite3.Row
 
+pool.execute("PRAGMA foreign_keys = ON")
+pool.execute("PRAGMA journal_mode = WAL")
+pool.execute("PRAGMA synchronous = NORMAL")
+
 # initialize database as needed
 if _should_init:
     with open(config.DB_SCHEMA_FILE) as f:
