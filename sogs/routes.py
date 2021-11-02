@@ -52,7 +52,6 @@ def get_rooms():
 def get_room_info(room):
     """ serve room metadata """
     room_info = {'id': room.get('token'), 'name': room.get('name')}
-    app.logger.warn(room_info)
     return jsonify({'room': room_info, 'status_code': 200})
 
 @app.get("/legacy/rooms/<RoomToken:room>/image")
@@ -154,10 +153,7 @@ def auth_token_challenge():
         abort(http.BAD_REQUEST)
     token = utils.make_legacy_token(pubkey)
     pk = utils.decode_hex_or_b64(pubkey[2:], 32)
-    app.logger.warn("token={} pk={}".format(token, pk))
     ct = crypto.server_encrypt(pk, token)
-    app.logger.warn("ct={} len={}".format(ct, len(ct)))
-    # assert len(ct) == utils.LEGACY_TOKEN_SIZE
 
     model.ensure_user_exists(session_id=pubkey)
 
@@ -169,11 +165,9 @@ def handle_post_legacy_message():
     if not room:
         abort(http.NOT_FOUND)
     token = request.headers.get("Authorization")
-    app.logger.warn('posting shit token={}'.format(token))
     if not token:
         abort(http.FORBIDDEN)
     user = get_user_from_token(token)
-    app.logger.warn('user={}'.format(user))
     if not user:
         abort(http.NOT_AUTHORIZED)
     req = request.json
