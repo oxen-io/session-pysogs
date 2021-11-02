@@ -33,6 +33,20 @@ def get_user(session_id):
             return {k: row[k] for k in row.keys()}
         return None
 
+
+def touch_user(session_id):
+    """
+    Make sure a user exists in the database, updating the last activity timestamp if it does,
+    creating the user otherwise.
+
+    A transaction on the database (i.e. a `with db.conn as conn`) must already be active.
+    """
+    db.conn.execute("""
+        INSERT INTO users(session_id) VALUES(?)
+        ON CONFLICT DO UPDATE SET last_active = ((julianday('now') - 2440587.5)*86400.0)
+        """, [session_id])
+
+
 def check_permission(session_id, room_id, *,
         admin = False, moderator = False, read = False, write = False, upload = False):
     """
@@ -51,8 +65,7 @@ def check_permission(session_id, room_id, *,
     no specific permission.
     """
     with db.conn as conn:
-        # ensure the user exists
-        conn.execute("INSERT INTO users(session_id) VALUES(?) ON CONFLICT DO NOTHING", [session_id])
+        touch_user(session_id)
 
         result = conn.execute("""
             SELECT banned, read, write, upload, moderator, admin FROM user_permissions
@@ -143,11 +156,3 @@ def get_message_deprecated(room_id, since, limit=256):
 
             msgs.append({'server_id': row[0], 'public_key': row[-1], 'timestamp': utils.convert_time(row['posted']), 'data': utils.encode_base64(data), 'signature': utils.encode_base64(row['signature'])})
     return msgs
-
-
-def ensure_user_exists(session_id):
-    """
-    make sure a user exists in the database
-    """
-    with db.conn as conn:
-        conn.execute("INSERT INTO users(session_id) VALUES(?) ON CONFLICT DO NOTHING", [session_id])
