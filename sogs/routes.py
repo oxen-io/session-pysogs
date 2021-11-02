@@ -215,8 +215,6 @@ def handle_one_compact_poll(req):
     if not model.check_permission(pk, room.get('id')):
         abort(http.FORBIDDEN)
 
-    user = model.get_user(pk)
-
     messages = model.get_message_deprecated(room.get('id'), req.get('from_message_server_id'))
 
     deletions = model.get_deletions_deprecated(room.get('id'), req.get('from_deletion_server_id'))

@@ -82,7 +82,7 @@ def add_post_to_room(user_id, room_id, data, sig, rate_limit_size=5, rate_limit_
         if row[0] >= rate_limit_size:
             # rate limit hit
             return
-        result = conn.execute("INSERT INTO messages(room, user, data, data_size, signature) VALUES(?, ?, ?, ?, ?)", [user_id, room_id, data.rstrip(b'\x00'), len(data), sig])
+        result = conn.execute("INSERT INTO messages(room, user, data, data_size, signature) VALUES(?, ?, ?, ?, ?)", [room_id, user_id, data.rstrip(b'\x00'), len(data), sig])
         lastid = result.lastrowid
         result = conn.execute("SELECT posted, id FROM messages WHERE id = ?", [lastid])
         row = result.fetchone()
@@ -119,7 +119,7 @@ def get_deletions_deprecated(room_id, since):
     with db.pool as conn:
         result = None
         if since:
-            result = conn.execute("SELECT id, updated FROM messages WHERE room = ? AND updated > ? AND data IS NULL ORDER BY updated LIMIT 256", [room_id, since])
+            result = conn.execute("SELECT id, updated FROM messages WHERE room = ? AND updated > ? AND data IS NULL ORDER BY updated ASC LIMIT 256", [room_id, since])
         else:
             result = conn.execute("SELECT id, updated FROM messages WHERE room = ? AND data IS NULL ORDER BY updated DESC LIMIT 256", [room_id])
         for row in result:
@@ -131,7 +131,7 @@ def get_message_deprecated(room_id, since):
     with db.pool as conn:
         result = None
         if since:
-            result = conn.execute("SELECT * FROM message_details WHERE room = ? AND id > ? AND data IS NOT NULL ORDER BY id LIMIT 256", [room_id, since])
+            result = conn.execute("SELECT * FROM message_details WHERE room = ? AND id > ? AND data IS NOT NULL ORDER BY id ASC LIMIT 256", [room_id, since])
         else:
             result = conn.execute("SELECT * FROM message_details WHERE room = ? AND data IS NOT NULL ORDER BY id DESC LIMIT 256", [room_id])
         for row in result:
