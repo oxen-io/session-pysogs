@@ -33,6 +33,45 @@ def get_user(session_id):
         return None
 
 
+# FIXME: this query relies on the user row existing, which we should autovivify on each request if
+# it doesn't exist, and otherwise update its last activity if it does.
+
+def check_permission(session_id, room_id, *,
+        admin = False, moderator = False, read = False, write = False, upload = False):
+    """
+    Checks whether `session_id` has the required permissions for room `room_id`, and isn't banned.
+    Returns True if the user satisfies the permissions, false otherwise.
+
+    Named arguments specify the permissions to require:
+    - admin -- if true then the user must have admin access to the room
+    - moderator -- if true then the user must have moderator (or admin) access to the room
+    - read -- if true then the user must have read access
+    - write -- if true then the user must have write access
+    - upload -- if true then the user must have upload access
+
+    You can specify multiple options as true, in which case all must be satisfied.  If you specify
+    no flags as required then the check only checks whether a user is banned but otherwise requires
+    no specific permission.
+    """
+
+    with db.pool as conn:
+        result = conn.execute("""
+            SELECT banned, read, write, upload, moderator, admin FROM user_permissions
+            WHERE room = ? AND session_id = ?
+            """, [room_id, session_id])
+        row = result.fetchone()
+
+        if row['admin']:
+            return True
+        if admin:
+            return False
+        if row['moderator']:
+            return True
+        if moderator:
+            return False
+        return not row['banned'] and (not read or row['read']) and (not write or row['write']) and (not upload or row['upload'])
+
+
 def add_post_to_room(user_id, room_id, data, sig, rate_limit_size=5, rate_limit_interval=16.0):
     """ insert a post into a room from a user given room id and user id
     trims off padding and stores as needed
