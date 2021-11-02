@@ -62,14 +62,14 @@ def serve_room_image(room_token):
 def view_room(room_token):
     room = model.get_room(room_token)
     if room is None:
-        abort(404)
+        abort(http.NOT_FOUND)
     return render_template("view_room.html", room=room.get('token'), room_url=utils.server_url(room.get('token')))
 
 @app.get("/view/<RoomToken:room_token>/invite.png")
 def serve_invite_qr(room_token):
     room = model.get_room(room_token)
     if not room:
-        abort(404)
+        abort(http.NOT_FOUND)
     img = qrencode.encode(utils.server_url(room.get('token')))
     data = BytesIO()
     img = img[-1].resize((512,512), NEAREST)
@@ -130,7 +130,7 @@ def get_user_from_token(token):
         crypto.server_verify(rawtoken)
     except Exception as ex:
         app.logger.error("failed to decode/verify token: {}".format(ex))
-        abort(400)
+        abort(http.UNAUTHORIZED)
     else:
         return model.get_user(token) or dict()
 
