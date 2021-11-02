@@ -130,10 +130,10 @@ def get_pubkey_from_token(token):
     else:
         return utils.encode_hex(rawtoken[utils.SIGNATURE_SIZE:])
 
-def legacy_verify_room_access(pubkey):
+def legacy_verify_room_access(pubkey, **perms):
     """
-    for a legacy endpoint verifying a user is allowed to access a room
-    calls flask.abort to bail out if the user is not allowed
+    For a legacy endpoint verifying a user is allowed to access a room calls flask.abort to bail out
+    if the user is not allowed, otherwise returns the room info.
     """
     if not pubkey:
         abort(http.BAD_REQUEST)
@@ -144,9 +144,24 @@ def legacy_verify_room_access(pubkey):
     if not room:
         abort(http.NOT_FOUND)
 
-    if not model.check_permission(pubkey, room.get("id")):
+    if not model.check_permission(pubkey, room.get("id"), **perms):
         abort(http.FORBIDDEN)
 
+    return room
+
+
+def legacy_check_user_room(**perms):
+    """
+    Wraps legacy_verify_room_access to retrieve (and validate) the pubkey from the Authorization
+    header.  Returns a pair of the user and room info dicts; aborts on any failure.
+    """
+    pubkey = get_pubkey_from_token(request.headers.get("Authorization"))
+    room = legacy_verify_room_access(pubkey, **perms)
+    user = model.get_user(pubkey)
+    if not user:
+        abort(http.NOT_AUTHORIZED)
+
+    return (user, room)
 
 
 @app.post("/legacy/claim_auth_token")
@@ -170,15 +185,8 @@ def legacy_auth_token_challenge():
 @app.post("/legacy/messages")
 def handle_post_legacy_message():
 
-    pubkey = get_pubkey_from_token(request.headers.get("Authorization"))
-    legacy_verify_room_access(pubkey)
+    user, room = legacy_check_user_room(write=True)
 
-    room = model.get_room(request.headers.get("Room"))
-    if not room:
-        abort(http.NOT_FOUND)
-    user = model.get_user(pubkey)
-    if not user:
-        abort(http.NOT_AUTHORIZED)
     req = request.json
     data = utils.decode_base64(req.get('data'))
     sig = utils.decode_base64(req.get('signature'))
@@ -196,15 +204,7 @@ def handle_legacy_get_messages():
     from_id = request.args.get('from_server_id')
     limit = utils.get_int_param('limit', 256, min=1, max=256, truncate=True)
 
-    pubkey = get_pubkey_from_token(request.headers.get("Authorization"))
-    legacy_verify_room_access(pubkey)
-
-    room = model.get_room(request.headers.get("Room"))
-    if not room:
-        abort(http.NOT_FOUND)
-    user = model.get_user(pubkey)
-    if not user:
-        abort(http.NOT_AUTHORIZED)
+    user, room = legacy_check_user_room(read=True)
 
     return jsonify({
         'status_code': 200,
@@ -228,7 +228,7 @@ def handle_one_compact_poll(req):
     room = model.get_room(room_token)
     if not room:
         abort(http.NOT_FOUND)
-    if not model.check_permission(pk, room.get('id')):
+    if not model.check_permission(pk, room.get('id'), read=True):
         abort(http.FORBIDDEN)
 
     messages = model.get_message_deprecated(room.get('id'), req.get('from_message_server_id'))
