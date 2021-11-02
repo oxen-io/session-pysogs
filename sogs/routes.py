@@ -122,14 +122,9 @@ def get_recent_room_messages(room):
 
 # --- BEGIN OLD API ---
 
-def get_user_from_token(token):
-    """
-    get user model from database given a token
-    """
-
+def get_pubkey_from_token(token):
     if not token:
         return
-
     try:
         rawtoken = utils.decode_hex_or_b64(token, utils.LEGACY_TOKEN_SIZE)
         crypto.server_verify(rawtoken)
@@ -137,37 +132,55 @@ def get_user_from_token(token):
         app.logger.error("failed to decode/verify token: {}".format(ex))
         abort(http.UNAUTHORIZED)
     else:
-        session_id = utils.encode_hex(rawtoken[utils.SIGNATURE_SIZE:])
-        return model.get_user(session_id)
+        return utils.encode_hex(rawtoken[utils.SIGNATURE_SIZE:])
+
+def legacy_verify_room_access(pubkey):
+    """
+    for a legacy endpoint verifying a user is allowed to access a room
+    calls flask.abort to bail out if the user is not allowed
+    """
+    if not pubkey:
+        abort(http.BAD_REQUEST)
+    if len(pubkey) != (utils.SESSION_ID_SIZE * 2) or not pubkey.startswith('05'):
+        abort(http.BAD_REQUEST)
+
+    room = model.get_room(request.headers.get("Room"))
+    if not room:
+        abort(http.NOT_FOUND)
+
+    if not model.check_permission(pubkey, room.get("id")):
+        abort(http.FORBIDDEN)
 
 
 
 @app.post("/legacy/claim_auth_token")
-def claim_auth():
+def legacy_claim_auth():
+    """ this does nothing but needs to exist for backwards compat """
     return jsonify({'status_code':200})
 
 @app.get("/legacy/auth_token_challenge")
-def auth_token_challenge():
+def legacy_auth_token_challenge():
+    """ legacy endpoint to give back an encrypted auth token bundle for the client to use to authenticate """
+
     pubkey = request.args.get("public_key")
-    if len(pubkey) != (utils.SESSION_ID_SIZE * 2) or not pubkey.startswith('05'):
-        abort(http.BAD_REQUEST)
+
+    legacy_verify_room_access(pubkey)
+
     token = utils.make_legacy_token(pubkey)
     pk = utils.decode_hex_or_b64(pubkey[2:], 32)
     ct = crypto.server_encrypt(pk, token)
-
-    model.ensure_user_exists(session_id=pubkey)
-
     return jsonify({'status_code': 200, 'challenge': {'ciphertext': utils.encode_base64(ct), 'ephemeral_public_key': crypto.server_pubkey_base64}})
 
 @app.post("/legacy/messages")
 def handle_post_legacy_message():
+
+    pubkey = get_pubkey_from_token(request.headers.get("Authorization"))
+    legacy_verify_room_access(pubkey)
+
     room = model.get_room(request.headers.get("Room"))
     if not room:
         abort(http.NOT_FOUND)
-    token = request.headers.get("Authorization")
-    if not token:
-        abort(http.FORBIDDEN)
-    user = get_user_from_token(token)
+    user = model.get_user(pubkey)
     if not user:
         abort(http.NOT_AUTHORIZED)
     req = request.json
@@ -192,15 +205,17 @@ def handle_comapct_poll():
     return jsonify({'status_code': 200, 'results': result})
 
 def handle_one_compact_poll(req):
-    user = get_user_from_token(req.get('auth_token'))
-    #if not user:
-    #    return {'status_code': 500, 'error': 'no user provided'}
+    pk = get_pubkey_from_token(req.get('auth_token'))
     room_token = req.get('room_id')
     if not room_token:
         return {'status_code': 500, 'error': 'no room provided'}
+    room = model.get_room(room_token)
+    if not room:
+        abort(http.NOT_FOUND)
+    if not model.check_permission(pk, room.get('id')):
+        abort(http.FORBIDDEN)
 
-    #if not model.user_read_allowed(user, room_token):
-    #    return {'status_code': 500, 'error': 'read access not permitted'}
+    user = model.get_user(pk)
 
     messages = model.get_message_deprecated(room_token, req.get('from_message_server_id'))
 

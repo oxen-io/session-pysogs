@@ -32,10 +32,6 @@ def get_user(session_id):
             return {k: row[k] for k in row.keys()}
         return None
 
-
-# FIXME: this query relies on the user row existing, which we should autovivify on each request if
-# it doesn't exist, and otherwise update its last activity if it does.
-
 def check_permission(session_id, room_id, *,
         admin = False, moderator = False, read = False, write = False, upload = False):
     """
@@ -53,8 +49,10 @@ def check_permission(session_id, room_id, *,
     no flags as required then the check only checks whether a user is banned but otherwise requires
     no specific permission.
     """
-
     with db.pool as conn:
+        # ensure the user exists
+        conn.execute("INSERT INTO users(session_id) VALUES(?) ON CONFLICT DO NOTHING", [session_id])
+
         result = conn.execute("""
             SELECT banned, read, write, upload, moderator, admin FROM user_permissions
             WHERE room = ? AND session_id = ?
