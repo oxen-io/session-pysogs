@@ -4,6 +4,8 @@ import binascii
 from . import crypto
 from . import config
 
+from flask import request
+
 
 encode_base64 = lambda data: base64.b64encode(data).decode('ascii')
 encode_hex = lambda data: binascii.hexlify(data).decode('ascii')
@@ -59,6 +61,44 @@ def make_legacy_token(session_id):
     session_id = bytes.fromhex(session_id)
     return crypto.server_sign(session_id)
 
+
 def convert_time(float_time):
     """ take a float and convert it into something session likes """
-    return int(float_time) * 1000
+    return int(float_time * 1000)
+
+
+def get_int_param(name, default=None, *, required=False, min=None, max=None, truncate=False):
+    """
+    Returns a provided named parameter (typically a query string parameter) as an integer from the
+    current request.  On error we abort the request with a Bad Request error status code.
+
+    Parameters:
+    - required -- if True then not specifying the argument is an error.
+    - default -- if the parameter is not given then return this.  Ignored if `required` is true.
+    - min -- the minimum acceptable value for the parameter; None means no minimum.
+    - max -- the maximum acceptable value for the parameter; None means no maximum.
+    - truncate -- if True then we truncate a >max or <min value to max or min, respectively.  When
+      False (the default) we error.
+    """
+    val = request.args.get(name)
+    if val is None:
+        if required:
+            abort(http.BAD_REQUEST)
+        return default
+
+    try:
+        val = int(val)
+    except:
+        abort(http.BAD_REQUEST)
+
+    if min is not None and val < min:
+        if truncate:
+            val = min
+        else:
+            abort(http.BAD_REQUEST)
+    elif max is not None and val > max:
+        if truncate:
+            val = max
+        else:
+            abort(http.BAD_REQUEST)
+    return val

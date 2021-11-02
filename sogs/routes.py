@@ -69,6 +69,7 @@ def serve_room_image(room):
 def view_room(room):
     return render_template("view_room.html", room=room.get('token'), room_url=utils.server_url(room.get('token')))
 
+
 @app.get("/view/<RoomToken:room>/invite.png")
 def serve_invite_qr(room):
     img = qrencode.encode(utils.server_url(room.get('token')))
@@ -89,12 +90,7 @@ def post_to_room(room):
 @app.get("/room/<RoomToken:room>/messages/recent")
 def get_recent_room_messages(room):
     """ get list of recent messages """
-    if 'public_key' in request.args:
-        limit = int(request.args['public_key'])
-        if not 1 <= limit <= 255:
-            abort(http.BAD_REQUEST)
-    else:
-        limit = 100
+    limit = utils.get_int_param('limit', 100, min=1, max=256)
 
     msgs = list()
     with db.pool as conn:
@@ -194,6 +190,26 @@ def handle_post_legacy_message():
     msg['signature'] = req.get('signature')
     return jsonify({'status_code':200, 'message': msg})
 
+
+@app.get("/legacy/messages")
+def handle_legacy_get_messages():
+    from_id = request.args.get('from_server_id')
+    limit = utils.get_int_param('limit', 256, min=1, max=256, truncate=True)
+
+    pubkey = get_pubkey_from_token(request.headers.get("Authorization"))
+    legacy_verify_room_access(pubkey)
+
+    room = model.get_room(request.headers.get("Room"))
+    if not room:
+        abort(http.NOT_FOUND)
+    user = model.get_user(pubkey)
+    if not user:
+        abort(http.NOT_AUTHORIZED)
+
+    return jsonify({
+        'status_code': 200,
+        'messages': model.get_message_deprecated(room['id'], from_id, limit)
+        })
 
 
 @app.post("/legacy/compact_poll")

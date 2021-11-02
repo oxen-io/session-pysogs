@@ -126,14 +126,14 @@ def get_deletions_deprecated(room_id, since):
             msgs.append({'id': row[0], 'updated': utils.convert_time(row[1])})
     return msgs
 
-def get_message_deprecated(room_id, since):
+def get_message_deprecated(room_id, since, limit=256):
     msgs = list()
     with db.pool as conn:
         result = None
         if since:
-            result = conn.execute("SELECT * FROM message_details WHERE room = ? AND id > ? AND data IS NOT NULL ORDER BY id ASC LIMIT 256", [room_id, since])
+            result = conn.execute("SELECT * FROM message_details WHERE room = ? AND id > ? AND data IS NOT NULL ORDER BY id ASC LIMIT ?", [room_id, since, limit])
         else:
-            result = conn.execute("SELECT * FROM message_details WHERE room = ? AND data IS NOT NULL ORDER BY id DESC LIMIT 256", [room_id])
+            result = conn.execute("SELECT * FROM message_details WHERE room = ? AND data IS NOT NULL ORDER BY id DESC LIMIT ?", [room_id, limit])
         for row in result:
             data = row['data']
             data_size = row['data_size']
