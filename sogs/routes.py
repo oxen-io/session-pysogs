@@ -52,7 +52,7 @@ def serve_room_image(room_token):
     """ serve room icon """
     filename = None
     with db.pool as conn:
-        result = conn.execute("SELECT filename FROM files WHERE id IN ( SELECT image FROM rooms WHERE token = ? )", [room_token])
+        result = conn.execute("SELECT path FROM files WHERE id = (SELECT image FROM rooms WHERE token = ?)", [room_token])
         filename = result.fetchone()
     if not filename:
         abort(http.NOT_FOUND)
