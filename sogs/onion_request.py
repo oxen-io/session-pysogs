@@ -72,7 +72,9 @@ def handle_onionreq_plaintext(body):
             with app.request_context(subreq_env) as subreq_ctx:
                 response = app.full_dispatch_request()
             if response.status_code == 200:
-                return response.get_data()
+                data = response.get_data()
+                app.logger.debug("Onion sub-request returned success, {} bytes".format(len(data)))
+                return data
             app.logger.warn("Onion sub-request for {} {} returned status {}".format(method, endpoint, response.status_code))
             return json.dumps({'status_code': response.status_code}).encode()
         except Exception as e:
