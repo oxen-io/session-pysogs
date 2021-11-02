@@ -24,6 +24,8 @@ tags:
   description: Endpoint for submitting a batch of requests at once.
 - name: Users
   description: Management of users and user-related info.
+- name: Onion:
+  description: Submitting an onion request
 security:
   - pubkey: []
     nonce: []
@@ -1021,6 +1023,75 @@ paths:
       responses:
         200:
           $ref: "#/paths/~1batch/post/responses/200"
+
+  /oxen/v3/lsrpc:
+    post:
+      tags: [Onion]
+      summary: "Endpoint for submitting an encrypted onion request"
+      description: "The data is an onion-encrypted request for another endpoint, wrapped in an encrypted layer for this open group server"
+      requestBody:
+        description: >
+          Onion request endpoint information.  Note that the field descriptions here are *inside*
+          the onion encryption layer; the onion encryption payload itself is documented elsewhere.
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [endpoint, method, headers]
+                properties:
+                  method:
+                    type: string
+                    description: "The request method type as a string, i.e. `GET`, `POST`, `PUT`, `DELETE`."
+                  endpoint:
+                    type: string
+                    description: >
+                      The request path, e.g. `/room/123/messages/since/45678`.  This name should be
+                      the full path beginning with a `/`; methods without a leading / are
+                      interpreted as legacy endpoints for older versions of Session and should not
+                      be used.
+                  headers:
+                    type: object
+                    description: >
+                      HTTP headers for the request; should usually include the pubkey, nonce,
+                      timestamp, and signature headers (`X-SOGS-Pubkey`, etc.), and sometimes a
+                      `Content-Type` header (the latter, if omitted, defaults to `application/json`
+                      if using `body`, and `application/octet-stream` if using `body_binary`).
+                  body:
+                    description: >
+                      Request body of the onion request.  This is typically used for text-based
+                      values (such as JSON requests).  Exclusive of `body_b64` and `body_json`.  Not
+                      accepted for `GET` requests.
+                    type: string
+                  body_binary:
+                    description: >
+                      Request body for a onion request to a binary endpoint, with the body encoded
+                      in base64.  Exclusive of `body`.  Not accepted for `GET` requests.
+                      
+                      The endpoint will be called with the *decoded* byte value as its body, thus
+                      allowing you to POST to endpoints that require binary data (such as file
+                      uploads).  Note that when using the Content-Type header defaults to
+                      `application/octet-stream`.
+
+                      Note that when including a signature in the `X-SOGS-Signature` header, the
+                      signature must use the decoded byte value of the body, *not* the encoded
+                      base64 value.
+                      
+                      This is somewhat wasteful because of the overhead of base64-encoding, but is a
+                      limitation of onion requests.
+                    type: string
+                    format: byte
+      responses:
+        200:
+          description: >
+            Request completed.  The actual response will be base64-encoded and encrypted.  For
+            requests that fail with an HTTP response (i.e. other than 200) the response will
+            base64+decrypt to the json value `{"status_code": N}` where `N` is the integer error
+            code that occured (e.g. 404).
+            
+            For successful (i.e. 200) responses the returned value is whatever the body of the
+            request returned.  (Returning headers via onion requests is not supported.)
+
 
 components:
   schemas:

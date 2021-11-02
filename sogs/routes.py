@@ -134,60 +134,6 @@ def get_user_from_token(token):
     else:
         return model.get_user(token) or dict()
 
-def handle_onionreq_plaintext(junk):
-    """
-    given a plaintext from a junk, parse it, handle the request and give the reply plaintext to encrypt
-    """
-    obj = json.loads(junk.payload)
-
-    sig = utils.decode_hex_or_b64(obj.get('signature', None))
-    if sig:
-        data = bytearray().join([obj.get(part).encode() for part in ['endpoint', 'method', 'body', 'nonce']])
-        pk = utils.decode_hex_or_b64(obj.get('ed25519_pubkey'))
-
-        try:
-            crypto.verify_sig_from_pk(data, sig, pk)
-        except:
-            # invalid sig
-            abort(http.FORBIDDEN)
-
-    cl = None
-    ct = None
-    subreq_body = None
-    meth, target = obj['method'], obj['endpoint']
-    if '?' in target:
-        target, query_string = target.split('?', 1)
-    else:
-        query_string = ''
-
-        subreq_body = obj.get('body', '').encode()
-        if meth in ('POST', 'PUT'):
-            ct = obj.get('contentType', 'application/json')
-            cl = len(subreq_body)
-        subreq_body = BytesIO(subreq_body)
-
-    if target[0] != '/':
-        target = '/legacy/{}'.format(target)
-
-    # Set up the wsgi environ variables for the subrequest (see PEP 0333)
-    subreq_env = {
-        **request.environ,
-        "REQUEST_METHOD": meth,
-        "PATH_INFO": target,
-        "QUERY_STRING": query_string,
-        "CONTENT_TYPE": ct,
-        "CONTENT_LENGTH": cl,
-        **{'HTTP_{}'.format(h.upper().replace('-', '_')): v for h, v in obj.get('headers', {}).items()},
-        'wsgi.input': subreq_body
-    }
-
-    with app.request_context(subreq_env) as subreq_ctx:
-        response = app.full_dispatch_request()
-        data = response.get_data()
-        app.logger.warn("response data: {}".format(data))
-        crap = junk.transformReply(data)
-        app.logger.warn("junk={}".format(crap))
-        return utils.encode_base64(crap)
 
 
 @app.post("/legacy/claim_auth_token")
@@ -233,18 +179,3 @@ def handle_one_compact_poll(req):
     mods = model.get_mods_for_room(room_token)
 
     return {'status_code': 200, 'room_id': room_token, 'messages': messages, 'deletions': deletions, 'moderators': mods}
-
-
-@app.post("/loki/v3/lsrpc")
-def handle_onionreq():
-    """
-    parse an onion request and process the request, shit out the reply after encrypting it
-    """
-    data = request.data
-    app.logger.warn("content length: {}".format(request.headers.get("Content-Length")))
-    app.logger.warn("content type: {}".format(request.headers.get("Content-Type")))
-    app.logger.warn("request data: {}".format(data))
-    junk = crypto.parse_junk(data)
-
-    app.logger.warn("got junk payload: {}".format(junk.payload))
-    return handle_onionreq_plaintext(junk)

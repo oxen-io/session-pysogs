@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 from . import routes
+from . import onion_request
 from .web import app
 
 import coloredlogs
