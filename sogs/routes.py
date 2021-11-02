@@ -116,7 +116,7 @@ def get_recent_room_messages(room):
                 # Re-pad the message (we strip off padding when storing)
                 data += b'\x00' * (data_size - len(data))
             m['data'] = utils.encode_base64(data)
-            msgs += m
+            msgs.append(m)
 
     return jsonify(msgs)
 
@@ -180,12 +180,14 @@ def handle_post_legacy_message():
     data = utils.decode_base64(req.get('data'))
     sig = utils.decode_base64(req.get('signature'))
     msg = model.add_post_to_room(user.get('id'), room.get('id'), data, sig)
-    if not result:
+    if not msg:
         abort(http.TOO_MANY_REQUESTS)
     msg['public_key'] = user.get("session_id")
     msg['data'] = req.get('data')
     msg['signature'] = req.get('signature')
-    return jsonfiy(msg)
+    return jsonify({'status_code':200, 'message': msg})
+
+
 
 @app.post("/legacy/compact_poll")
 def handle_comapct_poll():
@@ -193,7 +195,7 @@ def handle_comapct_poll():
     result = list()
     for req in req_list.get('requests', list()):
         result.append(handle_one_compact_poll(req))
-    return jsonify(result)
+    return jsonify({'status_code': 200, 'results': result})
 
 def handle_one_compact_poll(req):
     user = get_user_from_token(req.get('auth_token'))

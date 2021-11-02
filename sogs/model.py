@@ -44,8 +44,9 @@ def add_post_to_room(user_id, room_id, data, sig, rate_limit_size=5, rate_limit_
         if row[0] >= rate_limit_size:
             # rate limit hit
             return
-
-        result = conn.execute("INSERT INTO messages(room, user, data, data_size, signature) VALUES(?, ?, ?, ?, ?) RETURNING id, posted", [user_id, room_id, data.rtrim(b'\x00'), len(data), sig])
+        result = conn.execute("INSERT INTO messages(room, user, data, data_size, signature) VALUES(?, ?, ?, ?, ?)", [user_id, room_id, data.rstrip(b'\x00'), len(data), sig])
+        lastid = result.lastrowid
+        result = conn.execute("SELECT posted, id FROM messages WHERE id = ?", [lastid])
         row = result.fetchone()
         msg = {'timestamp': row['posted'], 'server_id': row['id']}
         return msg

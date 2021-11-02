@@ -30,7 +30,7 @@
           for(let msg of msgs)
           {
               let e = document.createElement("li")
-              e.innerText = document.createTextNode(msg.session_id +": "+msg.message);
+              e.appendChild(document.createTextNode(msg.session_id +": "+atob(msg.data)));
               elem.appendChild(e);
           }
       }, 1000);
