@@ -86,7 +86,7 @@ def add_post_to_room(user_id, room_id, data, sig, rate_limit_size=5, rate_limit_
         lastid = result.lastrowid
         result = conn.execute("SELECT posted, id FROM messages WHERE id = ?", [lastid])
         row = result.fetchone()
-        msg = {'timestamp': row['posted'], 'server_id': row['id']}
+        msg = {'timestamp': utils.convert_time(row['posted']), 'server_id': row['id']}
         return msg
 
 
@@ -123,7 +123,7 @@ def get_deletions_deprecated(room_id, since):
         else:
             result = conn.execute("SELECT id, updated FROM messages WHERE room = ? AND data IS NULL ORDER BY updated DESC LIMIT 256", [room_id])
         for row in result:
-            msgs.append({'id': row[0], 'updated': row[1]})
+            msgs.append({'id': row[0], 'updated': utils.convert_time(row[1])})
     return msgs
 
 def get_message_deprecated(room_id, since):
@@ -141,7 +141,7 @@ def get_message_deprecated(room_id, since):
                 # Re-pad the message (we strip off padding when storing)
                 data += b'\x00' * (data_size - len(data))
 
-            msgs.append({'server_id': row[0], 'public_key': row[-1], 'timestamp': row['posted'], 'data': utils.encode_base64(data), 'signature': utils.encode_base64(row['signature'])})
+            msgs.append({'server_id': row[0], 'public_key': row[-1], 'timestamp': utils.convert_time(row['posted']), 'data': utils.encode_base64(data), 'signature': utils.encode_base64(row['signature'])})
     return msgs
 
 

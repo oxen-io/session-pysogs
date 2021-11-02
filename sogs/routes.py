@@ -108,7 +108,7 @@ def get_recent_room_messages(room):
             """,
             (room.get('token'), limit))
         for id, session_id, posted, edited, data, data_size, signature in rows:
-            m = { 'id': id, 'session_id': session_id, 'timestamp': posted, 'signature': utils.encode_base64(signature) }
+            m = { 'id': id, 'session_id': session_id, 'timestamp': utils.convert_time(posted), 'signature': utils.encode_base64(signature) }
             if edited is not None:
                 m['edited'] = edited
             if len(data) < data_size:

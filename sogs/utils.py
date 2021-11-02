@@ -58,3 +58,7 @@ LEGACY_TOKEN_SIZE = SIGNATURE_SIZE + SESSION_ID_SIZE
 def make_legacy_token(session_id):
     session_id = bytes.fromhex(session_id)
     return crypto.server_sign(session_id)
+
+def convert_time(float_time):
+    """ take a float and convert it into something session likes """
+    return int(float_time) * 1000
