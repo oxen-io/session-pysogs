@@ -103,13 +103,12 @@ def get_user_from_token(token):
     if not token:
         return
 
-    rawtoken = utils.decode_hex_or_b64(token)
-    app.logger.warn('token={}'.format(rawtoken))
-
     try:
+        rawtoken = utils.decode_hex_or_b64(token, utils.LEGACY_TOKEN_SIZE)
+        app.logger.warn('token={}'.format(rawtoken))
         crypto.server_verify(rawtoken)
     except Exception as ex:
-        app.logger.error("failed to verify: {}".format(ex))
+        app.logger.error("failed to decode/verify token: {}".format(ex))
         abort(400)
     else:
         return model.get_user(token) or dict()
@@ -177,10 +176,13 @@ def claim_auth():
 @app.get("/legacy/auth_token_challenge")
 def auth_token_challenge():
     pubkey = request.args.get("public_key")
+    if len(pubkey) != 66 or not pubkey.startswith('05'):
+        abort(http.BAD_REQUEST)
     token = utils.make_legacy_token(pubkey)
-    pk = utils.decode_hex_or_b64(pubkey[2:])
+    pk = utils.decode_hex_or_b64(pubkey[2:], 32)
     app.logger.warn("token={} pk={}".format(token, pk))
     ct = crypto.server_encrypt(pk, token)
+    assert len(ct) == utils.LEGACY_TOKEN_SIZE
     return jsonify({'status_code': 200, 'challenge': {'ciphertext': utils.encode_base64(ct), 'ephemeral_public_key': crypto.server_pubkey_base64}})
 
 @app.post("/legacy/compact_poll")
