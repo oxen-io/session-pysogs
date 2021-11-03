@@ -146,16 +146,12 @@ def get_mods_for_room(room_id, curr_session_id = None):
 
 
 def get_deletions_deprecated(room_id, since):
-    msgs = list()
     with db.conn as conn:
-        result = None
         if since:
             result = conn.execute("SELECT id, updated FROM messages WHERE room = ? AND updated > ? AND data IS NULL ORDER BY updated ASC LIMIT 256", [room_id, since])
         else:
             result = conn.execute("SELECT id, updated FROM messages WHERE room = ? AND data IS NULL ORDER BY updated DESC LIMIT 256", [room_id])
-        for row in result:
-            msgs.append({'id': row[0], 'updated': utils.convert_time(row[1])})
-    return msgs
+        return [{'deleted_message_id': row[0], 'updated': row[1]} for row in result]
 
 def get_message_deprecated(room_id, since, limit=256):
     msgs = list()
