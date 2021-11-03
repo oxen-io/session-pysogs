@@ -9,6 +9,7 @@ from . import http
 
 import json
 import random
+import re
 
 from werkzeug.routing import BaseConverter, ValidationError
 
@@ -238,3 +239,92 @@ def handle_one_compact_poll(req):
     mods = model.get_mods_for_room(room_token)
 
     return {'status_code': 200, 'room_id': room_token, 'messages': messages, 'deletions': deletions, 'moderators': mods}
+
+
+@app.post("/legacy/files")
+def handle_legacy_store_file():
+    user, room = legacy_check_user_room(write=True, upload=True)
+
+    import os
+    import time
+
+    # Slamming this all into memory is not very nice, but there's no terribly elegant way to get
+    # around it when we have b64 input for legacy uploads.
+    file_b64 = request.json['file']
+    file_content = utils.decode_base64(file_b64)
+
+    if len(file_content) > config.UPLOAD_FILE_MAX_SIZE:
+        abort(http.ERROR_PAYLOAD_TOO_LARGE)
+
+    files_dir = "uploads/" + room['token']
+    os.makedirs(files_dir, exist_ok=True)
+
+    # FIXME: when making this code generic, filename should be provided by new API users
+    filename = None
+
+    if filename is not None:
+        filename = re.sub(config.UPLOAD_FILENAME_BAD, "_", filename)
+
+    file_id, file_path = None, None
+
+    try:
+        # Begin a transaction; if this context exits with exception we want to roll back the
+        # database addition; we catch *outside* the context so that we catch on commit, as well, so
+        # that we also clean up the stored file on disk if the transaction fails to commit.
+        with db.conn:
+            expiry = time.time() + config.UPLOAD_DEFAULT_EXPIRY_DAYS * 86400
+
+            # Insert the file row first, but with nonsense path because we want to put the ID in the
+            # path, which we won't have until after the insert; we'll come back and update it.
+            cur = db.conn.cursor()
+            cur.execute("""
+                INSERT INTO files (room, uploader, size, expiry, filename, path)
+                VALUES (?, ?, ?, ?, ?, 'tmp')
+                """, (room['id'], user['id'], len(file_content), expiry, filename))
+
+            file_id = cur.lastrowid
+
+            if filename is None:
+                filename = '(unnamed)'
+
+            if len(filename) > config.UPLOAD_FILENAME_MAX:
+                filename = filename[:config.UPLOAD_FILENAME_KEEP_PREFIX] + "..." + filename[-config.UPLOAD_FILENAME_KEEP_SUFFIX:]
+
+            file_path = "{}/{}_{}".format(files_dir, file_id, filename)
+
+            with open(file_path, 'wb') as f:
+                f.write(file_content)
+
+            cur.execute("UPDATE files SET path = ? WHERE id = ?", (file_path, file_id))
+
+    except Exception as e:
+        app.logger.warn("Failed to write/update file {}: {}".format(file_path, e))
+        if file_path is not None:
+            try:
+                os.unlink(file_path)
+            except:
+                pass
+        abort(http.ERROR_INTERNAL_SERVER_ERROR)
+
+    return jsonify({
+        'status_code': 200,
+        'result': file_id
+    })
+
+
+@app.get("/legacy/files/<int:file_id>")
+def handle_legacy_get_file(file_id):
+    user, room = legacy_check_user_room(read=True)
+
+    with db.conn as conn:
+        result = conn.execute("SELECT path FROM files WHERE room = ? AND id = ?", (room['id'], file_id))
+        row = result.fetchone()
+        if not row:
+            abort(http.NOT_FOUND)
+
+    with open(row[0], 'rb') as f:
+        file_content = f.read()
+    return jsonify({
+        'status_code': 200,
+        'result': utils.encode_base64(file_content)
+    })

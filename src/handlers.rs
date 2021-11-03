@@ -316,7 +316,7 @@ pub fn store_file_impl<'a>(
              RETURNING id",
         )
         .map_err(db_error)?
-        .query_row(params![room.id, user.id, bytes, db_filename, expiry], |row| row.get(0))
+        .query_row(params![room.id, user.id, bytes, expiry, db_filename], |row| row.get(0))
     {
         Ok(r) => r,
         Err(e) => {
