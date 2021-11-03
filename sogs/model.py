@@ -38,8 +38,6 @@ def touch_user(session_id):
     """
     Make sure a user exists in the database, updating the last activity timestamp if it does,
     creating the user otherwise.
-
-    A transaction on the database (i.e. a `with db.conn as conn`) must already be active.
     """
     db.conn.execute("""
         INSERT INTO users(session_id) VALUES(?)
@@ -118,12 +116,34 @@ def get_room_image_json_blob(room_id):
     else:
         return {"status_code": 404}
 
-def get_mods_for_room(room_id):
-    mods = list()
-    with db.conn as conn:
-        result = conn.execute("SELECT session_id FROM user_permissions WHERE room = ? AND moderator AND visible_mod", [room_id])
-        for row in result:
-            mods.append(row[0])
+def get_mods_for_room(room_id, curr_session_id = None):
+    """
+    Returns a list of session_ids who are moderators of the room.
+
+    `curr_session_id` is the current user's session id, and controls how we return hidden
+    moderators: if the given user is an admin then all hidden mods/admins are included.  If the
+    given user is a moderator then we include that specific user in the mod list if she is a
+    moderator, but don't include any other hidden mods/admins.
+    """
+
+    we_are_hidden, we_are_admin = False, False
+    mods, hidden_mods = [], []
+    from .web import app
+    app.logger.critical("hmm, room_id={}, s={}".format(room_id, curr_session_id))
+    for session_id, visible, admin in db.conn.execute(
+            "SELECT session_id, visible_mod, admin FROM user_permissions WHERE room = ? AND moderator", [room_id]):
+        app.logger.critical("{}, {}, {}".format(session_id, visible, admin))
+        if session_id is not None and session_id == curr_session_id:
+            we_are_hidden = not visible
+            we_are_admin = admin
+
+        (mods if visible else hidden_mods).append(session_id)
+
+    if we_are_admin:
+        mods += hidden_mods
+    elif we_are_hidden:
+        mods.append(curr_session_id)
+
     return mods
 
 

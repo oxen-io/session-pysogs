@@ -223,20 +223,22 @@ def handle_comapct_poll():
 
 def handle_one_compact_poll(req):
     pk = get_pubkey_from_token(req.get('auth_token'))
+    if not pk:
+        return {'status_code': http.BAD_REQUEST, 'error': 'no auth_token provided'}
     room_token = req.get('room_id')
     if not room_token:
-        return {'status_code': 500, 'error': 'no room provided'}
+        return {'status_code': http.BAD_REQUEST, 'error': 'no room provided'}
     room = model.get_room(room_token)
     if not room:
         abort(http.NOT_FOUND)
-    if not model.check_permission(pk, room.get('id'), read=True):
+    if not model.check_permission(pk, room['id'], read=True):
         abort(http.FORBIDDEN)
 
-    messages = model.get_message_deprecated(room.get('id'), req.get('from_message_server_id'))
+    messages = model.get_message_deprecated(room['id'], req.get('from_message_server_id'))
 
-    deletions = model.get_deletions_deprecated(room.get('id'), req.get('from_deletion_server_id'))
+    deletions = model.get_deletions_deprecated(room['id'], req.get('from_deletion_server_id'))
 
-    mods = model.get_mods_for_room(room_token)
+    mods = model.get_mods_for_room(room['id'], pk)
 
     return {'status_code': 200, 'room_id': room_token, 'messages': messages, 'deletions': deletions, 'moderators': mods}
 
