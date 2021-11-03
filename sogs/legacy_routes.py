@@ -99,7 +99,10 @@ def legacy_claim_auth():
 
 @app.get("/legacy/auth_token_challenge")
 def legacy_auth_token_challenge():
-    """legacy endpoint to give back an encrypted auth token bundle for the client to use to authenticate"""
+    """
+    legacy endpoint to give back an encrypted auth token bundle for the client to use to
+    authenticate.
+    """
 
     pubkey = request.args.get("public_key")
 

@@ -126,7 +126,7 @@ def get_room_image_json_blob(room_id):
     with db.conn as conn:
         # todo: this query sucks
         result = conn.execute(
-            "SELECT filename FROM files WHERE id IN ( SELECT image FROM rooms WHERE token = ? LIMIT 1 ) LIMIT 1",
+            "SELECT filename FROM files WHERE id = ( SELECT image FROM rooms WHERE token = ? )",
             [room_id],
         )
         row = result.fetchone()
@@ -175,12 +175,20 @@ def get_deletions_deprecated(room_id, since):
     with db.conn as conn:
         if since:
             result = conn.execute(
-                "SELECT id, updated FROM messages WHERE room = ? AND updated > ? AND data IS NULL ORDER BY updated ASC LIMIT 256",
+                """
+                SELECT id, updated FROM messages
+                WHERE room = ? AND updated > ? AND data IS NULL
+                ORDER BY updated ASC LIMIT 256
+                """,
                 [room_id, since],
             )
         else:
             result = conn.execute(
-                "SELECT id, updated FROM messages WHERE room = ? AND data IS NULL ORDER BY updated DESC LIMIT 256",
+                """
+                SELECT id, updated FROM messages
+                WHERE room = ? AND data IS NULL
+                ORDER BY updated DESC LIMIT 256
+                """,
                 [room_id],
             )
         return [{'deleted_message_id': row[0], 'id': row[1]} for row in result]
@@ -192,12 +200,20 @@ def get_message_deprecated(room_id, since, limit=256):
         result = None
         if since:
             result = conn.execute(
-                "SELECT * FROM message_details WHERE room = ? AND id > ? AND data IS NOT NULL ORDER BY id ASC LIMIT ?",
+                """
+                SELECT * FROM message_details
+                WHERE room = ? AND id > ? AND data IS NOT NULL
+                ORDER BY id ASC LIMIT ?
+                """,
                 [room_id, since, limit],
             )
         else:
             result = conn.execute(
-                "SELECT * FROM message_details WHERE room = ? AND data IS NOT NULL ORDER BY id DESC LIMIT ?",
+                """
+                SELECT * FROM message_details
+                WHERE room = ? AND data IS NOT NULL
+                ORDER BY id DESC LIMIT ?
+                """,
                 [room_id, limit],
             )
         for row in result:
