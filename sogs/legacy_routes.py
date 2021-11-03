@@ -69,36 +69,57 @@ def get_pubkey_from_token(token):
         return rawtoken[utils.SIGNATURE_SIZE :].hex()
 
 
-def legacy_verify_room_access(pubkey, **perms):
+def legacy_check_user_room(pubkey=None, room_token=None, *, update_activity=True, **perms):
     """
     For a legacy endpoint verifying a user is allowed to access a room calls flask.abort to bail out
-    if the user is not allowed, otherwise returns the room info.
+    if the user is not allowed, otherwise returns a pair: the user and room info.
+
+    pubkey - the session_id of the user.  If None we verify and extract it from the current
+    request's Authorization header.
+
+    room - the token of the room.  If None we verify and extract it from the current request's Room
+    header.
+
+    update_activity - if True (the default) then update the user's last room activity counter
+
+    Any other arguments are passed to model.check_permission (e.g. `read=True`).  We enforce here
+    that you pass at least one such permission; if you really need all-false (e.g. to only do ban
+    check) then pass `read=False`.
     """
-    if not pubkey:
-        abort(http.BAD_REQUEST)
-    if len(pubkey) != (utils.SESSION_ID_SIZE * 2) or not pubkey.startswith('05'):
+
+    if len(perms) == 0:
+        raise ValueError("Internal error: no permissions passed to legacy_check_user_room")
+
+    if pubkey is None:
+        pubkey = get_pubkey_from_token(request.headers.get("Authorization"))
+    if not pubkey or len(pubkey) != (utils.SESSION_ID_SIZE * 2) or not pubkey.startswith('05'):
         abort(http.BAD_REQUEST)
 
-    room = model.get_room(request.headers.get("Room"))
+    if room_token is None:
+        room_token = request.headers.get("Room")
+    if not room_token:
+        abort(http.BAD_REQUEST)
+
+    room = model.get_room(room_token)
     if not room:
         abort(http.NOT_FOUND)
 
-    if not model.check_permission(pubkey, room.get("id"), **perms):
+    if not model.check_permission(pubkey, room["id"], **perms):
         abort(http.FORBIDDEN)
 
-    return room
-
-
-def legacy_check_user_room(**perms):
-    """
-    Wraps legacy_verify_room_access to retrieve (and validate) the pubkey from the Authorization
-    header.  Returns a pair of the user and room info dicts; aborts on any failure.
-    """
-    pubkey = get_pubkey_from_token(request.headers.get("Authorization"))
-    room = legacy_verify_room_access(pubkey, **perms)
     user = model.get_user(pubkey)
     if not user:
         abort(http.NOT_AUTHORIZED)
+
+    if update_activity:
+        with db.conn as conn:
+            conn.execute(
+                """
+                INSERT INTO room_users (user, room) VALUES (?, ?)
+                ON CONFLICT DO UPDATE SET last_active = ((julianday('now') - 2440587.5)*86400.0)
+                """,
+                (user['id'], room['id']),
+            )
 
     return (user, room)
 
@@ -116,12 +137,10 @@ def legacy_auth_token_challenge():
     authenticate.
     """
 
-    pubkey = request.args.get("public_key")
+    user, room = legacy_check_user_room(request.args.get("public_key", ""), read=False)
 
-    legacy_verify_room_access(pubkey)
-
-    token = utils.make_legacy_token(pubkey)
-    pk = utils.decode_hex_or_b64(pubkey[2:], 32)
+    token = utils.make_legacy_token(user['session_id'])
+    pk = utils.decode_hex_or_b64(user['session_id'][2:], 32)
     ct = crypto.server_encrypt(pk, token)
     return jsonify(
         {
@@ -173,27 +192,19 @@ def handle_comapct_poll():
 
 
 def handle_one_compact_poll(req):
-    pk = get_pubkey_from_token(req.get('auth_token'))
-    if not pk:
-        return {'status_code': http.BAD_REQUEST, 'error': 'no auth_token provided'}
-    room_token = req.get('room_id')
-    if not room_token:
-        return {'status_code': http.BAD_REQUEST, 'error': 'no room provided'}
-    room = model.get_room(room_token)
-    if not room:
-        abort(http.NOT_FOUND)
-    if not model.check_permission(pk, room['id'], read=True):
-        abort(http.FORBIDDEN)
+    user, room = legacy_check_user_room(
+        get_pubkey_from_token(req.get('auth_token')) or '', req.get('room_id', ''), read=True
+    )
 
     messages = model.get_message_deprecated(room['id'], req.get('from_message_server_id'))
 
     deletions = model.get_deletions_deprecated(room['id'], req.get('from_deletion_server_id'))
 
-    mods = model.get_mods_for_room(room['id'], pk)
+    mods = model.get_mods_for_room(room['id'], user['session_id'])
 
     return {
         'status_code': 200,
-        'room_id': room_token,
+        'room_id': room['token'],
         'messages': messages,
         'deletions': deletions,
         'moderators': mods,
