@@ -44,7 +44,16 @@ def serve_room_image(room):
     return send_file(filename)
 
 
-# --- BEGIN OLD API ---
+@app.get("/legacy/member_count")
+def legacy_member_count():
+    user, room = legacy_check_user_room(read=True)
+
+    cutoff = time.time() - 7 * 86400
+    count = db.conn.execute(
+        "SELECT COUNT(*) FROM room_users WHERE room = ? AND last_active >= ?", (room['id'], cutoff)
+    ).fetchone()[0]
+
+    return jsonify({"status_code": 200, "member_count": count})
 
 
 def get_pubkey_from_token(token):
