@@ -1,14 +1,14 @@
 import base64
-import binascii
 
 from . import crypto
 from . import config
+from . import http
 
-from flask import request
+from flask import request, abort
 
 
-encode_base64 = lambda data: base64.b64encode(data).decode('ascii')
-encode_hex = lambda data: binascii.hexlify(data).decode('ascii')
+def encode_base64(data: bytes):
+    return base64.b64encode(data).decode()
 
 
 def decode_base64(b64: str):
@@ -49,9 +49,8 @@ def get_session_id(flask_request):
     return flask_request.headers.get("X-SOGS-Pubkey")
 
 
-server_url = lambda room: '{}/{}?public_key={}'.format(
-    config.URL_BASE, room or '', crypto.server_pubkey_hex
-)
+def server_url(room):
+    return '{}/{}?public_key={}'.format(config.URL_BASE, room or '', crypto.server_pubkey_hex)
 
 
 SIGNATURE_SIZE = 64
@@ -91,7 +90,7 @@ def get_int_param(name, default=None, *, required=False, min=None, max=None, tru
 
     try:
         val = int(val)
-    except:
+    except Exception:
         abort(http.BAD_REQUEST)
 
     if min is not None and val < min:

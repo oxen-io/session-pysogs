@@ -1,4 +1,4 @@
-from flask import abort, request, jsonify, send_file, render_template, Response
+from flask import abort, request, jsonify, render_template, Response
 from .web import app
 from . import crypto
 from . import model
@@ -6,10 +6,6 @@ from . import db
 from . import utils
 from . import config
 from . import http
-
-import json
-import random
-import re
 
 from werkzeug.routing import BaseConverter, ValidationError
 
@@ -23,7 +19,7 @@ from PIL.Image import NEAREST
 class RoomTokenConverter(BaseConverter):
     def __init__(self, url_map):
         super().__init__(url_map)
-        self.regex = "[\w-]{1,64}"
+        self.regex = r"[\w-]{1,64}"
 
     def to_python(self, value):
         room = model.get_room(value)

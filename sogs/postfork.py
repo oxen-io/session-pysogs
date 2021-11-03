@@ -1,7 +1,5 @@
-import logging
-
 try:
-    import uwsgi
+    import uwsgi  # noqa: F401
 except ModuleNotFoundError:
 
     class postfork:
@@ -15,4 +13,6 @@ except ModuleNotFoundError:
 
 
 else:
-    from uwsgidecorators import postfork
+    import uwsgidecorators
+
+    postfork = uwsgidecorators.postfork

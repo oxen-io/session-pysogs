@@ -3,6 +3,7 @@
 from . import routes
 from . import onion_request
 from . import legacy_routes
+from . import config
 from .web import app
 
 import coloredlogs

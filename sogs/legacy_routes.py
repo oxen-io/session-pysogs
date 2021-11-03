@@ -7,6 +7,9 @@ from . import utils
 from . import config
 from . import http
 
+import os
+import time
+import re
 
 # Legacy endpoints, to eventually be deleted.  These are invoked automatically if the client invokes
 # an endpoint (via onion request) that doesn't start with a `/` -- we prepend `/legacy/` and submit
@@ -54,7 +57,7 @@ def get_pubkey_from_token(token):
         app.logger.error("failed to decode/verify token: {}".format(ex))
         abort(http.UNAUTHORIZED)
     else:
-        return utils.encode_hex(rawtoken[utils.SIGNATURE_SIZE :])
+        return rawtoken[utils.SIGNATURE_SIZE :].hex()
 
 
 def legacy_verify_room_access(pubkey, **perms):
@@ -192,9 +195,6 @@ def handle_one_compact_poll(req):
 def handle_legacy_store_file():
     user, room = legacy_check_user_room(write=True, upload=True)
 
-    import os
-    import time
-
     # Slamming this all into memory is not very nice, but there's no terribly elegant way to get
     # around it when we have b64 input for legacy uploads.
     file_b64 = request.json['file']
@@ -256,7 +256,7 @@ def handle_legacy_store_file():
         if file_path is not None:
             try:
                 os.unlink(file_path)
-            except:
+            except Exception:
                 pass
         abort(http.ERROR_INTERNAL_SERVER_ERROR)
 

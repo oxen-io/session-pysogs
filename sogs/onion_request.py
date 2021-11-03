@@ -1,4 +1,4 @@
-from flask import request
+from flask import request, abort
 import json
 from io import BytesIO
 
@@ -76,7 +76,7 @@ def handle_onionreq_plaintext(body):
         }
 
         try:
-            with app.request_context(subreq_env) as subreq_ctx:
+            with app.request_context(subreq_env):
                 response = app.full_dispatch_request()
             if response.status_code == 200:
                 data = response.get_data()

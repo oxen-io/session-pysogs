@@ -2,7 +2,7 @@ from . import config
 
 import os
 
-from nacl.public import PrivateKey, PublicKey, Box
+from nacl.public import PrivateKey
 from nacl.signing import SigningKey, VerifyKey
 from nacl.encoding import Base64Encoder, HexEncoder
 
@@ -11,8 +11,6 @@ from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X
 
 import secrets
 import hmac
-import hashlib
-
 
 import pyonionreq
 
@@ -32,12 +30,16 @@ server_pubkey_base64 = server_pubkey.encode(Base64Encoder).decode('ascii')
 _junk_parser = pyonionreq.junk.Parser(privkey=_privkey.encode(), pubkey=server_pubkey.encode())
 parse_junk = _junk_parser.parse_junk
 
-verify_sig_from_pk = lambda data, sig, pk: VerifyKey(pk).verify(data, sig)
+
+def verify_sig_from_pk(data, sig, pk):
+    return VerifyKey(pk).verify(data, sig)
+
 
 _server_signkey = SigningKey(_privkey.encode())
 
 server_verify = _server_signkey.verify_key.verify
-server_sign = lambda data: _server_signkey.sign(data)
+
+server_sign = _server_signkey.sign
 
 
 def server_encrypt(pk, data):

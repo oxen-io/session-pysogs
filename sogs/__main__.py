@@ -1,5 +1,4 @@
 from argparse import ArgumentParser as AP
-import sys
 
 from . import db
 

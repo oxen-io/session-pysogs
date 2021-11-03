@@ -1,10 +1,8 @@
 import logging
 
 try:
-    import uwsgi
+    import uwsgi  # noqa: F401
 except ModuleNotFoundError:
-    import sys
-
     logging.error(
         """
 WARNING:
@@ -26,4 +24,6 @@ File cleanup and session version updating will not be enabled!
 
 
 else:
-    from uwsgidecorators import timer
+    import uwsgidecorators
+
+    timer = uwsgidecorators.timer

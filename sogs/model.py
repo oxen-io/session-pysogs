@@ -1,9 +1,6 @@
 from . import db
 from . import utils
 
-b64encode = utils.encode_base64
-
-
 import os
 import time
 
@@ -134,7 +131,7 @@ def get_room_image_json_blob(room_id):
             filename = row[0]
     if filename and os.path.exists(filename):
         with open(filename, 'rb') as f:
-            return {'status_code': 200, "result": b64encode(f.read())}
+            return {'status_code': 200, "result": utils.encode_base64(f.read())}
     else:
         return {"status_code": 404}
 
@@ -151,7 +148,6 @@ def get_mods_for_room(room_id, curr_session_id=None):
 
     we_are_hidden, we_are_admin = False, False
     mods, hidden_mods = [], []
-    from .web import app
 
     for session_id, visible, admin in db.conn.execute(
         "SELECT session_id, visible_mod, admin FROM user_permissions WHERE room = ? AND moderator",
