@@ -1,5 +1,3 @@
-
-
 # error status codes:
 BAD_GATEWAY = 502
 BAD_REQUEST = 400
@@ -15,5 +13,3 @@ ERROR_INSUFFICIENT_STORAGE = 507
 
 # HTTP methods containing bodies
 BODY_METHODS = ('POST', 'PUT')
-
-

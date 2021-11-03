@@ -29,10 +29,10 @@ def decode_hex_or_b64(data: bytes, size: int):
     if data is None:
         return None
 
-    if len(data) == size*2:
+    if len(data) == size * 2:
         return bytes.fromhex(data)
 
-    b64_size = (size + 2) // 3 * 4 # bytes*4/3, rounded up to the next multiple of 4.
+    b64_size = (size + 2) // 3 * 4  # bytes*4/3, rounded up to the next multiple of 4.
     b64_unpadded = (size * 4 + 2) // 3
 
     # Allow unpadded data; python's base64 has no ability to load an unpadded value, though, so pad
@@ -49,7 +49,9 @@ def get_session_id(flask_request):
     return flask_request.headers.get("X-SOGS-Pubkey")
 
 
-server_url = lambda room: '{}/{}?public_key={}'.format(config.URL_BASE, room or '', crypto.server_pubkey_hex)
+server_url = lambda room: '{}/{}?public_key={}'.format(
+    config.URL_BASE, room or '', crypto.server_pubkey_hex
+)
 
 
 SIGNATURE_SIZE = 64
@@ -57,13 +59,14 @@ SESSION_ID_SIZE = 33
 # Size returned by make_legacy_token (assuming it is given a standard 66-hex (33 byte) session id):
 LEGACY_TOKEN_SIZE = SIGNATURE_SIZE + SESSION_ID_SIZE
 
+
 def make_legacy_token(session_id):
     session_id = bytes.fromhex(session_id)
     return crypto.server_sign(session_id)
 
 
 def convert_time(float_time):
-    """ take a float and convert it into something session likes """
+    """take a float and convert it into something session likes"""
     return int(float_time * 1000)
 
 

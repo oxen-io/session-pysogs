@@ -12,25 +12,29 @@ from . import http
 # an endpoint (via onion request) that doesn't start with a `/` -- we prepend `/legacy/` and submit
 # it as an internal request to land here.
 
+
 @app.get("/legacy/rooms")
 def get_rooms():
-    """ serve room list """
+    """serve room list"""
     return jsonify(model.get_rooms())
 
 
 @app.get("/legacy/rooms/<RoomToken:room>")
 def get_room_info(room):
-    """ serve room metadata """
+    """serve room metadata"""
     room_info = {'id': room.get('token'), 'name': room.get('name')}
     return jsonify({'room': room_info, 'status_code': 200})
 
 
 @app.get("/legacy/rooms/<RoomToken:room>/image")
 def serve_room_image(room):
-    """ serve room icon """
+    """serve room icon"""
     filename = None
     with db.conn as conn:
-        result = conn.execute("SELECT path FROM files WHERE id = (SELECT image FROM rooms WHERE token = ?)", [room.get('token')])
+        result = conn.execute(
+            "SELECT path FROM files WHERE id = (SELECT image FROM rooms WHERE token = ?)",
+            [room.get('token')],
+        )
         filename = result.fetchone()
     if not filename:
         abort(http.NOT_FOUND)
@@ -38,6 +42,7 @@ def serve_room_image(room):
 
 
 # --- BEGIN OLD API ---
+
 
 def get_pubkey_from_token(token):
     if not token:
@@ -49,7 +54,8 @@ def get_pubkey_from_token(token):
         app.logger.error("failed to decode/verify token: {}".format(ex))
         abort(http.UNAUTHORIZED)
     else:
-        return utils.encode_hex(rawtoken[utils.SIGNATURE_SIZE:])
+        return utils.encode_hex(rawtoken[utils.SIGNATURE_SIZE :])
+
 
 def legacy_verify_room_access(pubkey, **perms):
     """
@@ -87,12 +93,13 @@ def legacy_check_user_room(**perms):
 
 @app.post("/legacy/claim_auth_token")
 def legacy_claim_auth():
-    """ this does nothing but needs to exist for backwards compat """
-    return jsonify({'status_code':200})
+    """this does nothing but needs to exist for backwards compat"""
+    return jsonify({'status_code': 200})
+
 
 @app.get("/legacy/auth_token_challenge")
 def legacy_auth_token_challenge():
-    """ legacy endpoint to give back an encrypted auth token bundle for the client to use to authenticate """
+    """legacy endpoint to give back an encrypted auth token bundle for the client to use to authenticate"""
 
     pubkey = request.args.get("public_key")
 
@@ -101,7 +108,16 @@ def legacy_auth_token_challenge():
     token = utils.make_legacy_token(pubkey)
     pk = utils.decode_hex_or_b64(pubkey[2:], 32)
     ct = crypto.server_encrypt(pk, token)
-    return jsonify({'status_code': 200, 'challenge': {'ciphertext': utils.encode_base64(ct), 'ephemeral_public_key': crypto.server_pubkey_base64}})
+    return jsonify(
+        {
+            'status_code': 200,
+            'challenge': {
+                'ciphertext': utils.encode_base64(ct),
+                'ephemeral_public_key': crypto.server_pubkey_base64,
+            },
+        }
+    )
+
 
 @app.post("/legacy/messages")
 def handle_post_legacy_message():
@@ -117,7 +133,7 @@ def handle_post_legacy_message():
     msg['public_key'] = user.get("session_id")
     msg['data'] = req.get('data')
     msg['signature'] = req.get('signature')
-    return jsonify({'status_code':200, 'message': msg})
+    return jsonify({'status_code': 200, 'message': msg})
 
 
 @app.get("/legacy/messages")
@@ -127,10 +143,9 @@ def handle_legacy_get_messages():
 
     user, room = legacy_check_user_room(read=True)
 
-    return jsonify({
-        'status_code': 200,
-        'messages': model.get_message_deprecated(room['id'], from_id, limit)
-        })
+    return jsonify(
+        {'status_code': 200, 'messages': model.get_message_deprecated(room['id'], from_id, limit)}
+    )
 
 
 @app.post("/legacy/compact_poll")
@@ -140,6 +155,7 @@ def handle_comapct_poll():
     for req in req_list.get('requests', list()):
         result.append(handle_one_compact_poll(req))
     return jsonify({'status_code': 200, 'results': result})
+
 
 def handle_one_compact_poll(req):
     pk = get_pubkey_from_token(req.get('auth_token'))
@@ -160,7 +176,13 @@ def handle_one_compact_poll(req):
 
     mods = model.get_mods_for_room(room['id'], pk)
 
-    return {'status_code': 200, 'room_id': room_token, 'messages': messages, 'deletions': deletions, 'moderators': mods}
+    return {
+        'status_code': 200,
+        'room_id': room_token,
+        'messages': messages,
+        'deletions': deletions,
+        'moderators': mods,
+    }
 
 
 @app.post("/legacy/files")
@@ -199,10 +221,13 @@ def handle_legacy_store_file():
             # Insert the file row first, but with nonsense path because we want to put the ID in the
             # path, which we won't have until after the insert; we'll come back and update it.
             cur = db.conn.cursor()
-            cur.execute("""
+            cur.execute(
+                """
                 INSERT INTO files (room, uploader, size, expiry, filename, path)
                 VALUES (?, ?, ?, ?, ?, 'tmp')
-                """, (room['id'], user['id'], len(file_content), expiry, filename))
+                """,
+                (room['id'], user['id'], len(file_content), expiry, filename),
+            )
 
             file_id = cur.lastrowid
 
@@ -210,7 +235,11 @@ def handle_legacy_store_file():
                 filename = '(unnamed)'
 
             if len(filename) > config.UPLOAD_FILENAME_MAX:
-                filename = filename[:config.UPLOAD_FILENAME_KEEP_PREFIX] + "..." + filename[-config.UPLOAD_FILENAME_KEEP_SUFFIX:]
+                filename = (
+                    filename[: config.UPLOAD_FILENAME_KEEP_PREFIX]
+                    + "..."
+                    + filename[-config.UPLOAD_FILENAME_KEEP_SUFFIX :]
+                )
 
             file_path = "{}/{}_{}".format(files_dir, file_id, filename)
 
@@ -228,10 +257,7 @@ def handle_legacy_store_file():
                 pass
         abort(http.ERROR_INTERNAL_SERVER_ERROR)
 
-    return jsonify({
-        'status_code': 200,
-        'result': file_id
-    })
+    return jsonify({'status_code': 200, 'result': file_id})
 
 
 @app.get("/legacy/files/<int:file_id>")
@@ -239,17 +265,16 @@ def handle_legacy_get_file(file_id):
     user, room = legacy_check_user_room(read=True)
 
     with db.conn as conn:
-        result = conn.execute("SELECT path FROM files WHERE room = ? AND id = ?", (room['id'], file_id))
+        result = conn.execute(
+            "SELECT path FROM files WHERE room = ? AND id = ?", (room['id'], file_id)
+        )
         row = result.fetchone()
         if not row:
             abort(http.NOT_FOUND)
 
     with open(row[0], 'rb') as f:
         file_content = f.read()
-    return jsonify({
-        'status_code': 200,
-        'result': utils.encode_base64(file_content)
-    })
+    return jsonify({'status_code': 200, 'result': utils.encode_base64(file_content)})
 
 
 @app.post("/legacy/delete_messages")
@@ -270,17 +295,25 @@ def handle_legacy_delete_messages():
     with db.conn as conn:
         if not is_moderator:
             # If not a moderator then we only proceed if all of the messages are the user's own:
-            res = conn.execute("""
+            res = conn.execute(
+                """
                 SELECT EXISTS(SELECT * FROM messages WHERE room = ? AND user != ? AND id IN ({}))
-                """.format(in_params),
-                [room['id'], user['id'], *ids])
+                """.format(
+                    in_params
+                ),
+                [room['id'], user['id'], *ids],
+            )
             if res.fetchone()[0]:
                 abort(http.NOT_AUTHORIZED)
 
-            conn.execute("""
+            conn.execute(
+                """
                 UPDATE messages SET data = NULL, data_size = NULL, signature = NULL
                 WHERE room = ? AND id IN ({})
-                """.format(in_params),
-                [room['id'], *ids])
+                """.format(
+                    in_params
+                ),
+                [room['id'], *ids],
+            )
 
     return jsonify({'status_code': 200})

@@ -7,6 +7,7 @@ from . import http
 from . import crypto
 from . import utils
 
+
 def handle_onionreq_plaintext(body):
     """
     Handles a decrypted onion request; this injects a subrequest to process it then returns the
@@ -27,12 +28,17 @@ def handle_onionreq_plaintext(body):
                     subreq_body = utils.decode_base64(req['body_binary'])
                 else:
                     subreq_body = req.get('body', '').encode()
-                ct = subreq_headers.pop('content-type', 'application/octet-stream' if 'body_binary' in req else 'application/json')
+                ct = subreq_headers.pop(
+                    'content-type',
+                    'application/octet-stream' if 'body_binary' in req else 'application/json',
+                )
                 cl = len(subreq_body)
             else:
                 subreq_body = b''
                 if 'body' in req and len(req['body']) or 'body_binary' in req:
-                    raise RuntimeError("Invalid {} {} request: request must not contain a body", method, endpoint)
+                    raise RuntimeError(
+                        "Invalid {} {} request: request must not contain a body", method, endpoint
+                    )
                 ct, cl = '', ''
 
             for h in ('content-type', 'content-length'):
@@ -43,7 +49,9 @@ def handle_onionreq_plaintext(body):
             raise RuntimeError("Bencoded onion requests not implemented yet")
 
         else:
-            raise RuntimeError("Invalid onion request body: expected JSON object or a bt-encoded dict")
+            raise RuntimeError(
+                "Invalid onion request body: expected JSON object or a bt-encoded dict"
+            )
 
         if '?' in endpoint:
             endpoint, query_string = endpoint.split('?', 1)
@@ -57,15 +65,15 @@ def handle_onionreq_plaintext(body):
 
         # Set up the wsgi environ variables for the subrequest (see PEP 0333)
         subreq_env = {
-                **request.environ,
-                "REQUEST_METHOD": method,
-                "PATH_INFO": endpoint,
-                "QUERY_STRING": query_string,
-                "CONTENT_TYPE": ct,
-                "CONTENT_LENGTH": cl,
-                **{'HTTP_{}'.format(h.upper().replace('-', '_')): v for h, v in subreq_headers.items()},
-                'wsgi.input': BytesIO(subreq_body)
-                }
+            **request.environ,
+            "REQUEST_METHOD": method,
+            "PATH_INFO": endpoint,
+            "QUERY_STRING": query_string,
+            "CONTENT_TYPE": ct,
+            "CONTENT_LENGTH": cl,
+            **{'HTTP_{}'.format(h.upper().replace('-', '_')): v for h, v in subreq_headers.items()},
+            'wsgi.input': BytesIO(subreq_body),
+        }
 
         try:
             with app.request_context(subreq_env) as subreq_ctx:
@@ -74,7 +82,11 @@ def handle_onionreq_plaintext(body):
                 data = response.get_data()
                 app.logger.debug("Onion sub-request returned success, {} bytes".format(len(data)))
                 return data
-            app.logger.warn("Onion sub-request for {} {} returned status {}".format(method, endpoint, response.status_code))
+            app.logger.warn(
+                "Onion sub-request for {} {} returned status {}".format(
+                    method, endpoint, response.status_code
+                )
+            )
             return json.dumps({'status_code': response.status_code}).encode()
         except Exception as e:
             app.logger.warn("Onion sub-request for {} {} failed: {}".format(method, endpoint, e))

@@ -18,9 +18,12 @@ pubkey_hex = key.public_key().public_bytes(encoding=s.Encoding.Raw, format=s.Pub
 print("Loaded private key; associated pubkey: {}".format(pubkey_hex))
 
 with open(config.SEED_FILE, 'wb') as f:
-    f.write(key.private_bytes(
-        encoding=s.Encoding.Raw,
-        format=s.PrivateFormat.Raw,
-        encryption_algorithm=s.NoEncryption()))
+    f.write(
+        key.private_bytes(
+            encoding=s.Encoding.Raw,
+            format=s.PrivateFormat.Raw,
+            encryption_algorithm=s.NoEncryption(),
+        )
+    )
 
 print("Wrote privkey to {}".format(config.SEED_FILE))

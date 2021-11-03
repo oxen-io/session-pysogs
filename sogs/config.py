@@ -9,7 +9,7 @@ SEED_FILE = 'sogs-seed.bin'
 # base url for generating links
 URL_BASE = 'http://51.79.57.234:8000'
 
-LOG_LEVEL=logging.DEBUG
+LOG_LEVEL = logging.DEBUG
 
 # Default upload expiry, in days
 UPLOAD_DEFAULT_EXPIRY_DAYS = 15

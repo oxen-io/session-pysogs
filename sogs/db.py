@@ -17,6 +17,8 @@ if _should_init:
 
 
 conn = None
+
+
 @postfork
 def sqlite_connect():
     global conn
