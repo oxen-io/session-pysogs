@@ -8,33 +8,7 @@
 <ul id="messages">
   <li>loading...</li>
 </ul>
-
-<script>
-  const elem = document.getElementById("messages")
-  if(elem)
-  {
-      setInterval(async () => {
-          const req = await fetch("/room/{{room}}/messages/recent")
-          console.log(req)
-          const msgs = await req.json()
-
-
-
-          elem.replaceChildren();
-
-          if(msgs.length === 0)
-          {
-              elem.appendChild(document.createTextNode("the {{room}} room is empty"));
-          }
-
-          for(let msg of msgs)
-          {
-              let e = document.createElement("li")
-              e.appendChild(document.createTextNode(msg.session_id +": "+atob(msg.data)));
-              elem.appendChild(e);
-          }
-      }, 1000);
-  }
-</script>
+<script src="/static/protobuf.min.js"></script>
+<script src="/static/view_room.js"></script>
 
 {% endblock %}
