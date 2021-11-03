@@ -151,7 +151,7 @@ def get_deletions_deprecated(room_id, since):
             result = conn.execute("SELECT id, updated FROM messages WHERE room = ? AND updated > ? AND data IS NULL ORDER BY updated ASC LIMIT 256", [room_id, since])
         else:
             result = conn.execute("SELECT id, updated FROM messages WHERE room = ? AND data IS NULL ORDER BY updated DESC LIMIT 256", [room_id])
-        return [{'deleted_message_id': row[0], 'updated': row[1]} for row in result]
+        return [{'deleted_message_id': row[0], 'id': row[1]} for row in result]
 
 def get_message_deprecated(room_id, since, limit=256):
     msgs = list()
