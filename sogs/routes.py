@@ -330,3 +330,37 @@ def handle_legacy_get_file(file_id):
         'status_code': 200,
         'result': utils.encode_base64(file_content)
     })
+
+
+@app.post("/legacy/delete_messages")
+def handle_legacy_delete_messages():
+    user, room = legacy_check_user_room(read=True)
+
+    ids = request.json['ids']
+    if len(ids) > 997:
+        # 997 because we need two binds for room/user, 999 is the maximum number of bind parameters
+        # for sqlite (pre-3.32), and because that's already a huge number of things to delete at
+        # once.  (Older SOGS had no such limit, but that's insane).
+        abort(http.BAD_REQUEST)
+
+    in_params = ",".join("?" * len(ids))
+
+    is_moderator = model.check_permission(user['session_id'], room['id'], moderator=True)
+
+    with db.conn as conn:
+        if not is_moderator:
+            # If not a moderator then we only proceed if all of the messages are the user's own:
+            res = conn.execute("""
+                SELECT EXISTS(SELECT * FROM messages WHERE room = ? AND user != ? AND id IN ({}))
+                """.format(in_params),
+                [room['id'], user['id'], *ids])
+            if res.fetchone()[0]:
+                abort(http.NOT_AUTHORIZED)
+
+            conn.execute("""
+                UPDATE messages SET data = NULL, data_size = NULL, signature = NULL
+                WHERE room = ? AND id IN ({})
+                """.format(in_params),
+                [room['id'], *ids])
+
+    return jsonify({'status_code': 200})
