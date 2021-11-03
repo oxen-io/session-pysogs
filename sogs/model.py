@@ -129,10 +129,8 @@ def get_mods_for_room(room_id, curr_session_id = None):
     we_are_hidden, we_are_admin = False, False
     mods, hidden_mods = [], []
     from .web import app
-    app.logger.critical("hmm, room_id={}, s={}".format(room_id, curr_session_id))
     for session_id, visible, admin in db.conn.execute(
             "SELECT session_id, visible_mod, admin FROM user_permissions WHERE room = ? AND moderator", [room_id]):
-        app.logger.critical("{}, {}, {}".format(session_id, visible, admin))
         if session_id is not None and session_id == curr_session_id:
             we_are_hidden = not visible
             we_are_admin = admin
