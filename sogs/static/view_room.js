@@ -14,7 +14,7 @@ const setup = async () => {
         const Message = root.lookupType("signalservice.Content");
 
         const update = async () => {
-            const req = await fetch("/room/{{room}}/messages/recent");
+            const req = await fetch(`/room/${window.view_room}/messages/recent`);
             const msgs = await req.json();
 
 
@@ -23,7 +23,7 @@ const setup = async () => {
 
             if(msgs.length === 0)
             {
-                elem.appendChild(document.createTextNode("the {{room}} room is empty"));
+                elem.appendChild(document.createTextNode(`the ${window.view_room} room is empty`));
             }
 
             for(let msg of msgs)
