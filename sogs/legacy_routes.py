@@ -110,17 +110,17 @@ def get_room_info(room):
 @app.get("/legacy/rooms/<RoomToken:room>/image")
 def legacy_serve_room_image(room):
     """serve room icon"""
-    legacy_check_user_room(room=room, read=True)
     filename = None
     with db.conn as conn:
         result = conn.execute(
             "SELECT path FROM files WHERE id = (SELECT image FROM rooms WHERE token = ?)",
             [room.get('token')],
         )
-        filename = result.fetchone()
+        row = result.fetchone()
+        filename = row[0]
     if not filename:
         abort(http.NOT_FOUND)
-    with open(path, "rb") as f:
+    with open(filename, "rb") as f:
         result = {"status_code": 200, "result": utils.encode_base64(f.read())}
     return jsonify(result)
 

@@ -22,7 +22,6 @@ def handle_onionreq_plaintext(body):
         if body.startswith(b'{'):
             # JSON input
             req = json.loads(body)
-            app.logger.warn(req)
             endpoint, method, auth_code = req['endpoint'], req['method'], req.get("auth_code")
             subreq_headers = {k.lower(): v for k, v in req.get('headers', {}.items()).items()}
 
