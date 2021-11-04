@@ -82,7 +82,7 @@ def legacy_check_user_room(
             conn.execute(
                 """
                 INSERT INTO room_users (user, room) VALUES (?, ?)
-                ON CONFLICT DO UPDATE SET last_active = ((julianday('now') - 2440587.5)*86400.0)
+                ON CONFLICT(user, room) DO UPDATE SET last_active = ((julianday('now') - 2440587.5)*86400.0)
                 """,
                 (user['id'], room['id']),
             )

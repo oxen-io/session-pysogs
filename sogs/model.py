@@ -40,7 +40,7 @@ def touch_user(session_id):
     db.conn.execute(
         """
         INSERT INTO users(session_id) VALUES(?)
-        ON CONFLICT DO UPDATE SET last_active = ((julianday('now') - 2440587.5)*86400.0)
+        ON CONFLICT(session_id) DO UPDATE SET last_active = ((julianday('now') - 2440587.5)*86400.0)
         """,
         [session_id],
     )
