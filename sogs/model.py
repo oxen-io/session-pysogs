@@ -6,9 +6,19 @@ import time
 
 
 def get_rooms():
-    """get a list of rooms with their full info filled out"""
+    """ get a list of all rooms """
     with db.conn as conn:
         result = conn.execute("SELECT * FROM rooms ORDER BY token")
+        return [{k: row[k] for k in row.keys()} for row in result]
+
+
+def get_readable_rooms(pubkey):
+    """get a list of rooms that a user can access"""
+    with db.conn as conn:
+        result = conn.execute(
+            "SELECT rooms.* FROM user_permissions perm JOIN rooms ON rooms.id = room WHERE session_id = ? AND perm.read AND NOT perm.banned",
+            [pubkey],
+        )
         return [{k: row[k] for k in row.keys()} for row in result]
 
 
@@ -37,6 +47,7 @@ def touch_user(session_id):
     Make sure a user exists in the database, updating the last activity timestamp if it does,
     creating the user otherwise.
     """
+    assert session_id is not None
     db.conn.execute(
         """
         INSERT INTO users(session_id) VALUES(?)
@@ -64,10 +75,10 @@ def check_permission(
     no flags as required then the check only checks whether a user is banned but otherwise requires
     no specific permission.
     """
-    with db.conn as conn:
+    with db.conn:
         touch_user(session_id)
 
-        result = conn.execute(
+        result = db.conn.execute(
             """
             SELECT banned, read, write, upload, moderator, admin FROM user_permissions
             WHERE room = ? AND session_id = ?

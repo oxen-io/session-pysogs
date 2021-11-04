@@ -58,6 +58,7 @@ def legacy_check_user_room(
     if pubkey is None:
         pubkey = get_pubkey_from_token(request.headers.get("Authorization"))
     if not pubkey or len(pubkey) != (utils.SESSION_ID_SIZE * 2) or not pubkey.startswith('05'):
+        app.logger.warn("cannot get pubkey for checking room permissions")
         abort(http.BAD_REQUEST)
 
     if room is None:
@@ -92,14 +93,16 @@ def legacy_check_user_room(
 
 @app.get("/legacy/rooms")
 def get_rooms():
-    """serve room list"""
-    return jsonify(model.get_rooms())
+    """serve room list for user"""
+    pubkey = get_pubkey_from_token(request.headers.get("Authorization"))
+    if not pubkey:
+        abort(http.BAD_REQUEST)
+    return jsonify(model.get_readable_rooms(pubkey))
 
 
 @app.get("/legacy/rooms/<RoomToken:room>")
 def get_room_info(room):
     """serve room metadata"""
-
     room_info = {'id': room.get('token'), 'name': room.get('name')}
     return jsonify({'room': room_info, 'status_code': 200})
 
@@ -107,6 +110,7 @@ def get_room_info(room):
 @app.get("/legacy/rooms/<RoomToken:room>/image")
 def legacy_serve_room_image(room):
     """serve room icon"""
+    legacy_check_user_room(room=room, read=True)
     filename = None
     with db.conn as conn:
         result = conn.execute(
@@ -220,10 +224,7 @@ def handle_one_compact_poll(req):
     }
 
 
-@app.post("/legacy/files")
-def handle_legacy_store_file():
-    user, room = legacy_check_user_room(write=True, upload=True)
-
+def process_legacy_file_upload_for_room(user, room):
     # Slamming this all into memory is not very nice, but there's no terribly elegant way to get
     # around it when we have b64 input for legacy uploads.
     file_b64 = request.json['file']
@@ -280,6 +281,8 @@ def handle_legacy_store_file():
 
             cur.execute("UPDATE files SET path = ? WHERE id = ?", (file_path, file_id))
 
+            return file_id
+
     except Exception as e:
         app.logger.warn("Failed to write/update file {}: {}".format(file_path, e))
         if file_path is not None:
@@ -289,6 +292,20 @@ def handle_legacy_store_file():
                 pass
         abort(http.ERROR_INTERNAL_SERVER_ERROR)
 
+
+@app.post("/legacy/files")
+def handle_legacy_store_file():
+    user, room = legacy_check_user_room(write=True, upload=True)
+    file_id = process_legacy_file_upload_for_room(user, room)
+    return jsonify({'status_code': 200, 'result': file_id})
+
+
+@app.post("/legacy/rooms/<RoomToken:room>/image")
+def handle_legacy_upload_room_image(room):
+    user, room = legacy_check_user_room(write=True, upload=True, moderator=True)
+    file_id = process_legacy_file_upload_for_room(user, room)
+    with db.conn:
+        db.conn.execute("UPDATE rooms SET image = ? WHERE id = ?", [file_id, room['id']])
     return jsonify({'status_code': 200, 'result': file_id})
 
 

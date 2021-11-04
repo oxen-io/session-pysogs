@@ -7,6 +7,8 @@ from . import http
 from . import crypto
 from . import utils
 
+import traceback
+
 
 def handle_onionreq_plaintext(body):
     """
@@ -20,7 +22,8 @@ def handle_onionreq_plaintext(body):
         if body.startswith(b'{'):
             # JSON input
             req = json.loads(body)
-            endpoint, method = req['endpoint'], req['method']
+            app.logger.warn(req)
+            endpoint, method, auth_code = req['endpoint'], req['method'], req.get("auth_code")
             subreq_headers = {k.lower(): v for k, v in req.get('headers', {}.items()).items()}
 
             if method in http.BODY_METHODS:
@@ -62,7 +65,8 @@ def handle_onionreq_plaintext(body):
         # to help organize them here).
         if not endpoint.startswith('/'):
             endpoint = '/legacy/' + endpoint
-
+            if auth_code:
+                subreq_headers["Authorization"] = auth_code
         # Set up the wsgi environ variables for the subrequest (see PEP 0333)
         subreq_env = {
             **request.environ,
@@ -89,7 +93,11 @@ def handle_onionreq_plaintext(body):
             )
             return json.dumps({'status_code': response.status_code}).encode()
         except Exception as e:
-            app.logger.warn("Onion sub-request for {} {} failed: {}".format(method, endpoint, e))
+            app.logger.warn(
+                "Onion sub-request for {} {} failed: {}".format(
+                    method, endpoint, traceback.format_exc()
+                )
+            )
             return json.dumps({'status_code': http.BAD_GATEWAY}).encode()
     except Exception as e:
         app.logger.warn("Invalid onion request: {}".format(e))
