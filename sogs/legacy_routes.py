@@ -109,7 +109,7 @@ def legacy_check_user_room(pubkey=None, room_token=None, *, update_activity=True
 
     user = model.get_user(pubkey)
     if not user:
-        abort(http.NOT_AUTHORIZED)
+        abort(http.UNAUTHORIZED)
 
     if update_activity:
         with db.conn as conn:
@@ -327,7 +327,7 @@ def handle_legacy_delete_messages():
                 [room['id'], user['id'], *ids],
             )
             if res.fetchone()[0]:
-                abort(http.NOT_AUTHORIZED)
+                abort(http.UNAUTHORIZED)
 
             conn.execute(
                 """
