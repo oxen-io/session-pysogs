@@ -105,7 +105,7 @@ def get_room_info(room):
 
 
 @app.get("/legacy/rooms/<RoomToken:room>/image")
-def serve_room_image(room):
+def legacy_serve_room_image(room):
     """serve room icon"""
     filename = None
     with db.conn as conn:
@@ -116,7 +116,9 @@ def serve_room_image(room):
         filename = result.fetchone()
     if not filename:
         abort(http.NOT_FOUND)
-    return send_file(filename)
+    with open(path, "rb") as f:
+        result = {"status_code": 200, "result": utils.encode_base64(f.read())}
+    return jsonify(result)
 
 
 @app.get("/legacy/member_count")
