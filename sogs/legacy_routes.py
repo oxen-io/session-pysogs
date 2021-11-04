@@ -16,46 +16,6 @@ import re
 # it as an internal request to land here.
 
 
-@app.get("/legacy/rooms")
-def get_rooms():
-    """serve room list"""
-    return jsonify(model.get_rooms())
-
-
-@app.get("/legacy/rooms/<RoomToken:room>")
-def get_room_info(room):
-    """serve room metadata"""
-    room_info = {'id': room.get('token'), 'name': room.get('name')}
-    return jsonify({'room': room_info, 'status_code': 200})
-
-
-@app.get("/legacy/rooms/<RoomToken:room>/image")
-def serve_room_image(room):
-    """serve room icon"""
-    filename = None
-    with db.conn as conn:
-        result = conn.execute(
-            "SELECT path FROM files WHERE id = (SELECT image FROM rooms WHERE token = ?)",
-            [room.get('token')],
-        )
-        filename = result.fetchone()
-    if not filename:
-        abort(http.NOT_FOUND)
-    return send_file(filename)
-
-
-@app.get("/legacy/member_count")
-def legacy_member_count():
-    user, room = legacy_check_user_room(read=True)
-
-    cutoff = time.time() - 7 * 86400
-    count = db.conn.execute(
-        "SELECT COUNT(*) FROM room_users WHERE room = ? AND last_active >= ?", (room['id'], cutoff)
-    ).fetchone()[0]
-
-    return jsonify({"status_code": 200, "member_count": count})
-
-
 def get_pubkey_from_token(token):
     if not token:
         return
@@ -128,6 +88,47 @@ def legacy_check_user_room(
             )
 
     return (user, room)
+
+
+@app.get("/legacy/rooms")
+def get_rooms():
+    """serve room list"""
+    return jsonify(model.get_rooms())
+
+
+@app.get("/legacy/rooms/<RoomToken:room>")
+def get_room_info(room):
+    """serve room metadata"""
+
+    room_info = {'id': room.get('token'), 'name': room.get('name')}
+    return jsonify({'room': room_info, 'status_code': 200})
+
+
+@app.get("/legacy/rooms/<RoomToken:room>/image")
+def serve_room_image(room):
+    """serve room icon"""
+    filename = None
+    with db.conn as conn:
+        result = conn.execute(
+            "SELECT path FROM files WHERE id = (SELECT image FROM rooms WHERE token = ?)",
+            [room.get('token')],
+        )
+        filename = result.fetchone()
+    if not filename:
+        abort(http.NOT_FOUND)
+    return send_file(filename)
+
+
+@app.get("/legacy/member_count")
+def legacy_member_count():
+    user, room = legacy_check_user_room(read=True)
+
+    cutoff = time.time() - 7 * 86400
+    count = db.conn.execute(
+        "SELECT COUNT(*) FROM room_users WHERE room = ? AND last_active >= ?", (room['id'], cutoff)
+    ).fetchone()[0]
+
+    return jsonify({"status_code": 200, "member_count": count})
 
 
 @app.post("/legacy/claim_auth_token")
