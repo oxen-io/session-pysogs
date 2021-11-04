@@ -69,7 +69,9 @@ def get_pubkey_from_token(token):
         return rawtoken[utils.SIGNATURE_SIZE :].hex()
 
 
-def legacy_check_user_room(pubkey=None, room_token=None, *, update_activity=True, **perms):
+def legacy_check_user_room(
+    pubkey=None, room_token=None, *, room=None, update_activity=True, **perms
+):
     """
     For a legacy endpoint verifying a user is allowed to access a room calls flask.abort to bail out
     if the user is not allowed, otherwise returns a pair: the user and room info.
@@ -77,8 +79,11 @@ def legacy_check_user_room(pubkey=None, room_token=None, *, update_activity=True
     pubkey - the session_id of the user.  If None we verify and extract it from the current
     request's Authorization header.
 
-    room - the token of the room.  If None we verify and extract it from the current request's Room
-    header.
+    room_token - the token of the room.  If None we verify and extract it from the current request's
+    Room header.
+
+    room - the room itself, if already retrieved (e.g. from a URL parameter).  If non-None then
+    `room_token` is ignored entirely.
 
     update_activity - if True (the default) then update the user's last room activity counter
 
@@ -95,14 +100,15 @@ def legacy_check_user_room(pubkey=None, room_token=None, *, update_activity=True
     if not pubkey or len(pubkey) != (utils.SESSION_ID_SIZE * 2) or not pubkey.startswith('05'):
         abort(http.BAD_REQUEST)
 
-    if room_token is None:
-        room_token = request.headers.get("Room")
-    if not room_token:
-        abort(http.BAD_REQUEST)
+    if room is None:
+        if room_token is None:
+            room_token = request.headers.get("Room")
+        if not room_token:
+            abort(http.BAD_REQUEST)
 
-    room = model.get_room(room_token)
-    if not room:
-        abort(http.NOT_FOUND)
+        room = model.get_room(room_token)
+        if not room:
+            abort(http.NOT_FOUND)
 
     if not model.check_permission(pubkey, room["id"], **perms):
         abort(http.FORBIDDEN)
