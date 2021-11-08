@@ -17,9 +17,7 @@ from PIL.Image import NEAREST
 
 
 class RoomTokenConverter(BaseConverter):
-    def __init__(self, url_map):
-        super().__init__(url_map)
-        self.regex = r"[\w-]{1,64}"
+    regex = r"[\w-]{1,64}"
 
     def to_python(self, value):
         try:
@@ -31,7 +29,15 @@ class RoomTokenConverter(BaseConverter):
         return value.token
 
 
+class SessionIDConverter(BaseConverter):
+    regex = r"05[0-9a-fA-F]{64}"
+
+    def to_python(self, value):
+        return value
+
+
 app.url_map.converters['Room'] = RoomTokenConverter
+app.url_map.converters['SessionID'] = SessionIDConverter
 
 
 @app.get("/")

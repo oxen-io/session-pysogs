@@ -111,7 +111,7 @@ def get_rooms():
 def get_room_info(room):
     """serve room metadata"""
     # This really should be authenticated but legacy Session just doesn't pass along auth info.
-    #legacy_check_user_room(room=room, update_activity=False, read=True)
+    # legacy_check_user_room(room=room, update_activity=False, read=True)
     room_info = {'id': room.token, 'name': room.name}
     return jsonify({'room': room_info, 'status_code': 200})
 
@@ -120,7 +120,7 @@ def get_room_info(room):
 def legacy_serve_room_image(room):
     """serve room icon"""
     # This really should be authenticated but legacy Session just doesn't pass along auth info.
-    #legacy_check_user_room(room=room, update_activity=False, read=True)
+    # legacy_check_user_room(room=room, update_activity=False, read=True)
 
     if not room.image:
         abort(http.NOT_FOUND)
@@ -372,3 +372,116 @@ def handle_legacy_delete_messages():
             )
 
     return jsonify({'status_code': 200})
+
+
+def ban_checks():
+    user, room = legacy_check_user_room(moderator=True)
+
+    to_ban = model.User(session_id=request.json['public_key'], autovivify=True)
+
+    # Global mods/admins aren't bannable at all (at the room level)
+    if to_ban.global_moderator:
+        app.logger.warn(
+            "Cannot ban {} from {}: user is a global moderator".format(
+                to_ban.session_id, room.token
+            )
+        )
+        abort(http.FORBIDDEN)
+
+    return user, room, to_ban
+
+
+def apply_ban(conn, user, room, to_ban):
+    is_mod = bool(
+        conn.execute(
+            "SELECT moderator FROM user_permissions WHERE room = ? AND user = ?",
+            (room.id, to_ban.id),
+        ).fetchone()[0]
+    )
+
+    if is_mod and not model.check_permission(user, room, admin=True):
+        app.logger.warn(
+            "Cannot ban {} from {}: the ban target is a room moderator, "
+            "but the ban initiator ({}) is not an admin".format(
+                to_ban.session_id, room.token, user.session_id
+            )
+        )
+        abort(http.FORBIDDEN)
+
+    conn.execute(
+        """
+        INSERT INTO user_permission_overrides (room, user, banned, moderator, admin)
+        VALUES (?, ?, TRUE, FALSE, FALSE)
+        ON CONFLICT DO UPDATE SET banned = TRUE, moderator = FALSE, admin = FALSE
+        """,
+        (room.id, to_ban.id),
+    )
+
+
+@app.post("/legacy/block_list")
+def handle_legacy_ban():
+    user, room, to_ban = ban_checks()
+
+    with db.conn as conn:
+        apply_ban(conn, user, room, to_ban)
+
+    return jsonify({"status_code": 200})
+
+
+@app.post("/legacy/ban_and_delete_all")
+def handle_legacy_banhammer():
+    user, room, to_ban = ban_checks()
+
+    with db.conn as conn:
+        apply_ban(conn, user, room, to_ban)
+
+        cur = conn.cursor()
+        cur.execute(
+            """
+            UPDATE messages SET data = NULL, data_size = NULL, signature = NULL
+            WHERE room = ? AND user = ?
+            """,
+            (room.id, to_ban.id),
+        )
+
+        posts_removed = cur.rowcount
+
+        # We don't actually delete from disk right now, but clear the room (so that they aren't
+        # retrievable) and set them to be expired (so that the next file pruning will delete them
+        # from disk).
+        cur.execute(
+            "UPDATE files SET room = NULL, expiry = ? WHERE room = ? AND uploader = ?",
+            (time.time(), room.id, to_ban.id),
+        )
+        files_removed = cur.rowcount
+
+    app.logger.info(
+        "Banned {} from room {}: {} messages and {} files deleted".format(
+            to_ban.session_id, room.token, posts_removed, files_removed
+        )
+    )
+
+    return jsonify({"status_code": 200})
+
+
+@app.delete("/legacy/block_list/<SessionID:session_id>")
+def handle_legacy_unban(session_id):
+    user, room = legacy_check_user_room(moderator=True)
+
+    try:
+        to_unban = model.User(session_id=session_id, autovivify=False)
+    except NoSuchUser:
+        abort(http.NOT_FOUND)
+
+    with db.conn as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE user_permission_overrides SET banned = FALSE WHERE room = ? AND user = ?",
+            (room.id, to_unban.id),
+        )
+        updated = cur.rowcount
+
+    if updated > 0:
+        return jsonify({"status_code": 200})
+
+    abort(http.NOT_FOUND)
