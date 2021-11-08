@@ -42,10 +42,11 @@ def legacy_check_user_room(
     room_token - the token of the room.  If None we verify and extract it from the current request's
     Room header.
 
-    room - the room itself, if already retrieved (e.g. from a URL parameter).  If non-None then
+    room - the Room itself, if already retrieved (e.g. from a URL parameter).  If non-None then
     `room_token` is ignored entirely.
 
-    update_activity - if True (the default) then update the user's last room activity counter
+    update_activity - if True (the default) then update the user's overall last activity and last
+    room activity counters.
 
     Any other arguments are passed to model.check_permission (e.g. `read=True`).  We enforce here
     that you pass at least one such permission; if you really need all-false (e.g. to only do ban
@@ -67,16 +68,15 @@ def legacy_check_user_room(
         if not room_token:
             abort(http.BAD_REQUEST)
 
-        room = model.get_room(room_token)
-        if not room:
+        try:
+            room = model.Room(token=room_token)
+        except model.NoSuchRoom:
             abort(http.NOT_FOUND)
 
-    if not model.check_permission(pubkey, room["id"], **perms):
-        abort(http.FORBIDDEN)
+    user = model.User(session_id=pubkey, autovivify=True, touch=update_activity)
 
-    user = model.get_user(pubkey)
-    if not user:
-        abort(http.UNAUTHORIZED)
+    if not model.check_permission(user, room, **perms):
+        abort(http.FORBIDDEN)
 
     if update_activity:
         with db.conn as conn:
@@ -85,7 +85,7 @@ def legacy_check_user_room(
                 INSERT INTO room_users (user, room) VALUES (?, ?)
                 ON CONFLICT(user, room) DO UPDATE SET last_active = ((julianday('now') - 2440587.5)*86400.0)
                 """,
-                (user['id'], room['id']),
+                (user.id, room.id),
             )
 
     return (user, room)
@@ -97,44 +97,42 @@ def get_rooms():
     pubkey = get_pubkey_from_token(request.headers.get("Authorization"))
     if not pubkey:
         abort(http.BAD_REQUEST)
-    return jsonify(model.get_readable_rooms(pubkey))
+
+    return jsonify(
+        {
+            'status_code': 200,
+            # Legacy Session only wants token (returned as 'id') and name:
+            rooms: [{'id': r.token, 'name': r.name} for r in model.get_readable_rooms(pubkey)],
+        }
+    )
 
 
-@app.get("/legacy/rooms/<RoomToken:room>")
+@app.get("/legacy/rooms/<Room:room>")
 def get_room_info(room):
     """serve room metadata"""
-    room_info = {'id': room.get('token'), 'name': room.get('name')}
+    # This really should be authenticated but legacy Session just doesn't pass along auth info.
+    #legacy_check_user_room(room=room, update_activity=False, read=True)
+    room_info = {'id': room.token, 'name': room.name}
     return jsonify({'room': room_info, 'status_code': 200})
 
 
-@app.get("/legacy/rooms/<RoomToken:room>/image")
+@app.get("/legacy/rooms/<Room:room>/image")
 def legacy_serve_room_image(room):
     """serve room icon"""
-    filename = None
-    with db.conn as conn:
-        result = conn.execute(
-            "SELECT path FROM files WHERE id = (SELECT image FROM rooms WHERE token = ?)",
-            [room.get('token')],
-        )
-        row = result.fetchone()
-        filename = row[0]
-    if not filename:
+    # This really should be authenticated but legacy Session just doesn't pass along auth info.
+    #legacy_check_user_room(room=room, update_activity=False, read=True)
+
+    if not room.image:
         abort(http.NOT_FOUND)
-    with open(filename, "rb") as f:
-        result = {"status_code": 200, "result": utils.encode_base64(f.read())}
-    return jsonify(result)
+
+    return jsonify({"status_code": 200, "result": room.image.read_base64()})
 
 
 @app.get("/legacy/member_count")
 def legacy_member_count():
     user, room = legacy_check_user_room(read=True)
 
-    cutoff = time.time() - 7 * 86400
-    count = db.conn.execute(
-        "SELECT COUNT(*) FROM room_users WHERE room = ? AND last_active >= ?", (room['id'], cutoff)
-    ).fetchone()[0]
-
-    return jsonify({"status_code": 200, "member_count": count})
+    return jsonify({"status_code": 200, "member_count": room.active_users()})
 
 
 @app.post("/legacy/claim_auth_token")
@@ -152,8 +150,8 @@ def legacy_auth_token_challenge():
 
     user, room = legacy_check_user_room(request.args.get("public_key", ""), read=False)
 
-    token = utils.make_legacy_token(user['session_id'])
-    pk = utils.decode_hex_or_b64(user['session_id'][2:], 32)
+    token = utils.make_legacy_token(user.session_id)
+    pk = utils.decode_hex_or_b64(user.session_id[2:], 32)
     ct = crypto.server_encrypt(pk, token)
     return jsonify(
         {
@@ -174,10 +172,10 @@ def handle_post_legacy_message():
     req = request.json
     data = utils.decode_base64(req.get('data'))
     sig = utils.decode_base64(req.get('signature'))
-    msg = model.add_post_to_room(user.get('id'), room.get('id'), data, sig)
+    msg = model.add_post_to_room(user.id, room.id, data, sig)
     if not msg:
         abort(http.TOO_MANY_REQUESTS)
-    msg['public_key'] = user.get("session_id")
+    msg['public_key'] = user.session_id
     msg['data'] = req.get('data')
     msg['signature'] = req.get('signature')
     return jsonify({'status_code': 200, 'message': msg})
@@ -191,7 +189,7 @@ def handle_legacy_get_messages():
     user, room = legacy_check_user_room(read=True)
 
     return jsonify(
-        {'status_code': 200, 'messages': model.get_message_deprecated(room['id'], from_id, limit)}
+        {'status_code': 200, 'messages': model.get_message_deprecated(room.id, from_id, limit)}
     )
 
 
@@ -209,15 +207,15 @@ def handle_one_compact_poll(req):
         get_pubkey_from_token(req.get('auth_token')) or '', req.get('room_id', ''), read=True
     )
 
-    messages = model.get_message_deprecated(room['id'], req.get('from_message_server_id'))
+    messages = model.get_message_deprecated(room.id, req.get('from_message_server_id'))
 
-    deletions = model.get_deletions_deprecated(room['id'], req.get('from_deletion_server_id'))
+    deletions = model.get_deletions_deprecated(room.id, req.get('from_deletion_server_id'))
 
-    mods = model.get_mods_for_room(room['id'], user['session_id'])
+    mods = model.get_mods_for_room(room.id, user.session_id)
 
     return {
         'status_code': 200,
-        'room_id': room['token'],
+        'room_id': room.token,
         'messages': messages,
         'deletions': deletions,
         'moderators': mods,
@@ -233,7 +231,7 @@ def process_legacy_file_upload_for_room(user, room):
     if len(file_content) > config.UPLOAD_FILE_MAX_SIZE:
         abort(http.ERROR_PAYLOAD_TOO_LARGE)
 
-    files_dir = "uploads/" + room['token']
+    files_dir = "uploads/" + room.token
     os.makedirs(files_dir, exist_ok=True)
 
     # FIXME: when making this code generic, filename should be provided by new API users
@@ -259,7 +257,7 @@ def process_legacy_file_upload_for_room(user, room):
                 INSERT INTO files (room, uploader, size, expiry, filename, path)
                 VALUES (?, ?, ?, ?, ?, 'tmp')
                 """,
-                (room['id'], user['id'], len(file_content), expiry, filename),
+                (room.id, user.id, len(file_content), expiry, filename),
             )
 
             file_id = cur.lastrowid
@@ -300,12 +298,12 @@ def handle_legacy_store_file():
     return jsonify({'status_code': 200, 'result': file_id})
 
 
-@app.post("/legacy/rooms/<RoomToken:room>/image")
+@app.post("/legacy/rooms/<Room:room>/image")
 def handle_legacy_upload_room_image(room):
     user, room = legacy_check_user_room(write=True, upload=True, moderator=True)
     file_id = process_legacy_file_upload_for_room(user, room)
     with db.conn:
-        db.conn.execute("UPDATE rooms SET image = ? WHERE id = ?", [file_id, room['id']])
+        db.conn.execute("UPDATE rooms SET image = ? WHERE id = ?", [file_id, room.id])
     return jsonify({'status_code': 200, 'result': file_id})
 
 
@@ -315,7 +313,7 @@ def handle_legacy_get_file(file_id):
 
     with db.conn as conn:
         result = conn.execute(
-            "SELECT path FROM files WHERE room = ? AND id = ?", (room['id'], file_id)
+            "SELECT path FROM files WHERE room = ? AND id = ?", (room.id, file_id)
         )
         row = result.fetchone()
         if not row:
@@ -339,7 +337,7 @@ def handle_legacy_delete_messages():
 
     in_params = ",".join("?" * len(ids))
 
-    is_moderator = model.check_permission(user['session_id'], room['id'], moderator=True)
+    is_moderator = model.check_permission(user, room, moderator=True)
 
     with db.conn as conn:
         if not is_moderator:
@@ -350,7 +348,7 @@ def handle_legacy_delete_messages():
                 """.format(
                     in_params
                 ),
-                [room['id'], user['id'], *ids],
+                [room.id, user.id, *ids],
             )
             if res.fetchone()[0]:
                 abort(http.UNAUTHORIZED)
@@ -362,7 +360,7 @@ def handle_legacy_delete_messages():
                 """.format(
                     in_params
                 ),
-                [room['id'], *ids],
+                [room.id, *ids],
             )
 
     return jsonify({'status_code': 200})
