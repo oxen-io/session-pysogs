@@ -37,9 +37,14 @@ def handle_onionreq_plaintext(body):
                 cl = len(subreq_body)
             else:
                 subreq_body = b''
+                # Android bug workaround: Android Session (at least up to v1.11.12) sends a body on
+                # GET requests with a 4-character string "null" when it should send no body.
+                if 'body' in req and len(req['body']) == 4 and req['body'] == 'null':
+                    del req['body']
+
                 if 'body' in req and len(req['body']) or 'body_binary' in req:
                     raise RuntimeError(
-                        "Invalid {} {} request: request must not contain a body", method, endpoint
+                        "Invalid {} {} request: request must not contain a body".format(method, endpoint)
                     )
                 ct, cl = '', ''
 
