@@ -30,7 +30,7 @@ def get_pubkey_from_token(token):
 
 
 def legacy_check_user_room(
-    pubkey=None, room_token=None, *, room=None, update_activity=True, **perms
+    pubkey=None, room_token=None, *, room=None, update_activity=True, no_perms=False, **perms
 ):
     """
     For a legacy endpoint verifying a user is allowed to access a room calls flask.abort to bail out
@@ -48,12 +48,17 @@ def legacy_check_user_room(
     update_activity - if True (the default) then update the user's overall last activity and last
     room activity counters.
 
+    no_perms - if True then do not do any permission check at all; this should only be used when the
+    permission check needs to be done externally e.g. for complex permission validation.  When this
+    is specified any extra keyword arguments (which would be passed to check_permissions) are
+    ignored.
+
     Any other arguments are passed to model.check_permission (e.g. `read=True`).  We enforce here
-    that you pass at least one such permission; if you really need all-false (e.g. to only do ban
-    check) then pass `read=False`.
+    that you pass at least one such permission (unless using `no_perms`); if you really need
+    all-false (e.g. to only do ban check) then pass `read=False`.
     """
 
-    if len(perms) == 0:
+    if len(perms) == 0 and not no_perms:
         raise ValueError("Internal error: no permissions passed to legacy_check_user_room")
 
     if pubkey is None:
@@ -75,8 +80,9 @@ def legacy_check_user_room(
 
     user = model.User(session_id=pubkey, autovivify=True, touch=update_activity)
 
-    if not model.check_permission(user, room, **perms):
-        abort(http.FORBIDDEN)
+    if not no_perms:
+        if not model.check_permission(user, room, **perms):
+            abort(http.FORBIDDEN)
 
     if update_activity:
         with db.conn as conn:
@@ -485,3 +491,27 @@ def handle_legacy_unban(session_id):
         return jsonify({"status_code": 200})
 
     abort(http.NOT_FOUND)
+
+
+@app.get("/legacy/block_list")
+def handle_legacy_banlist():
+    # Can't go through the usual legacy_check_user_room call here, because we want to continue here
+    # even if we are banned:
+    user, room = legacy_check_user_room(no_perms=True)
+
+    # If you are a moderator then we show you everything; if you are banned we show you just
+    # yourself; otherwise we show you nothing.
+    row = db.conn.execute(
+        "SELECT banned, moderator FROM user_permissions WHERE room = ? AND user = ?",
+        (room.id, user.id),
+    ).fetchone()
+    banned, mod = bool(row[0]), bool(row[1])
+    bans = []
+    if banned:
+        bans.append(user.session_id)
+    elif mod:
+        rows = db.conn.execute(
+            "SELECT session_id FROM user_permissions WHERE room = ? AND banned", (room.id,)
+        )
+        bans = [row[0] for row in rows]
+    return {"status_code": 200, "banned_members": bans}
