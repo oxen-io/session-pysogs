@@ -222,7 +222,15 @@ def handle_one_compact_poll(req):
     }
 
 
-def process_legacy_file_upload_for_room(user, room):
+def process_legacy_file_upload_for_room(
+    user, room, lifetime=config.UPLOAD_DEFAULT_EXPIRY_DAYS * 86400
+):
+    """
+    Uploads a file, posted by user, into the given room.  `lifetime` controls how long (in seconds)
+    the file will be stored before expiry, and can be None for uploads (such as room images) that
+    shouldn't expire.
+    """
+
     # Slamming this all into memory is not very nice, but there's no terribly elegant way to get
     # around it when we have b64 input for legacy uploads.
     file_b64 = request.json['file']
@@ -247,7 +255,7 @@ def process_legacy_file_upload_for_room(user, room):
         # database addition; we catch *outside* the context so that we catch on commit, as well, so
         # that we also clean up the stored file on disk if the transaction fails to commit.
         with db.conn:
-            expiry = time.time() + config.UPLOAD_DEFAULT_EXPIRY_DAYS * 86400
+            expiry = None if lifetime is None else time.time() + lifetime
 
             # Insert the file row first, but with nonsense path because we want to put the ID in the
             # path, which we won't have until after the insert; we'll come back and update it.
@@ -301,7 +309,7 @@ def handle_legacy_store_file():
 @app.post("/legacy/rooms/<Room:room>/image")
 def handle_legacy_upload_room_image(room):
     user, room = legacy_check_user_room(write=True, upload=True, moderator=True)
-    file_id = process_legacy_file_upload_for_room(user, room)
+    file_id = process_legacy_file_upload_for_room(user, room, lifetime=None)
     with db.conn:
         db.conn.execute("UPDATE rooms SET image = ? WHERE id = ?", [file_id, room.id])
     return jsonify({'status_code': 200, 'result': file_id})
