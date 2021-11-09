@@ -514,7 +514,7 @@ def handle_legacy_banlist():
             "SELECT session_id FROM user_permissions WHERE room = ? AND banned", (room.id,)
         )
         bans = [row[0] for row in rows]
-    return {"status_code": 200, "banned_members": bans}
+    return jsonify({"status_code": 200, "banned_members": bans})
 
 
 @app.get("/legacy/moderators")
