@@ -44,7 +44,9 @@ def handle_onionreq_plaintext(body):
 
                 if 'body' in req and len(req['body']) or 'body_binary' in req:
                     raise RuntimeError(
-                        "Invalid {} {} request: request must not contain a body".format(method, endpoint)
+                        "Invalid {} {} request: request must not contain a body".format(
+                            method, endpoint
+                        )
                     )
                 ct, cl = '', ''
 
