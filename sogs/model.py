@@ -119,6 +119,42 @@ class Room:
             (self.id, time.time() - cutoff),
         ).fetchone()[0]
 
+    def get_mods(self, user=None):
+        """
+        Returns a list of session_ids who are moderators of the room.
+
+        `user` is the current User or the user's session id, and controls how we return hidden
+        moderators: if the given user is an admin then all hidden mods/admins are included.  If the
+        given user is a moderator then we include that specific user in the mod list if she is a
+        moderator, but don't include any other hidden mods/admins.
+
+        If user is None then we don't include any hidden mods.
+        """
+
+        we_are_hidden, we_are_admin = False, False
+        mods, hidden_mods = [], []
+
+        curr_session_id = (
+            None if user is None else user.session_id if isinstance(user, User) else user
+        )
+
+        for session_id, visible, admin in db.conn.execute(
+            "SELECT session_id, visible_mod, admin FROM user_permissions WHERE room = ? AND moderator",
+            [self.id],
+        ):
+            if session_id is not None and session_id == curr_session_id:
+                we_are_hidden = not visible
+                we_are_admin = admin
+
+            (mods if visible else hidden_mods).append(session_id)
+
+        if we_are_admin:
+            mods += hidden_mods
+        elif we_are_hidden:
+            mods.append(curr_session_id)
+
+        return mods
+
 
 class File:
     """
@@ -361,37 +397,6 @@ def add_post_to_room(user_id, room_id, data, sig, rate_limit_size=5, rate_limit_
         row = result.fetchone()
         msg = {'timestamp': utils.convert_time(row['posted']), 'server_id': row['id']}
         return msg
-
-
-def get_mods_for_room(room_id, curr_session_id=None):
-    """
-    Returns a list of session_ids who are moderators of the room.
-
-    `curr_session_id` is the current user's session id, and controls how we return hidden
-    moderators: if the given user is an admin then all hidden mods/admins are included.  If the
-    given user is a moderator then we include that specific user in the mod list if she is a
-    moderator, but don't include any other hidden mods/admins.
-    """
-
-    we_are_hidden, we_are_admin = False, False
-    mods, hidden_mods = [], []
-
-    for session_id, visible, admin in db.conn.execute(
-        "SELECT session_id, visible_mod, admin FROM user_permissions WHERE room = ? AND moderator",
-        [room_id],
-    ):
-        if session_id is not None and session_id == curr_session_id:
-            we_are_hidden = not visible
-            we_are_admin = admin
-
-        (mods if visible else hidden_mods).append(session_id)
-
-    if we_are_admin:
-        mods += hidden_mods
-    elif we_are_hidden:
-        mods.append(curr_session_id)
-
-    return mods
 
 
 def get_deletions_deprecated(room_id, since):

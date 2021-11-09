@@ -217,7 +217,7 @@ def handle_one_compact_poll(req):
 
     deletions = model.get_deletions_deprecated(room.id, req.get('from_deletion_server_id'))
 
-    mods = model.get_mods_for_room(room.id, user.session_id)
+    mods = room.get_mods(user)
 
     return {
         'status_code': 200,
@@ -515,3 +515,62 @@ def handle_legacy_banlist():
         )
         bans = [row[0] for row in rows]
     return {"status_code": 200, "banned_members": bans}
+
+
+@app.get("/legacy/moderators")
+def handle_legacy_get_mods():
+    user, room = legacy_check_user_room(read=True)
+
+    mods = room.get_mods(user)
+    return jsonify({"status_code": 200, "moderators": mods})
+
+
+# Posting here adds an admin and requires admin access.  Legacy Session doesn't understand the
+# moderator/admin distinction so we don't support moderator adjustment at all here.
+@app.post("/legacy/moderators")
+def handle_legacy_add_admin():
+    user, room = legacy_check_user_room(admin=True)
+
+    session_id = request.json["public_key"]
+    if len(session_id) != 66 or not session_id.startswith("05"):
+        abort(http.BAD_REQUEST)
+
+    mod = model.User(session_id=session_id, autovivify=True)
+    with db.conn as conn:
+        conn.execute(
+            """
+            INSERT INTO user_permission_overrides (user, room, admin) VALUES (?, ?, TRUE)
+            ON CONFLICT DO UPDATE SET admin = TRUE
+            """,
+            (mod.id, room.id),
+        )
+
+    app.logger.info("{} added admin {} to room {}".format(user.session_id, mod.session_id, room.token))
+    return jsonify({"status_code": 200})
+
+
+# DELETE here removes an admin or moderator and requires admin access.  (Legacy Session doesn't
+# understand the moderator/admin distinction so we don't distinguish between them and just remove
+# both powers, if present).
+@app.delete("/legacy/moderators/<SessionID:session_id>")
+def handle_legacy_remove_admin(session_id):
+    user, room = legacy_check_user_room(admin=True)
+
+    try:
+        mod = model.User(session_id=session_id, autovivify=False)
+    except NoSuchUser:
+        abort(http.NOT_FOUND)
+
+    with db.conn as conn:
+        conn.execute(
+            """
+            UPDATE user_permission_overrides SET moderator = FALSE, admin = FALSE
+            WHERE user = ? AND room = ?
+            """,
+            (mod.id, room.id),
+        )
+
+    app.logger.info(
+        "{} removed moderator/admin {} from room {}".format(user.session_id, mod.session_id, room.token)
+    )
+    return jsonify({"status_code": 200})
