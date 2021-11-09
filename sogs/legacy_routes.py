@@ -1,4 +1,5 @@
 from flask import abort, request, jsonify, send_file
+from werkzeug.exceptions import HTTPException
 from .web import app
 from . import crypto
 from . import model
@@ -204,7 +205,12 @@ def handle_comapct_poll():
     req_list = request.json
     result = list()
     for req in req_list.get('requests', list()):
-        result.append(handle_one_compact_poll(req))
+        try:
+            r = handle_one_compact_poll(req)
+        except HTTPException as e:
+            r = {'status_code': e.get_response().status_code}
+        result.append(r)
+
     return jsonify({'status_code': 200, 'results': result})
 
 
