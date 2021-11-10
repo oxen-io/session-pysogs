@@ -2,7 +2,7 @@ import logging
 import re
 
 DB_PATH = 'sogs.db'
-DB_SCHEMA_FILE = 'src/schema.sql'
+DB_SCHEMA_FILE = 'schema.sql'
 
 SEED_FILE = 'sogs-seed.bin'
 

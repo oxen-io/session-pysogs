@@ -3,10 +3,6 @@
 *.db-shm
 *.db-wal
 .DS_Store
-*.pem
-/files
-/rooms
 /uploads
-*.bin
 __pycache__
 *.pyc
