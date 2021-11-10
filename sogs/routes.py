@@ -52,9 +52,7 @@ def serve_index():
 
 @app.get("/view/room/<Room:room>")
 def view_room(room):
-    return render_template(
-        "view_room.html", room=room.token, room_url=utils.server_url(room.token)
-    )
+    return render_template("view_room.html", room=room.token, room_url=utils.server_url(room.token))
 
 
 @app.get("/view/<Room:room>/invite.png")

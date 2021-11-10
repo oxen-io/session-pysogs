@@ -98,7 +98,7 @@ def handle_onionreq_plaintext(body):
                 )
             )
             return json.dumps({'status_code': response.status_code}).encode()
-        except Exception as e:
+        except Exception:
             app.logger.warn(
                 "Onion sub-request for {} {} failed: {}".format(
                     method, endpoint, traceback.format_exc()

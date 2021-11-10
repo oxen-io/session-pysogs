@@ -2,7 +2,6 @@ from . import config
 from . import db
 from . import utils
 
-import os
 import time
 
 
@@ -139,7 +138,10 @@ class Room:
         )
 
         for session_id, visible, admin in db.conn.execute(
-            "SELECT session_id, visible_mod, admin FROM user_permissions WHERE room = ? AND moderator",
+            """
+            SELECT session_id, visible_mod, admin FROM user_permissions
+            WHERE room = ? AND moderator
+            """,
             [self.id],
         ):
             if session_id is not None and session_id == curr_session_id:
@@ -318,7 +320,10 @@ def get_readable_rooms(pubkey):
     """get a list of rooms that a user can access"""
     with db.conn as conn:
         result = conn.execute(
-            "SELECT rooms.* FROM user_permissions perm JOIN rooms ON rooms.id = room WHERE session_id = ? AND perm.read AND NOT perm.banned",
+            """
+            SELECT rooms.* FROM user_permissions perm JOIN rooms ON rooms.id = room
+            WHERE session_id = ? AND perm.read AND NOT perm.banned
+            """,
             [pubkey],
         )
         return [Room(row) for row in result]

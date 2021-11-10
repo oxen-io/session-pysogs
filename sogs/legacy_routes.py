@@ -1,4 +1,4 @@
-from flask import abort, request, jsonify, send_file
+from flask import abort, request, jsonify
 from werkzeug.exceptions import HTTPException
 from .web import app
 from . import crypto
@@ -90,7 +90,8 @@ def legacy_check_user_room(
             conn.execute(
                 """
                 INSERT INTO room_users (user, room) VALUES (?, ?)
-                ON CONFLICT(user, room) DO UPDATE SET last_active = ((julianday('now') - 2440587.5)*86400.0)
+                ON CONFLICT(user, room) DO UPDATE
+                SET last_active = ((julianday('now') - 2440587.5)*86400.0)
                 """,
                 (user.id, room.id),
             )
@@ -109,7 +110,7 @@ def get_rooms():
         {
             'status_code': 200,
             # Legacy Session only wants token (returned as 'id') and name:
-            rooms: [{'id': r.token, 'name': r.name} for r in model.get_readable_rooms(pubkey)],
+            'rooms': [{'id': r.token, 'name': r.name} for r in model.get_readable_rooms(pubkey)],
         }
     )
 
@@ -482,7 +483,7 @@ def handle_legacy_unban(session_id):
 
     try:
         to_unban = model.User(session_id=session_id, autovivify=False)
-    except NoSuchUser:
+    except model.NoSuchUser:
         abort(http.NOT_FOUND)
 
     with db.conn as conn:
@@ -551,7 +552,9 @@ def handle_legacy_add_admin():
             (mod.id, room.id),
         )
 
-    app.logger.info("{} added admin {} to room {}".format(user.session_id, mod.session_id, room.token))
+    app.logger.info(
+        "{} added admin {} to room {}".format(user.session_id, mod.session_id, room.token)
+    )
     return jsonify({"status_code": 200})
 
 
@@ -564,7 +567,7 @@ def handle_legacy_remove_admin(session_id):
 
     try:
         mod = model.User(session_id=session_id, autovivify=False)
-    except NoSuchUser:
+    except model.NoSuchUser:
         abort(http.NOT_FOUND)
 
     with db.conn as conn:
@@ -577,6 +580,8 @@ def handle_legacy_remove_admin(session_id):
         )
 
     app.logger.info(
-        "{} removed moderator/admin {} from room {}".format(user.session_id, mod.session_id, room.token)
+        "{} removed moderator/admin {} from room {}".format(
+            user.session_id, mod.session_id, room.token
+        )
     )
     return jsonify({"status_code": 200})
