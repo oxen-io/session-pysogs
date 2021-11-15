@@ -3,8 +3,16 @@ import base64
 from . import crypto
 from . import config
 from . import http
+from . import session_pb2 as protobuf
 
 from flask import request, abort
+
+
+def message_body(data: bytes):
+    """ given a bunch of bytes for a protobuf message return the message's body """
+    msg = protobuf.DataMessage()
+    msg.ParseFromString(data)
+    return msg.body
 
 
 def encode_base64(data: bytes):
