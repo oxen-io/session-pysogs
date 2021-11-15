@@ -41,3 +41,7 @@ ROOM_DEFAULT_ACTIVE_THRESHOLD = 7
 
 # How long we keep message edit/deletion history, in days
 MESSAGE_HISTORY_PRUNE_THRESHOLD = 30
+
+
+# file containing "bad" words for filtration
+BAD_WORDS_FILE = 'badwords.txt'

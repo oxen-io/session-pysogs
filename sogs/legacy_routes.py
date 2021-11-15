@@ -7,6 +7,7 @@ from . import db
 from . import utils
 from . import config
 from . import http
+from . import filtration
 
 import os
 import time
@@ -180,6 +181,10 @@ def handle_post_legacy_message():
     req = request.json
     data = utils.decode_base64(req.get('data'))
     sig = utils.decode_base64(req.get('signature'))
+
+    if filtration.should_drop_message_with_body(data):
+        abort(http.FORBIDDEN)
+
     msg = model.add_post_to_room(user.id, room.id, data, sig)
     if not msg:
         abort(http.TOO_MANY_REQUESTS)
