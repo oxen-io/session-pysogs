@@ -6,3 +6,6 @@
 /uploads
 __pycache__
 *.pyc
+
+# This file is for local config which we never want committed:
+/sogs/config.py
