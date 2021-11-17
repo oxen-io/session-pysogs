@@ -10,3 +10,4 @@ from . import routes
 from . import onion_request
 from . import legacy_routes
 from .web import app
+from . import cleanup
