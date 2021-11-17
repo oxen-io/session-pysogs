@@ -432,6 +432,13 @@ def get_message_deprecated(room_id, since, limit=256):
     with db.conn as conn:
         result = None
         if since:
+            # Handle id mapping from an old database import in case the client is requesting
+            # messages since some id from the old db.
+            if db.ROOM_IMPORT_HACKS and room_id in db.ROOM_IMPORT_HACKS:
+                (max_old_id, offset) = db.ROOM_IMPORT_HACKS[room_id]
+                if since <= max_old_id:
+                    since += offset
+
             result = conn.execute(
                 """
                 SELECT * FROM message_details

@@ -15,11 +15,11 @@ import hmac
 import pyonionreq
 
 # generate seed as needed
-if not os.path.exists(config.SEED_FILE):
-    with open(config.SEED_FILE, 'wb') as f:
+if not os.path.exists(config.KEY_FILE):
+    with open(config.KEY_FILE, 'wb') as f:
         f.write(PrivateKey.generate().encode())
 
-with open(config.SEED_FILE, 'rb') as f:
+with open(config.KEY_FILE, 'rb') as f:
     _privkey = PrivateKey(f.read())
 
 server_pubkey = _privkey.public_key

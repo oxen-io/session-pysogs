@@ -338,10 +338,17 @@ def handle_legacy_get_file(file_id):
     user, room = legacy_check_user_room(read=True)
 
     with db.conn as conn:
-        result = conn.execute(
+        row = conn.execute(
             "SELECT path FROM files WHERE room = ? AND id = ?", (room.id, file_id)
-        )
-        row = result.fetchone()
+        ).fetchone()
+        if not row and db.HAVE_FILE_ID_HACKS:
+            row = conn.execute(
+                """
+                SELECT path FROM files WHERE id = (
+                    SELECT file FROM file_id_hacks WHERE room = ? AND old_file_id = ?)
+                """,
+                (room.id, file_id),
+            ).fetchone()
         if not row:
             abort(http.NOT_FOUND)
 

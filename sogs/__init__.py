@@ -1,10 +1,7 @@
 #!/usr/bin/env python3
 
 from . import config
-import coloredlogs
-
-coloredlogs.install(level=config.LOG_LEVEL, milliseconds=True, isatty=True)
-
+from . import logging
 from . import db
 from . import routes
 from . import onion_request
