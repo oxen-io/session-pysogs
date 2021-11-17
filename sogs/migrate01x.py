@@ -143,6 +143,9 @@ def migrate01x(conn):
 
                     cur.execute(ins_user, (session_id,))
 
+                    if config.IMPORT_ADJUST_MS:
+                        timestamp += config.IMPORT_ADJUST_MS
+
                     # Timestamp is in unix epoch *milliseconds* for some non-standard reason.
                     timestamp /= 1000.0
 
