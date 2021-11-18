@@ -112,3 +112,26 @@ def get_int_param(name, default=None, *, required=False, min=None, max=None, tru
         else:
             abort(http.BAD_REQUEST)
     return val
+
+
+def remove_session_message_padding(data: bytes):
+    """Removes the custom padding that Session may have added.  Returns the unpadded data."""
+
+    # Except sometimes it isn't padded, so if we find something other than 0x00 or 0x80 *or* we
+    # strip off all the 0x00's and then find something that isn't 0x80, then we're supposed to use
+    # the whole thing (without the 0's stripped off).  Session code has a comment "This is dumb"
+    # describing all of this.  I concur.
+    if data and data[-1] in (b'\x00', b'\x80'):
+        stripped_data = data.rstrip(b'\x00')
+        if stripped_data and stripped_data[-1] == 0x80:
+            data = stripped_data[:-1]
+    return data
+
+
+def add_session_message_padding(data: bytes, length):
+    """Adds the custom padding that Session delivered the message with (and over which the signature
+    is written).  Returns the padded value."""
+
+    if length > len(data):
+        data += b'\x80' + b'\x00' * (length - len(data))
+    return data
