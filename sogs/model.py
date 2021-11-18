@@ -393,9 +393,13 @@ def add_post_to_room(user_id, room_id, data, sig, rate_limit_size=5, rate_limit_
         if row[0] >= rate_limit_size:
             # rate limit hit
             return
+
+        data_size = len(data)
+        data = utils.remove_session_message_padding(data)
+
         result = conn.execute(
             "INSERT INTO messages(room, user, data, data_size, signature) VALUES(?, ?, ?, ?, ?)",
-            [room_id, user_id, data.rstrip(b'\x00'), len(data), sig],
+            [room_id, user_id, data, data_size, sig],
         )
         lastid = result.lastrowid
         result = conn.execute("SELECT posted, id FROM messages WHERE id = ?", [lastid])
@@ -457,11 +461,7 @@ def get_message_deprecated(room_id, since, limit=256):
                 [room_id, limit],
             )
         for row in result:
-            data = row['data']
-            data_size = row['data_size']
-            if len(data) < data_size:
-                # Re-pad the message (we strip off padding when storing)
-                data += b'\x00' * (data_size - len(data))
+            data = util.add_session_message_padding(row['data'], row['data_size'])
 
             msgs.append(
                 {

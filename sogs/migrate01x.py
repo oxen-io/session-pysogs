@@ -156,7 +156,7 @@ def migrate01x(conn):
                         # unpad it:
                         data = utils.decode_base64(data)
                         data_size = len(data)
-                        data = data.rstrip(b'\0')
+                        data = utils.remove_session_message_padding(data)
 
                         # Signature was just base64 encoded:
                         signature = utils.decode_base64(signature)
