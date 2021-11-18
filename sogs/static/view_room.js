@@ -34,7 +34,7 @@ const setup = async () => {
                 elem.appendChild(document.createTextNode(`the ${window.view_room} room is empty`));
             }
 
-            for(let msg of msgs)
+            for(let msg of msgs.reverse())
             {
                 let e = document.createElement("li")
                 try
