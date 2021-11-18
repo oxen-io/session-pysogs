@@ -461,7 +461,7 @@ def get_message_deprecated(room_id, since, limit=256):
                 [room_id, limit],
             )
         for row in result:
-            data = util.add_session_message_padding(row['data'], row['data_size'])
+            data = utils.add_session_message_padding(row['data'], row['data_size'])
 
             msgs.append(
                 {
