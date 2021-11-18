@@ -92,7 +92,7 @@ def apply_permission_updates():
             """
             INSERT INTO user_permission_overrides (room, user, read, write, upload)
             SELECT room, user, read, write, upload FROM user_permission_futures WHERE at <= ?
-            ON CONFLICT DO UPDATE SET
+            ON CONFLICT (room, user) DO UPDATE SET
                 read = COALESCE(excluded.read, read),
                 write = COALESCE(excluded.write, write),
                 upload = COALESCE(excluded.upload, upload)

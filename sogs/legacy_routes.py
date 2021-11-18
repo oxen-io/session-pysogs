@@ -437,7 +437,7 @@ def apply_ban(conn, user, room, to_ban):
         """
         INSERT INTO user_permission_overrides (room, user, banned, moderator, admin)
         VALUES (?, ?, TRUE, FALSE, FALSE)
-        ON CONFLICT DO UPDATE SET banned = TRUE, moderator = FALSE, admin = FALSE
+        ON CONFLICT (room, user) DO UPDATE SET banned = TRUE, moderator = FALSE, admin = FALSE
         """,
         (room.id, to_ban.id),
     )
@@ -559,7 +559,7 @@ def handle_legacy_add_admin():
         conn.execute(
             """
             INSERT INTO user_permission_overrides (user, room, admin) VALUES (?, ?, TRUE)
-            ON CONFLICT DO UPDATE SET admin = TRUE
+            ON CONFLICT (room, user) DO UPDATE SET admin = TRUE
             """,
             (mod.id, room.id),
         )
