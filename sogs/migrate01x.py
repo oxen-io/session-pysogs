@@ -157,6 +157,13 @@ def migrate01x(conn):
                         data = utils.decode_base64(data)
                         data_size = len(data)
                         data = data.rstrip(b'\0')
+                        if len(data) >= 2 and data[-1] == 0x80:
+                            data = data[:-1]
+                        else:
+                            raise RuntimeError(
+                                "Unexpected data: {} message id={} didn't contain expected "
+                                "0x80 0x00... padding".format(room_db_path, id)
+                            )
 
                         # Signature was just base64 encoded:
                         signature = utils.decode_base64(signature)

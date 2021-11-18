@@ -1,6 +1,14 @@
 
 const makebuffer = (raw) => {
-    return Uint8Array.from(window.atob(raw), (v) => v.charCodeAt(0));
+    let b = Uint8Array.from(window.atob(raw), (v) => v.charCodeAt(0));
+    // This data is padded with a 0x80 delimiter followed by any number of 0x00 bytes, but these are
+    // *not* part of the protocol buffer encoding, so we need to strip it off.
+    let realLength = b.length;
+    while (realLength > 0 && b[realLength-1] == 0)
+        realLength--;
+    if (realLength > 0 && b[realLength-1] == 0x80)
+        realLength--;
+    return b.subarray(0, realLength);
 };
 const setup = async () => {
     const elem = document.getElementById("messages");
@@ -31,7 +39,6 @@ const setup = async () => {
                 let e = document.createElement("li")
                 try
                 {
-                    console.log(msg);
                     const data = makebuffer(msg.data);
                     const err = Message.verify(data);
                     if(err)

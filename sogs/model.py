@@ -393,9 +393,17 @@ def add_post_to_room(user_id, room_id, data, sig, rate_limit_size=5, rate_limit_
         if row[0] >= rate_limit_size:
             # rate limit hit
             return
+        # Custom padding consists of 0x80 followed by any number of 0x00 bytes; strip it off:
+        data_size = len(data)
+        data = data.rstrip(b'\x00')
+        if len(data) >= 2 and data[-1] == 0x80:
+            data = data[:-1]
+        else:
+            raise ValueError("Invalid message data: expected 0x80 0x00... padding")
+
         result = conn.execute(
             "INSERT INTO messages(room, user, data, data_size, signature) VALUES(?, ?, ?, ?, ?)",
-            [room_id, user_id, data.rstrip(b'\x00'), len(data), sig],
+            [room_id, user_id, data, data_size, sig],
         )
         lastid = result.lastrowid
         result = conn.execute("SELECT posted, id FROM messages WHERE id = ?", [lastid])
@@ -461,7 +469,7 @@ def get_message_deprecated(room_id, since, limit=256):
             data_size = row['data_size']
             if len(data) < data_size:
                 # Re-pad the message (we strip off padding when storing)
-                data += b'\x00' * (data_size - len(data))
+                data += b'\x80' + b'\x00' * (data_size - len(data))
 
             msgs.append(
                 {
