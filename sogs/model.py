@@ -256,37 +256,36 @@ class User:
         if sum(x is not None for x in (row, session_id, id)) != 1:
             raise ValueError("User() error: exactly one of row/session_id/id is required")
 
-        with db.conn as conn:
-            self._touched = False
-            if session_id is not None:
-                row = db.conn.execute(
-                    "SELECT * FROM users WHERE session_id = ?", (session_id,)
-                ).fetchone()
+        self._touched = False
+        if session_id is not None:
+            row = db.conn.execute(
+                "SELECT * FROM users WHERE session_id = ?", (session_id,)
+            ).fetchone()
 
-                if not row and autovivify:
-                    with conn as db.conn:
-                        conn.execute("INSERT INTO users (session_id) VALUES (?)", (session_id,))
-                        row = conn.execute(
-                            "SELECT * FROM users WHERE session_id = ?", (session_id,)
-                        ).fetchone()
-                        # No need to re-touch this user since we just created them:
-                        self._touched = True
+            if not row and autovivify:
+                with db.conn as conn:
+                    conn.execute("INSERT INTO users (session_id) VALUES (?)", (session_id,))
+                    row = conn.execute(
+                        "SELECT * FROM users WHERE session_id = ?", (session_id,)
+                    ).fetchone()
+                    # No need to re-touch this user since we just created them:
+                    self._touched = True
 
-            elif id is not None:
-                row = db.conn.execute("SELECT * FROM users WHERE id = ?", (id,)).fetchone()
+        elif id is not None:
+            row = db.conn.execute("SELECT * FROM users WHERE id = ?", (id,)).fetchone()
 
-            if row is None:
-                raise NoSuchUser(session_id if session_id is not None else id)
+        if row is None:
+            raise NoSuchUser(session_id if session_id is not None else id)
 
-            self.id, self.session_id, self.created, self.last_active = (
-                row[c] for c in ('id', 'session_id', 'created', 'last_active')
-            )
-            self.banned, self.global_moderator, self.global_admin, self.visible_mod = (
-                bool(row[c]) for c in ('banned', 'moderator', 'admin', 'visible_mod')
-            )
+        self.id, self.session_id, self.created, self.last_active = (
+            row[c] for c in ('id', 'session_id', 'created', 'last_active')
+        )
+        self.banned, self.global_moderator, self.global_admin, self.visible_mod = (
+            bool(row[c]) for c in ('banned', 'moderator', 'admin', 'visible_mod')
+        )
 
-            if touch:
-                self._touch()
+        if touch:
+            self._touch()
 
     def _touch(self):
         db.conn.execute(
@@ -311,22 +310,20 @@ class User:
 
 def get_rooms():
     """get a list of all rooms"""
-    with db.conn as conn:
-        result = conn.execute("SELECT * FROM rooms ORDER BY token")
-        return [Room(row) for row in result]
+    result = db.conn.execute("SELECT * FROM rooms ORDER BY token")
+    return [Room(row) for row in result]
 
 
 def get_readable_rooms(pubkey):
     """get a list of rooms that a user can access"""
-    with db.conn as conn:
-        result = conn.execute(
-            """
-            SELECT rooms.* FROM user_permissions perm JOIN rooms ON rooms.id = room
-            WHERE session_id = ? AND perm.read AND NOT perm.banned
-            """,
-            [pubkey],
-        )
-        return [Room(row) for row in result]
+    result = db.conn.execute(
+        """
+        SELECT rooms.* FROM user_permissions perm JOIN rooms ON rooms.id = room
+        WHERE session_id = ? AND perm.read AND NOT perm.banned
+        """,
+        [pubkey],
+    )
+    return [Room(row) for row in result]
 
 
 def check_permission(
@@ -409,67 +406,65 @@ def add_post_to_room(user_id, room_id, data, sig, rate_limit_size=5, rate_limit_
 
 
 def get_deletions_deprecated(room_id, since):
-    with db.conn as conn:
-        if since:
-            result = conn.execute(
-                """
-                SELECT id, updated FROM messages
-                WHERE room = ? AND updated > ? AND data IS NULL
-                ORDER BY updated ASC LIMIT 256
-                """,
-                [room_id, since],
-            )
-        else:
-            result = conn.execute(
-                """
-                SELECT id, updated FROM messages
-                WHERE room = ? AND data IS NULL
-                ORDER BY updated DESC LIMIT 256
-                """,
-                [room_id],
-            )
-        return [{'deleted_message_id': row[0], 'id': row[1]} for row in result]
+    if since:
+        result = db.conn.execute(
+            """
+            SELECT id, updated FROM messages
+            WHERE room = ? AND updated > ? AND data IS NULL
+            ORDER BY updated ASC LIMIT 256
+            """,
+            [room_id, since],
+        )
+    else:
+        result = db.conn.execute(
+            """
+            SELECT id, updated FROM messages
+            WHERE room = ? AND data IS NULL
+            ORDER BY updated DESC LIMIT 256
+            """,
+            [room_id],
+        )
+    return [{'deleted_message_id': row[0], 'id': row[1]} for row in result]
 
 
 def get_message_deprecated(room_id, since, limit=256):
     msgs = list()
-    with db.conn as conn:
-        result = None
-        if since:
-            # Handle id mapping from an old database import in case the client is requesting
-            # messages since some id from the old db.
-            if db.ROOM_IMPORT_HACKS and room_id in db.ROOM_IMPORT_HACKS:
-                (max_old_id, offset) = db.ROOM_IMPORT_HACKS[room_id]
-                if since <= max_old_id:
-                    since += offset
+    result = None
+    if since:
+        # Handle id mapping from an old database import in case the client is requesting
+        # messages since some id from the old db.
+        if db.ROOM_IMPORT_HACKS and room_id in db.ROOM_IMPORT_HACKS:
+            (max_old_id, offset) = db.ROOM_IMPORT_HACKS[room_id]
+            if since <= max_old_id:
+                since += offset
 
-            result = conn.execute(
-                """
-                SELECT * FROM message_details
-                WHERE room = ? AND id > ? AND data IS NOT NULL
-                ORDER BY id ASC LIMIT ?
-                """,
-                [room_id, since, limit],
-            )
-        else:
-            result = conn.execute(
-                """
-                SELECT * FROM message_details
-                WHERE room = ? AND data IS NOT NULL
-                ORDER BY id DESC LIMIT ?
-                """,
-                [room_id, limit],
-            )
-        for row in result:
-            data = utils.add_session_message_padding(row['data'], row['data_size'])
+        result = db.conn.execute(
+            """
+            SELECT * FROM message_details
+            WHERE room = ? AND id > ? AND data IS NOT NULL
+            ORDER BY id ASC LIMIT ?
+            """,
+            [room_id, since, limit],
+        )
+    else:
+        result = db.conn.execute(
+            """
+            SELECT * FROM message_details
+            WHERE room = ? AND data IS NOT NULL
+            ORDER BY id DESC LIMIT ?
+            """,
+            [room_id, limit],
+        )
+    for row in result:
+        data = utils.add_session_message_padding(row['data'], row['data_size'])
 
-            msgs.append(
-                {
-                    'server_id': row[0],
-                    'public_key': row[-1],
-                    'timestamp': utils.convert_time(row['posted']),
-                    'data': utils.encode_base64(data),
-                    'signature': utils.encode_base64(row['signature']),
-                }
-            )
+        msgs.append(
+            {
+                'server_id': row[0],
+                'public_key': row[-1],
+                'timestamp': utils.convert_time(row['posted']),
+                'data': utils.encode_base64(data),
+                'signature': utils.encode_base64(row['signature']),
+            }
+        )
     return msgs
