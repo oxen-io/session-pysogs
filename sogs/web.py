@@ -2,6 +2,11 @@ import flask
 
 app = flask.Flask(__name__)
 
+from . import routes
+from . import onion_request
+from . import legacy_routes
+from . import cleanup
+
 # Monkey-patch app.get/post/etc. for Flask <2 compatibility
 if not hasattr(flask.Flask, 'post'):
 

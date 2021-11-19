@@ -10,7 +10,7 @@ ap.add_argument('--mod', type=str)
 ap.add_argument('--room', type=str)
 
 args = ap.parse_args()
-with db.conn as conn:
+with db.sqlite_connect() as conn:
     if args.add:
         if args.room:
             conn.execute(
