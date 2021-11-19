@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from . import config
 from . import db
 from . import utils
@@ -54,7 +56,7 @@ class Room:
     def __init__(self, row=None, *, id=None, token=None):
         """
         Constructs a room from a pre-retrieved row *or* via lookup of a room token or id.  When
-        looking up this raises a KeyError if no room with that token/id exists.
+        looking up this raises a NoSuchRoom if no room with that token/id exists.
         """
         if sum(x is not None for x in (row, id, token)) != 1:
             raise ValueError("Room() error: exactly one of row/id/token must be specified")
@@ -118,9 +120,25 @@ class Room:
             (self.id, time.time() - cutoff),
         ).fetchone()[0]
 
+    def messages_size(self):
+        """Returns the number and total size (in bytes) of non-deleted messages currently stored in
+        this room.  Size is reflects the size of uploaded message bodies, not necessarily the size
+        actually used to store the message, and does not include various ancillary metadata such as
+        edit history, the signature, deleted entries, etc."""
+        return db.conn.execute(
+            "SELECT COUNT(*), COALESCE(SUM(data_size), 0) FROM messages WHERE room = ? AND data IS NOT NULL",
+            (self.id,),
+        ).fetchone()[0:2]
+
+    def attachments_size(self):
+        """Returns the number and aggregate size of attachments currently stored in this room"""
+        return db.conn.execute(
+            "SELECT COUNT(*), COALESCE(SUM(size), 0) FROM files WHERE room = ?", (self.id,)
+        ).fetchone()[0:2]
+
     def get_mods(self, user=None):
         """
-        Returns a list of session_ids who are moderators of the room.
+        Returns a list of session_ids who are moderators of the room, with permission checking.
 
         `user` is the current User or the user's session id, and controls how we return hidden
         moderators: if the given user is an admin then all hidden mods/admins are included.  If the
@@ -156,6 +174,63 @@ class Room:
             mods.append(curr_session_id)
 
         return mods
+
+    def get_all_moderators(self):
+        """Returns a tuple of lists of all moderators and admins of the room.  This only includes
+        direct room admins/mods, not global mods/admins.  This is not meant to be user-facing; use
+        get_mods() for that instead.
+
+        Returns a tuple of 4 lists:
+
+        - visible mods
+        - visible admins
+        - hidden mods
+        - hidden admins
+        """
+
+        m, hm, a, ha = [], [], [], []
+        for session_id, visible, admin in db.conn.execute(
+            """
+            SELECT session_id, o.visible_mod, o.admin
+            FROM user_permission_overrides o JOIN users ON o.user = users.id
+            WHERE room = ? AND o.moderator
+            """,
+            [self.id],
+        ):
+            ((a if admin else m) if visible else (ha if admin else hm)).append(session_id)
+
+        return (m, a, hm, ha)
+
+    def set_moderator(self, user: User, *, admin=False, visible=True):
+        """Sets `user` as a moderator or admin of this room.  Replaces current
+        admin/moderator/visible status with the new values if the user is already a moderator/admin
+        of the room."""
+
+        with db.conn as conn:
+            conn.execute(
+                """
+                INSERT INTO user_permission_overrides (room, user, moderator, admin, visible_mod)
+                VALUES (?, ?, TRUE, ?, ?)
+                ON CONFLICT (room, user) DO UPDATE SET
+                    moderator = excluded.moderator,
+                    admin = excluded.admin,
+                    visible_mod = excluded.visible_mod
+                """,
+                (self.id, user.id, admin, visible),
+            )
+
+    def remove_moderator(self, user: User):
+        """Remove `user` as a moderator/admin of this room."""
+
+        with db.conn as conn:
+            conn.execute(
+                """
+                UPDATE user_permission_overrides
+                SET moderator = FALSE, admin = FALSE, visible_mod = TRUE
+                WHERE room = ? AND user = ?
+                """,
+                (self.id, user.id),
+            )
 
 
 class File:
@@ -307,6 +382,28 @@ class User:
             with db.conn:
                 self._touch()
 
+    def set_moderator(self, *, admin=False, visible=False):
+        """
+        Make this user a global moderator or admin.  If the user is already a global mod/admin then
+        their status is updated according to the given arguments (that is, this can promote/demote).
+        """
+
+        with db.conn as conn:
+            conn.execute(
+                "UPDATE users SET moderator = TRUE, admin = ?, visible_mod = ? WHERE id = ?",
+                (admin, visible, self.id),
+            )
+        self.global_admin = admin
+        self.global_moderator = True
+        self.visible_mod = visible
+
+    def remove_moderator(self):
+        """Removes this user's global moderator/admin status, if set."""
+        with db.conn as conn:
+            conn.execute("UPDATE users SET moderator = FALSE, admin = FALSE WHERE id = ?", self.id)
+        self.global_admin = False
+        self.global_moderator = False
+
 
 def get_rooms():
     """get a list of all rooms"""
@@ -324,6 +421,27 @@ def get_readable_rooms(pubkey):
         [pubkey],
     )
     return [Room(row) for row in result]
+
+
+def get_all_global_moderators():
+    """
+    Returns all global moderators; for internal user only as this doesn't filter out hidden
+    mods/admins.
+
+    Returns a 4-tuple of lists of:
+    - visible mods
+    - visible admins
+    - hidden mods
+    - hidden admins
+    """
+
+    m, hm, a, ha = [], [], [], []
+    for row in db.conn.execute("SELECT * FROM users WHERE moderator"):
+        u = User(row=row)
+        l = ((a if u.global_admin else m) if u.visible_mod else (ha if u.global_admin else hm))
+        l.append(u)
+
+    return (m, a, hm, ha)
 
 
 def check_permission(
