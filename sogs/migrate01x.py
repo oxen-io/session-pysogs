@@ -277,9 +277,6 @@ def migrate01x(conn):
                     # file_id is an integer value but stored in a TEXT field, of course.
                     file_id = int(file_id)
 
-                    # Timestamp is milliseconds since unix epoch, of course.
-                    timestamp /= 1000.0
-
                     path = "files/{}_files/{}".format(room_token, file_id)
                     try:
                         size = os.path.getsize(path)
@@ -487,3 +484,8 @@ def migrate01x(conn):
             total_msgs, total_files, total_rooms
         )
     )
+
+    try:
+        os.rename("database.db", "old-database.db")
+    except Exception as e:
+        logger.warn("Failed to rename database.db -> old-database.db: {}".format(e))
