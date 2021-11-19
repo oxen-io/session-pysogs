@@ -9,7 +9,7 @@ from flask import request, abort
 
 
 def message_body(data: bytes):
-    """ given a bunch of bytes for a protobuf message return the message's body """
+    """given a bunch of bytes for a protobuf message return the message's body"""
     msg = protobuf.DataMessage()
     msg.ParseFromString(data)
     return msg.body

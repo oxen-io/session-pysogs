@@ -52,9 +52,10 @@ def migrate01x(conn):
 
         used_room_hacks, used_file_hacks = False, False
 
-        ins_user = (
-            "INSERT INTO users (session_id, last_active) VALUES (?, 0.0) ON CONFLICT DO NOTHING"
-        )
+        ins_user = """
+            INSERT INTO users (session_id, last_active) VALUES (?, 0.0)
+            ON CONFLICT (session_id) DO NOTHING
+            """
 
         total_rooms, total_msgs, total_files = 0, 0, 0
 
