@@ -7,7 +7,7 @@ from . import db
 from . import config
 from . import model
 from . import crypto
-from . import logging
+from . import logging  # noqa: F401
 
 ap = AP(epilog="""
 
@@ -25,7 +25,7 @@ Examples:
      # List room info:
     python3 -msogs -L
 
-""", formatter_class=RawDescriptionHelpFormatter)
+""", formatter_class=RawDescriptionHelpFormatter)  # noqa: E501
 
 actions = ap.add_mutually_exclusive_group()
 

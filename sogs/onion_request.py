@@ -90,7 +90,11 @@ def handle_onionreq_plaintext(body):
                 response = app.full_dispatch_request()
             if response.status_code == 200:
                 data = response.get_data()
-                app.logger.debug("Onion sub-request for {} returned success, {} bytes".format(endpoint, len(data)))
+                app.logger.debug(
+                    "Onion sub-request for {} returned success, {} bytes".format(
+                        endpoint, len(data)
+                    )
+                )
                 return data
             app.logger.warn(
                 "Onion sub-request for {} {} returned status {}".format(

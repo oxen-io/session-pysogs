@@ -126,7 +126,11 @@ class Room:
         actually used to store the message, and does not include various ancillary metadata such as
         edit history, the signature, deleted entries, etc."""
         return db.conn.execute(
-            "SELECT COUNT(*), COALESCE(SUM(data_size), 0) FROM messages WHERE room = ? AND data IS NOT NULL",
+            """
+            SELECT COUNT(*), COALESCE(SUM(data_size), 0)
+            FROM messages
+            WHERE room = ? AND data IS NOT NULL
+            """,
             (self.id,),
         ).fetchone()[0:2]
 
@@ -438,8 +442,8 @@ def get_all_global_moderators():
     m, hm, a, ha = [], [], [], []
     for row in db.conn.execute("SELECT * FROM users WHERE moderator"):
         u = User(row=row)
-        l = ((a if u.global_admin else m) if u.visible_mod else (ha if u.global_admin else hm))
-        l.append(u)
+        lst = (a if u.global_admin else m) if u.visible_mod else (ha if u.global_admin else hm)
+        lst.append(u)
 
     return (m, a, hm, ha)
 
