@@ -2,6 +2,7 @@ import flask
 
 app = flask.Flask(__name__)
 
+from . import logging
 from . import routes
 from . import onion_request
 from . import legacy_routes

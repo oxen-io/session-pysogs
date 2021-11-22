@@ -7,6 +7,7 @@ from . import db
 from . import config
 from . import model
 from . import crypto
+from . import logging
 
 ap = AP(epilog="""
 
