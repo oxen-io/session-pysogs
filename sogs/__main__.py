@@ -9,7 +9,8 @@ from . import model
 from . import crypto
 from . import logging  # noqa: F401
 
-ap = AP(epilog="""
+ap = AP(
+    epilog="""
 
 Examples:
 
@@ -25,7 +26,9 @@ Examples:
      # List room info:
     python3 -msogs -L
 
-""", formatter_class=RawDescriptionHelpFormatter)  # noqa: E501
+""",  # noqa: E501
+    formatter_class=RawDescriptionHelpFormatter,
+)
 
 actions = ap.add_mutually_exclusive_group()
 
@@ -81,6 +84,9 @@ actions.add_argument(
     '--list-global-mods', '-M', action='store_true', help="List global moderators/admins"
 )
 ap.add_argument(
+    "--verbose", "-v", action='store_true', help="Show more information for some commands"
+)
+ap.add_argument(
     "--yes", action='store_true', help="Don't prompt for confirmation for some commands, just do it"
 )
 
@@ -109,16 +115,21 @@ URL: {config.URL_BASE}/{room.token}?public_key={crypto.server_pubkey_hex}
 Messages: {msgs} ({msgs_size:.1f} MB)
 Attachments: {files} ({files_size:.1f} MB)
 Active users: {active[0]} (7d), {active[1]} (14d) {active[2]} (30d)
-Moderators: {admins} admins ({len(ha)} hidden), {mods} moderators ({len(hm)} hidden):"""
+Moderators: {admins} admins ({len(ha)} hidden), {mods} moderators ({len(hm)} hidden)""",
+        end='',
     )
-    for id in a:
-        print(f"    - {id} (admin)")
-    for id in ha:
-        print(f"    - {id} (hidden admin)")
-    for id in m:
-        print(f"    - {id} (moderator)")
-    for id in hm:
-        print(f"    - {id} (hidden moderator)")
+    if args.verbose and any((m, a, hm, ha)):
+        print(":")
+        for id in a:
+            print(f"    - {id} (admin)")
+        for id in ha:
+            print(f"    - {id} (hidden admin)")
+        for id in m:
+            print(f"    - {id} (moderator)")
+        for id in hm:
+            print(f"    - {id} (hidden moderator)")
+    else:
+        print()
 
 
 db.conn = db.sqlite_connect()
