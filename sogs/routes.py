@@ -42,7 +42,7 @@ app.url_map.converters['SessionID'] = SessionIDConverter
 
 @app.get("/")
 def serve_index():
-    rooms = model.get_rooms()
+    rooms = model.get_readable_rooms()
     if len(rooms) == 0:
         return render_template('setup.html')
     return render_template(
@@ -52,11 +52,22 @@ def serve_index():
 
 @app.get("/view/room/<Room:room>")
 def view_room(room):
-    return render_template("view_room.html", room=room.token, room_url=utils.server_url(room.token))
+    if not room.default_read:
+        abort(http.FORBIDDEN)
+
+    return render_template(
+        "view_room.html",
+        room=room.token,
+        room_url=utils.server_url(room.token),
+        show_recent=config.HTTP_SHOW_RECENT,
+    )
 
 
 @app.get("/view/<Room:room>/invite.png")
 def serve_invite_qr(room):
+    if not room.default_read:
+        abort(http.FORBIDDEN)
+
     img = qrencode.encode(utils.server_url(room.token))
     data = BytesIO()
     img = img[-1].resize((512, 512), NEAREST)
@@ -79,6 +90,7 @@ def get_recent_room_messages(room):
 
     msgs = list()
     with db.conn as conn:
+        # FIXME: need to check user permissions here too
         rows = conn.execute(
             """
             SELECT

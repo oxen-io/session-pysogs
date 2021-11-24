@@ -56,3 +56,7 @@ IMPORT_ADJUST_MS = 0
 # file containing "bad" words for filtration.  This feature in temporary and will be removed once
 # more robust bot/spam filtering is available.
 BAD_WORDS_FILE = 'badwords.txt'
+
+# If true, show recent messages for public rooms when accessed via a web browser.  If false only
+# show the QR code and URL but no recent messages.
+HTTP_SHOW_RECENT = True

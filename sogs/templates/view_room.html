@@ -5,13 +5,15 @@
   <img src="/view/{{room}}/invite.png" style="margin: 2em" />
   <pre>{{room_url}}</pre>
 </center>
-<ul id="messages">
-  <li>loading...</li>
-</ul>
-<script>
-  window.view_room = "{{room}}";
-</script>
-<script src="/static/protobuf.min.js"></script>
-<script src="/static/view_room.js"></script>
+{% if show_recent %}
+  <ul id="messages">
+    <li>loading...</li>
+  </ul>
+  <script>
+    window.view_room = "{{room}}";
+  </script>
+  <script src="/static/protobuf.min.js"></script>
+  <script src="/static/view_room.js"></script>
+{%endif%}
 
 {% endblock %}
