@@ -4,3 +4,4 @@ skip-string-normalization = true
 skip-magic-trailing-comma = true
 target-version = ['py38']
 include = '\.py$'
+extend-exclude = 'sogs/session_pb2.py'
