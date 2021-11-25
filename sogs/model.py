@@ -415,15 +415,21 @@ def get_rooms():
     return [Room(row) for row in result]
 
 
-def get_readable_rooms(pubkey):
-    """get a list of rooms that a user can access"""
-    result = db.conn.execute(
-        """
-        SELECT rooms.* FROM user_permissions perm JOIN rooms ON rooms.id = room
-        WHERE session_id = ? AND perm.read AND NOT perm.banned
-        """,
-        [pubkey],
-    )
+def get_readable_rooms(pubkey=None):
+    """
+    Get a list of rooms that a user can access; if pubkey is None then return all publicly readable
+    rooms.
+    """
+    if pubkey is None:
+        result = db.conn.execute("SELECT * FROM rooms WHERE read")
+    else:
+        result = db.conn.execute(
+            """
+            SELECT rooms.* FROM user_permissions perm JOIN rooms ON rooms.id = room
+            WHERE session_id = ? AND perm.read AND NOT perm.banned
+            """,
+            [pubkey],
+        )
     return [Room(row) for row in result]
 
 
