@@ -214,7 +214,7 @@ def handle_comapct_poll():
         try:
             r = handle_one_compact_poll(req)
         except HTTPException as e:
-            r = {'status_code': e.get_response().status_code}
+            r = {'status_code': e.get_response().status_code, 'results': []}
         result.append(r)
 
     return jsonify({'status_code': 200, 'results': result})
