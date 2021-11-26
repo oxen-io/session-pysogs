@@ -102,16 +102,13 @@ def legacy_check_user_room(
 
 @app.get("/legacy/rooms")
 def get_rooms():
-    """serve room list for user"""
-    pubkey = get_pubkey_from_token(request.headers.get("Authorization"))
-    if not pubkey:
-        abort(http.BAD_REQUEST)
+    """serve public room list for user"""
 
     return jsonify(
         {
             'status_code': 200,
             # Legacy Session only wants token (returned as 'id') and name:
-            'rooms': [{'id': r.token, 'name': r.name} for r in model.get_readable_rooms(pubkey)],
+            'rooms': [{'id': r.token, 'name': r.name} for r in model.get_readable_rooms()],
         }
     )
 
