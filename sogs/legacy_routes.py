@@ -394,15 +394,15 @@ def handle_legacy_delete_messages():
             if res.fetchone()[0]:
                 abort(http.UNAUTHORIZED)
 
-            conn.execute(
-                """
-                UPDATE messages SET data = NULL, data_size = NULL, signature = NULL
-                WHERE room = ? AND id IN ({})
-                """.format(
-                    in_params
-                ),
-                [room.id, *ids],
-            )
+        conn.execute(
+            """
+            UPDATE messages SET data = NULL, data_size = NULL, signature = NULL
+            WHERE room = ? AND id IN ({})
+            """.format(
+                in_params
+            ),
+            [room.id, *ids],
+        )
 
     return jsonify({'status_code': 200})
 
