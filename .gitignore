@@ -4,6 +4,7 @@
 *.db-wal
 .DS_Store
 /uploads
+/key_x25519
 __pycache__
 *.pyc
 
