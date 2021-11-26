@@ -214,7 +214,15 @@ def handle_comapct_poll():
         try:
             r = handle_one_compact_poll(req)
         except HTTPException as e:
-            r = {'status_code': e.get_response().status_code, 'results': []}
+            # Hack for Session: if there isn't a full fleshed out response then Session just ignores
+            # the response (even when it's an error response), so we send this fake response:
+            r = {
+                'status_code': e.get_response().status_code,
+                'room_id': req.get('room_id', ''),
+                'messages': [],
+                'deletions': [],
+                'moderators': [],
+            }
         result.append(r)
 
     return jsonify({'status_code': 200, 'results': result})
