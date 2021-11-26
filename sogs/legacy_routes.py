@@ -363,10 +363,11 @@ def handle_legacy_get_file(file_id):
 
 
 @app.post("/legacy/delete_messages")
-def handle_legacy_delete_messages():
+def handle_legacy_delete_messages(ids=None):
     user, room = legacy_check_user_room(read=True)
 
-    ids = request.json['ids']
+    if ids is None:
+        ids = request.json['ids']
     if len(ids) > 997:
         # 997 because we need two binds for room/user, 999 is the maximum number of bind parameters
         # for sqlite (pre-3.32), and because that's already a huge number of things to delete at
@@ -402,6 +403,11 @@ def handle_legacy_delete_messages():
         )
 
     return jsonify({'status_code': 200})
+
+
+@app.delete("/legacy/messages/<int:msgid>")
+def handle_legacy_single_delete(msgid):
+    return handle_legacy_delete_messages(ids=[msgid])
 
 
 def ban_checks():
