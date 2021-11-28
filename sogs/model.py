@@ -534,6 +534,7 @@ def add_post_to_room(user_id, room_id, data, sig, rate_limit_size=5, rate_limit_
 
 
 def get_deletions_deprecated(room_id, since):
+    since = utils.maybe_apply_post_id_hax(room_id, since)
     if since:
         result = db.conn.execute(
             """
@@ -552,20 +553,14 @@ def get_deletions_deprecated(room_id, since):
             """,
             [room_id],
         )
-    return [{'deleted_message_id': row[0], 'id': row[1]} for row in result]
+    return [{'deleted_message_id': int(row[0]), 'id': int(row[1])} for row in result]
 
 
 def get_message_deprecated(room_id, since, limit=256):
     msgs = list()
     result = None
+    since = utils.maybe_apply_post_id_hax(room_id, since)
     if since:
-        # Handle id mapping from an old database import in case the client is requesting
-        # messages since some id from the old db.
-        if db.ROOM_IMPORT_HACKS and room_id in db.ROOM_IMPORT_HACKS:
-            (max_old_id, offset) = db.ROOM_IMPORT_HACKS[room_id]
-            if since <= max_old_id:
-                since += offset
-
         result = db.conn.execute(
             """
             SELECT * FROM message_details

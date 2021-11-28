@@ -4,6 +4,7 @@ from . import crypto
 from . import config
 from . import http
 from . import session_pb2 as protobuf
+from . import db
 
 from flask import request, abort
 
@@ -59,6 +60,15 @@ def get_session_id(flask_request):
 
 def server_url(room):
     return '{}/{}?public_key={}'.format(config.URL_BASE, room or '', crypto.server_pubkey_hex)
+
+
+def maybe_apply_post_id_hax(room_id, since):
+    """Handle id mapping from an old database import in case the client is requesting messages since some id from the old db."""
+    if since and db.ROOM_IMPORT_HACKS and room_id in db.ROOM_IMPORT_HACKS:
+        (max_old_id, offset) = db.ROOM_IMPORT_HACKS[room_id]
+        if since <= max_old_id:
+            since += offset
+    return since
 
 
 SIGNATURE_SIZE = 64
