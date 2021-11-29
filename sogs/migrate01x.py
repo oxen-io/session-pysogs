@@ -233,7 +233,17 @@ def migrate01x(conn):
                     )
                 )
 
-                cur.execute("UPDATE rooms SET updates = ? WHERE id = ?", (updated, room_id))
+                # Old SOGS has a bug where it inserts duplicate deletion tombstones (see above), but
+                # this means that our updated count might not be large enough for existing Session
+                # clients to not break: they will be fetching deletion ids > X, but if we have 100
+                # duplicates, the room's update counter would be X-100 and so existing clients
+                # wouldn't actually fetch any new deletions until the counter catches up.  Fix that
+                # up by incrementing the updates counter if necessary.
+                top_del_id = rconn.execute("SELECT MAX(id) FROM deleted_messages").fetchone()[0]
+
+                cur.execute(
+                    "UPDATE rooms SET updates = ? WHERE id = ?", (max(updated, top_del_id), room_id)
+                )
 
                 # If we have to offset rowids then make sure the hack table exists and insert our
                 # hack.
