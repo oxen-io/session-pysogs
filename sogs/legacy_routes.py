@@ -8,6 +8,7 @@ from . import utils
 from . import config
 from . import http
 from . import filtration
+from .signal import send_signal, Signal
 
 import os
 import time
@@ -401,6 +402,8 @@ def handle_legacy_delete_messages(ids=None):
             ),
             [room.id, *ids],
         )
+
+    send_signal(Signal.MESSAGE_DELETED)
 
     return jsonify({'status_code': 200})
 

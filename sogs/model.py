@@ -3,6 +3,7 @@ from __future__ import annotations
 from . import config
 from . import db
 from . import utils
+from .signal import send_signal, Signal
 
 import time
 
@@ -530,7 +531,10 @@ def add_post_to_room(user_id, room_id, data, sig, rate_limit_size=5, rate_limit_
         result = conn.execute("SELECT posted, id FROM messages WHERE id = ?", [lastid])
         row = result.fetchone()
         msg = {'timestamp': utils.convert_time(row['posted']), 'server_id': row['id']}
-        return msg
+
+    send_signal(Signal.MESSAGE_POSTED)
+
+    return msg
 
 
 def get_deletions_deprecated(room_id, since):
