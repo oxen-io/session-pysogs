@@ -22,6 +22,10 @@ URL_BASE = 'http://example.net'
 # match, without the leading 05 byte).
 OMQ_LISTEN = 'tcp://*:22028'
 
+# Address (usually a unix socket) where the main oxenmq process listens for internal connections
+# from other uwsgi workers (to deliver event notifications).  This must not be publicly accessible!
+OMQ_INTERNAL = 'ipc://./omq.sock'
+
 # The log level.
 LOG_LEVEL = logging.WARNING
 

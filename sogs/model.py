@@ -3,7 +3,7 @@ from __future__ import annotations
 from . import config
 from . import db
 from . import utils
-from .signal import send_signal, Signal
+from .omq import send_mule
 
 import time
 
@@ -532,7 +532,7 @@ def add_post_to_room(user_id, room_id, data, sig, rate_limit_size=5, rate_limit_
         row = result.fetchone()
         msg = {'timestamp': utils.convert_time(row['posted']), 'server_id': row['id']}
 
-    send_signal(Signal.MESSAGE_POSTED)
+    send_mule("message_posted", msg["server_id"])
 
     return msg
 

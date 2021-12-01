@@ -5,7 +5,6 @@ import time
 from .web import app
 from . import db
 from . import config
-from .signal import Signal
 
 # Cleanup interval, in seconds.
 INTERVAL = 10
