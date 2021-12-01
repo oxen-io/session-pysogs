@@ -2,14 +2,15 @@ import logging
 import os
 import time
 
-from .timer import timer
 from .web import app
 from . import db
 from . import config
 
+# Cleanup interval, in seconds.
+INTERVAL = 10
 
-@timer(10)
-def test_timer(signal):
+
+def cleanup():
     with app.app_context():
         app.logger.debug("Pruning expired items")
         files = prune_files()

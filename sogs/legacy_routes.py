@@ -8,6 +8,7 @@ from . import utils
 from . import config
 from . import http
 from . import filtration
+from .omq import send_mule
 
 import os
 import time
@@ -401,6 +402,8 @@ def handle_legacy_delete_messages(ids=None):
             ),
             [room.id, *ids],
         )
+
+    send_mule("messages_deleted", ids)
 
     return jsonify({'status_code': 200})
 

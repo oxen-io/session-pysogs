@@ -16,6 +16,16 @@ KEY_FILE = 'key_x25519'
 # a free Let's Encrypt certificate.
 URL_BASE = 'http://example.net'
 
+# Address (IP+port) where oxenmq listens for incoming connections.  Can also be specified as a list
+# to listen on multiple addresses.  Note that the connection is encrypted, using the same keys as
+# the main server.  Clients must use the key corresponding to their session_id (i.e. pubkey should
+# match, without the leading 05 byte).
+OMQ_LISTEN = 'tcp://*:22028'
+
+# Address (usually a unix socket) where the main oxenmq process listens for internal connections
+# from other uwsgi workers (to deliver event notifications).  This must not be publicly accessible!
+OMQ_INTERNAL = 'ipc://./omq.sock'
+
 # The log level.
 LOG_LEVEL = logging.WARNING
 
