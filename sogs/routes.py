@@ -89,9 +89,9 @@ def get_recent_room_messages(room):
     limit = utils.get_int_param('limit', 100, min=1, max=256)
 
     msgs = list()
-    with db.conn as conn:
+    with db.tx() as cur:
         # FIXME: need to check user permissions here too
-        rows = conn.execute(
+        rows = cur.execute(
             """
             SELECT
                 messages.id, session_id, posted, edited, data, data_size, signature

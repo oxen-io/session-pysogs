@@ -1,15 +1,84 @@
 from . import config
-from .postfork import postfork
 import os
 import sqlite3
 import logging
+import threading
 
-
-conn = None
 HAVE_FILE_ID_HACKS = False
 # roomid => (max, offset).  Max is the highest message id that was in the old table; offset is the
 # value we add to ids <= that max to calculate the new database message id.
 ROOM_IMPORT_HACKS = {}
+
+
+_conns = threading.local()
+
+
+def get_conn():
+    """
+    Returns a thread-local database connection, establishing the first time it is called within a
+    thread.  This typically does not need to be called, instead use `cur()` or `tx()`.
+    """
+    if not hasattr(_conns, 'conn'):
+        _conns.conn = sqlite_connect()
+    return _conns.conn
+
+
+def cur():
+    """
+    Returns a cursor on a thread-local database connection, establishing a new connection the first
+    time it is called in thread.  A transaction is *not* started; if the code using the cursor is
+    intending to change the database you probably want to use `tx()` instead.
+    """
+    return get_conn().cursor()
+
+
+def execute(query, *parameters):
+    """
+    Constructs a cursor, executes a query on it, and returns the cursor.  Note that this is *not* in
+    a transaction and so should only be used for selects.
+    """
+    c = cur()
+    c.execute(query, *parameters)
+    return c
+
+
+class LocalTxContextManager:
+    """
+    Context manager that begins a transaction and yields a cursor on entry, commits on normal exit,
+    and rolls back on exit via exception.
+
+    Internally this uses named savepoints with unique names, which allow transactions to be nested.
+
+    Intended use is with a context to wrap code in a transaction (using the `tx` alias):
+
+        with db.tx() as cur:
+            ...
+    """
+
+    def __init__(self):
+        self.conn = get_conn()
+
+    def __enter__(self):
+        if not hasattr(_conns, 'sp_num'):
+            _conns.sp_num = 1
+        else:
+            _conns.sp_num += 1
+
+        self.sp_num = _conns.sp_num
+        self.conn.execute(f"SAVEPOINT sogs_sp_{self.sp_num}")
+
+        return self.conn.cursor()
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        if exc_type is None:
+            self.conn.execute(f"RELEASE SAVEPOINT sogs_sp_{self.sp_num}")
+        else:
+            self.conn.execute(f"ROLLBACK TO SAVEPOINT sogs_sp_{self.sp_num}")
+        _conns.sp_num -= 1
+
+
+# Shorter alias for convenience
+tx = LocalTxContextManager
 
 
 def sqlite_connect(path=config.DB_PATH):
@@ -114,12 +183,3 @@ def check_for_hacks(conn):
 
 
 database_init()
-
-
-@postfork
-def sqlite_connect_postfork():
-    """
-    Establishes a new sqlite per-process database connection after wsgi forks us.
-    """
-    global conn
-    conn = sqlite_connect()

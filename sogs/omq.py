@@ -14,8 +14,8 @@ mule_conn = None
 def make_omq():
     omq = oxenmq.OxenMQ(privkey=crypto._privkey.encode(), pubkey=crypto.server_pubkey.encode())
 
-    # We have multiple workers talking to the mule, so we *must* use ephemeral ids to not replace each
-    # others' connections.
+    # We have multiple workers talking to the mule, so we *must* use ephemeral ids to not replace
+    # each others' connections.
     omq.ephemeral_routing_id = True
 
     return omq
@@ -44,7 +44,7 @@ def start_oxenmq():
     app.logger.debug(f"Starting oxenmq connection to mule in worker {uwsgi.worker_id()}")
 
     omq.start()
-    app.logger.debug(f"Started, connecting to mule")
+    app.logger.debug("Started, connecting to mule")
     mule_conn = omq.connect_remote(oxenmq.Address(config.OMQ_INTERNAL))
 
     app.logger.debug(f"worker {uwsgi.worker_id()} connected to mule OMQ")

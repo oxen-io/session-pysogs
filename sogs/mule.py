@@ -1,4 +1,3 @@
-import uwsgi
 import traceback
 import oxenmq
 from oxenc import bt_deserialize
@@ -9,8 +8,7 @@ import functools
 from .web import app
 from . import cleanup
 from . import config
-from . import crypto
-from .omq import omq
+from . import omq as o
 
 # This is the uwsgi "mule" that handles things not related to serving HTTP requests:
 # - it holds the oxenmq instance (with its own interface into sogs)
@@ -42,7 +40,7 @@ def inproc_fail(connid, reason):
 
 
 def setup_omq():
-    global omq, mule_conn
+    omq = o.omq
 
     app.logger.debug("Mule setting up omq")
     if isinstance(config.OMQ_LISTEN, list):
@@ -73,7 +71,7 @@ def setup_omq():
     # Connect mule to itself so that if something the mule does wants to send something to the mule
     # it will work.  (And so be careful not to recurse!)
     app.logger.debug("Mule connecting to self")
-    mule_conn = omq.connect_inproc(on_success=None, on_failure=inproc_fail)
+    o.mule_conn = omq.connect_inproc(on_success=None, on_failure=inproc_fail)
 
 
 def log_exceptions(f):

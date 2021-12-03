@@ -62,9 +62,9 @@ class Room:
         if sum(x is not None for x in (row, id, token)) != 1:
             raise ValueError("Room() error: exactly one of row/id/token must be specified")
         if token is not None:
-            row = db.conn.execute("SELECT * FROM rooms WHERE token = ?", (token,)).fetchone()
+            row = db.execute("SELECT * FROM rooms WHERE token = ?", (token,)).fetchone()
         elif id is not None:
-            row = db.conn.execute("SELECT * FROM rooms WHERE id = ?", (id,)).fetchone()
+            row = db.execute("SELECT * FROM rooms WHERE id = ?", (id,)).fetchone()
         if not row:
             raise NoSuchRoom(token if token is not None else id)
 
@@ -109,6 +109,11 @@ class Room:
             self._fetch_image_id = None
         return self._image
 
+    @property
+    def info(self):
+        """a dict containing all info needed for serializing a room over zmq"""
+        return {'id': self.id, 'token': self.token}
+
     def active_users(self, cutoff=config.ROOM_DEFAULT_ACTIVE_THRESHOLD * 86400):
         """
         Queries the number of active users in the past `cutoff` seconds.  Defaults to
@@ -116,7 +121,7 @@ class Room:
         removed, so going beyond config.ROOM_ACTIVE_PRUNE_THRESHOLD days is useless.
         """
 
-        return db.conn.execute(
+        return db.execute(
             "SELECT COUNT(*) FROM room_users WHERE room = ? AND last_active >= ?",
             (self.id, time.time() - cutoff),
         ).fetchone()[0]
@@ -126,7 +131,7 @@ class Room:
         this room.  Size is reflects the size of uploaded message bodies, not necessarily the size
         actually used to store the message, and does not include various ancillary metadata such as
         edit history, the signature, deleted entries, etc."""
-        return db.conn.execute(
+        return db.execute(
             """
             SELECT COUNT(*), COALESCE(SUM(data_size), 0)
             FROM messages
@@ -137,7 +142,7 @@ class Room:
 
     def attachments_size(self):
         """Returns the number and aggregate size of attachments currently stored in this room"""
-        return db.conn.execute(
+        return db.execute(
             "SELECT COUNT(*), COALESCE(SUM(size), 0) FROM files WHERE room = ?", (self.id,)
         ).fetchone()[0:2]
 
@@ -160,7 +165,7 @@ class Room:
             None if user is None else user.session_id if isinstance(user, User) else user
         )
 
-        for session_id, visible, admin in db.conn.execute(
+        for session_id, visible, admin in db.execute(
             """
             SELECT session_id, visible_mod, admin FROM user_permissions
             WHERE room = ? AND moderator
@@ -194,7 +199,7 @@ class Room:
         """
 
         m, hm, a, ha = [], [], [], []
-        for session_id, visible, admin in db.conn.execute(
+        for session_id, visible, admin in db.execute(
             """
             SELECT session_id, o.visible_mod, o.admin
             FROM user_permission_overrides o JOIN users ON o.user = users.id
@@ -211,8 +216,8 @@ class Room:
         admin/moderator/visible status with the new values if the user is already a moderator/admin
         of the room."""
 
-        with db.conn as conn:
-            conn.execute(
+        with db.tx() as cur:
+            cur.execute(
                 """
                 INSERT INTO user_permission_overrides (room, user, moderator, admin, visible_mod)
                 VALUES (?, ?, TRUE, ?, ?)
@@ -227,8 +232,8 @@ class Room:
     def remove_moderator(self, user: User):
         """Remove `user` as a moderator/admin of this room."""
 
-        with db.conn as conn:
-            conn.execute(
+        with db.tx() as cur:
+            cur.execute(
                 """
                 UPDATE user_permission_overrides
                 SET moderator = FALSE, admin = FALSE, visible_mod = TRUE
@@ -262,7 +267,7 @@ class File:
         if sum(x is not None for x in (id, row)) != 1:
             raise ValueError("File() error: exactly one of id/row is required")
         if id is not None:
-            row = db.conn.execute("SELECT * FROM files WHERE id = ?", (id,)).fetchone()
+            row = db.execute("SELECT * FROM files WHERE id = ?", (id,)).fetchone()
             if not row:
                 raise NoSuchFile(id)
 
@@ -338,21 +343,19 @@ class User:
 
         self._touched = False
         if session_id is not None:
-            row = db.conn.execute(
-                "SELECT * FROM users WHERE session_id = ?", (session_id,)
-            ).fetchone()
+            row = db.execute("SELECT * FROM users WHERE session_id = ?", (session_id,)).fetchone()
 
             if not row and autovivify:
-                with db.conn as conn:
-                    conn.execute("INSERT INTO users (session_id) VALUES (?)", (session_id,))
-                    row = conn.execute(
+                with db.tx() as cur:
+                    cur.execute("INSERT INTO users (session_id) VALUES (?)", (session_id,))
+                    row = cur.execute(
                         "SELECT * FROM users WHERE session_id = ?", (session_id,)
                     ).fetchone()
-                    # No need to re-touch this user since we just created them:
-                    self._touched = True
+                # No need to re-touch this user since we just created them:
+                self._touched = True
 
         elif id is not None:
-            row = db.conn.execute("SELECT * FROM users WHERE id = ?", (id,)).fetchone()
+            row = db.execute("SELECT * FROM users WHERE id = ?", (id,)).fetchone()
 
         if row is None:
             raise NoSuchUser(session_id if session_id is not None else id)
@@ -365,10 +368,11 @@ class User:
         )
 
         if touch:
-            self._touch()
+            with db.tx() as cur:
+                self._touch(cur)
 
-    def _touch(self):
-        db.conn.execute(
+    def _touch(self, cur):
+        cur.execute(
             """
             UPDATE users SET last_active = ((julianday('now') - 2440587.5)*86400.0)
             WHERE id = ?
@@ -384,8 +388,8 @@ class User:
         to True.
         """
         if not self._touched or force:
-            with db.conn:
-                self._touch()
+            with db.tx() as cur:
+                self._touch(cur)
 
     def set_moderator(self, *, admin=False, visible=False):
         """
@@ -393,8 +397,8 @@ class User:
         their status is updated according to the given arguments (that is, this can promote/demote).
         """
 
-        with db.conn as conn:
-            conn.execute(
+        with db.tx() as cur:
+            cur.execute(
                 "UPDATE users SET moderator = TRUE, admin = ?, visible_mod = ? WHERE id = ?",
                 (admin, visible, self.id),
             )
@@ -404,15 +408,15 @@ class User:
 
     def remove_moderator(self):
         """Removes this user's global moderator/admin status, if set."""
-        with db.conn as conn:
-            conn.execute("UPDATE users SET moderator = FALSE, admin = FALSE WHERE id = ?", self.id)
+        with db.tx() as cur:
+            cur.execute("UPDATE users SET moderator = FALSE, admin = FALSE WHERE id = ?", self.id)
         self.global_admin = False
         self.global_moderator = False
 
 
 def get_rooms():
     """get a list of all rooms"""
-    result = db.conn.execute("SELECT * FROM rooms ORDER BY token")
+    result = db.execute("SELECT * FROM rooms ORDER BY token")
     return [Room(row) for row in result]
 
 
@@ -422,9 +426,9 @@ def get_readable_rooms(pubkey=None):
     rooms.
     """
     if pubkey is None:
-        result = db.conn.execute("SELECT * FROM rooms WHERE read")
+        result = db.execute("SELECT * FROM rooms WHERE read")
     else:
-        result = db.conn.execute(
+        result = db.execute(
             """
             SELECT rooms.* FROM user_permissions perm JOIN rooms ON rooms.id = room
             WHERE session_id = ? AND perm.read AND NOT perm.banned
@@ -447,7 +451,7 @@ def get_all_global_moderators():
     """
 
     m, hm, a, ha = [], [], [], []
-    for row in db.conn.execute("SELECT * FROM users WHERE moderator"):
+    for row in db.execute("SELECT * FROM users WHERE moderator"):
         u = User(row=row)
         lst = (a if u.global_admin else m) if u.visible_mod else (ha if u.global_admin else hm)
         lst.append(u)
@@ -480,14 +484,13 @@ def check_permission(
         user = User(session_id=user, autovivify=True, touch=True)
     user.touch()
 
-    result = db.conn.execute(
+    row = db.execute(
         """
         SELECT banned, read, write, upload, moderator, admin FROM user_permissions
         WHERE room = ? AND user = ?
         """,
         [room.id if isinstance(room, Room) else room, user.id],
-    )
-    row = result.fetchone()
+    ).fetchone()
 
     if row['admin']:
         return True
@@ -509,9 +512,9 @@ def add_post_to_room(user_id, room_id, data, sig, rate_limit_size=5, rate_limit_
     """insert a post into a room from a user given room id and user id
     trims off padding and stores as needed
     """
-    with db.conn as conn:
+    with db.tx() as cur:
         since_limit = time.time() - rate_limit_interval
-        result = conn.execute(
+        result = cur.execute(
             "SELECT COUNT(*) FROM messages WHERE room = ? AND user = ? AND posted >= ?",
             [room_id, user_id, since_limit],
         )
@@ -523,12 +526,12 @@ def add_post_to_room(user_id, room_id, data, sig, rate_limit_size=5, rate_limit_
         data_size = len(data)
         data = utils.remove_session_message_padding(data)
 
-        result = conn.execute(
+        result = cur.execute(
             "INSERT INTO messages(room, user, data, data_size, signature) VALUES(?, ?, ?, ?, ?)",
             [room_id, user_id, data, data_size, sig],
         )
         lastid = result.lastrowid
-        result = conn.execute("SELECT posted, id FROM messages WHERE id = ?", [lastid])
+        result = cur.execute("SELECT posted, id FROM messages WHERE id = ?", [lastid])
         row = result.fetchone()
         msg = {'timestamp': utils.convert_time(row['posted']), 'server_id': row['id']}
 
@@ -539,7 +542,7 @@ def add_post_to_room(user_id, room_id, data, sig, rate_limit_size=5, rate_limit_
 
 def get_deletions_deprecated(room_id, since):
     if since:
-        result = db.conn.execute(
+        result = db.execute(
             """
             SELECT id, updated FROM messages
             WHERE room = ? AND updated > ? AND data IS NULL
@@ -548,7 +551,7 @@ def get_deletions_deprecated(room_id, since):
             [room_id, since],
         )
     else:
-        result = db.conn.execute(
+        result = db.execute(
             """
             SELECT id, updated FROM messages
             WHERE room = ? AND data IS NULL
@@ -570,7 +573,7 @@ def get_message_deprecated(room_id, since, limit=256):
             if since <= max_old_id:
                 since += offset
 
-        result = db.conn.execute(
+        result = db.execute(
             """
             SELECT * FROM message_details
             WHERE room = ? AND id > ? AND data IS NOT NULL
@@ -579,7 +582,7 @@ def get_message_deprecated(room_id, since, limit=256):
             [room_id, since, limit],
         )
     else:
-        result = db.conn.execute(
+        result = db.execute(
             """
             SELECT * FROM message_details
             WHERE room = ? AND data IS NOT NULL
