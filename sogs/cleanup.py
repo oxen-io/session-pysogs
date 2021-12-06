@@ -25,17 +25,16 @@ def cleanup():
 
 
 def prune_files():
-    with db.conn as conn:
+    with db.tx() as cur:
         # Would love to use a single DELETE ... RETURNING here, but that requires sqlite 3.35+.
         now = time.time()
-        cur = conn.cursor()
         cur.execute("SELECT path FROM files WHERE expiry < ?", (now,))
         to_remove = [row[0] for row in cur]
 
         if not to_remove:
             return 0
 
-        conn.execute("DELETE FROM files WHERE expiry <= ?", (now,))
+        cur.execute("DELETE FROM files WHERE expiry <= ?", (now,))
 
     # Committed the transaction, so the files are gone: now go ahead and remove them from disk.
     unlink_count = 0
@@ -58,8 +57,7 @@ def prune_files():
 
 
 def prune_message_history():
-    with db.conn as conn:
-        cur = conn.cursor()
+    with db.tx() as cur:
         cur.execute(
             "DELETE FROM message_history WHERE replaced < ?",
             (time.time() - config.MESSAGE_HISTORY_PRUNE_THRESHOLD * 86400,),
@@ -72,8 +70,7 @@ def prune_message_history():
 
 
 def prune_room_activity():
-    with db.conn as conn:
-        cur = conn.cursor()
+    with db.tx() as cur:
         cur.execute(
             "DELETE FROM room_users WHERE last_active < ?",
             (time.time() - config.ROOM_ACTIVE_PRUNE_THRESHOLD * 86400,),
@@ -86,9 +83,8 @@ def prune_room_activity():
 
 
 def apply_permission_updates():
-    with db.conn as conn:
+    with db.tx() as cur:
         now = time.time()
-        cur = conn.cursor()
         cur.execute(
             """
             INSERT INTO user_permission_overrides (room, user, read, write, upload)

@@ -88,8 +88,8 @@ def legacy_check_user_room(
             abort(http.FORBIDDEN)
 
     if update_activity:
-        with db.conn as conn:
-            conn.execute(
+        with db.tx() as cur:
+            cur.execute(
                 """
                 INSERT INTO room_users (user, room) VALUES (?, ?)
                 ON CONFLICT(user, room) DO UPDATE
@@ -278,12 +278,11 @@ def process_legacy_file_upload_for_room(
         # Begin a transaction; if this context exits with exception we want to roll back the
         # database addition; we catch *outside* the context so that we catch on commit, as well, so
         # that we also clean up the stored file on disk if the transaction fails to commit.
-        with db.conn:
+        with db.tx() as cur:
             expiry = None if lifetime is None else time.time() + lifetime
 
             # Insert the file row first, but with nonsense path because we want to put the ID in the
             # path, which we won't have until after the insert; we'll come back and update it.
-            cur = db.conn.cursor()
             cur.execute(
                 """
                 INSERT INTO files (room, uploader, size, expiry, filename, path)
@@ -334,8 +333,8 @@ def handle_legacy_store_file():
 def handle_legacy_upload_room_image(room):
     user, room = legacy_check_user_room(write=True, upload=True, moderator=True)
     file_id = process_legacy_file_upload_for_room(user, room, lifetime=None)
-    with db.conn:
-        db.conn.execute("UPDATE rooms SET image = ? WHERE id = ?", [file_id, room.id])
+    with db.tx() as cur:
+        cur.execute("UPDATE rooms SET image = ? WHERE id = ?", [file_id, room.id])
     return jsonify({'status_code': 200, 'result': file_id})
 
 
@@ -343,12 +342,12 @@ def handle_legacy_upload_room_image(room):
 def handle_legacy_get_file(file_id):
     user, room = legacy_check_user_room(read=True)
 
-    with db.conn as conn:
-        row = conn.execute(
+    with db.tx() as cur:
+        row = cur.execute(
             "SELECT path FROM files WHERE room = ? AND id = ?", (room.id, file_id)
         ).fetchone()
         if not row and db.HAVE_FILE_ID_HACKS:
-            row = conn.execute(
+            row = cur.execute(
                 """
                 SELECT path FROM files WHERE id = (
                     SELECT file FROM file_id_hacks WHERE room = ? AND old_file_id = ?)
@@ -379,10 +378,10 @@ def handle_legacy_delete_messages(ids=None):
 
     is_moderator = model.check_permission(user, room, moderator=True)
 
-    with db.conn as conn:
+    with db.tx() as cur:
         if not is_moderator:
             # If not a moderator then we only proceed if all of the messages are the user's own:
-            res = conn.execute(
+            res = cur.execute(
                 """
                 SELECT EXISTS(SELECT * FROM messages WHERE room = ? AND user != ? AND id IN ({}))
                 """.format(
@@ -393,7 +392,7 @@ def handle_legacy_delete_messages(ids=None):
             if res.fetchone()[0]:
                 abort(http.UNAUTHORIZED)
 
-        conn.execute(
+        cur.execute(
             """
             UPDATE messages SET data = NULL, data_size = NULL, signature = NULL
             WHERE room = ? AND id IN ({})
@@ -512,8 +511,7 @@ def handle_legacy_unban(session_id):
     except model.NoSuchUser:
         abort(http.NOT_FOUND)
 
-    with db.conn as conn:
-        cur = conn.cursor()
+    with db.tx() as cur:
         cur.execute(
             "UPDATE user_permission_overrides SET banned = FALSE WHERE room = ? AND user = ?",
             (room.id, to_unban.id),
@@ -534,7 +532,7 @@ def handle_legacy_banlist():
 
     # If you are a moderator then we show you everything; if you are banned we show you just
     # yourself; otherwise we show you nothing.
-    row = db.conn.execute(
+    row = db.execute(
         "SELECT banned, moderator FROM user_permissions WHERE room = ? AND user = ?",
         (room.id, user.id),
     ).fetchone()
@@ -543,7 +541,7 @@ def handle_legacy_banlist():
     if banned:
         bans.append(user.session_id)
     elif mod:
-        rows = db.conn.execute(
+        rows = db.execute(
             "SELECT session_id FROM user_permissions WHERE room = ? AND banned", (room.id,)
         )
         bans = [row[0] for row in rows]
@@ -569,8 +567,8 @@ def handle_legacy_add_admin():
         abort(http.BAD_REQUEST)
 
     mod = model.User(session_id=session_id, autovivify=True)
-    with db.conn as conn:
-        conn.execute(
+    with db.tx() as cur:
+        cur.execute(
             """
             INSERT INTO user_permission_overrides (user, room, admin) VALUES (?, ?, TRUE)
             ON CONFLICT (room, user) DO UPDATE SET admin = TRUE
@@ -596,8 +594,8 @@ def handle_legacy_remove_admin(session_id):
     except model.NoSuchUser:
         abort(http.NOT_FOUND)
 
-    with db.conn as conn:
-        conn.execute(
+    with db.tx() as cur:
+        cur.execute(
             """
             UPDATE user_permission_overrides SET moderator = FALSE, admin = FALSE
             WHERE user = ? AND room = ?

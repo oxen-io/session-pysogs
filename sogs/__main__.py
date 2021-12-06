@@ -132,7 +132,6 @@ Moderators: {admins} admins ({len(ha)} hidden), {mods} moderators ({len(hm)} hid
         print()
 
 
-db.conn = db.sqlite_connect()
 if args.add_room:
     if not re.fullmatch(r'[\w-]{1,64}', args.add_room):
         print(
@@ -141,15 +140,15 @@ if args.add_room:
         )
         sys.exit(1)
 
-    with db.conn as conn:
-        try:
-            conn.execute(
+    try:
+        with db.tx() as cur:
+            cur.execute(
                 "INSERT INTO rooms(token, name, description) VALUES(?, ?, ?)",
                 [args.add_room, args.name or args.add_room, args.description],
             )
-        except sqlite3.IntegrityError:
-            print(f"Error: room '{args.add_room}' already exists!", file=sys.stderr)
-            sys.exit(1)
+    except sqlite3.IntegrityError:
+        print(f"Error: room '{args.add_room}' already exists!", file=sys.stderr)
+        sys.exit(1)
     print(f"Created room {args.add_room}:")
     print_room(model.Room(token=args.add_room))
 
@@ -166,8 +165,7 @@ elif args.delete_room:
     else:
         res = input("Are you sure you want to delete this room? [yN] ")
     if res.startswith("y") or res.startswith("Y"):
-        with db.conn:
-            cur = db.conn.cursor()
+        with db.tx() as cur:
             cur.execute("DELETE FROM rooms WHERE token = ?", [args.delete_room])
             count = cur.rowcount
         print("Room deleted.")
