@@ -56,7 +56,7 @@ def legacy_check_user_room(
     is specified any extra keyword arguments (which would be passed to check_permissions) are
     ignored.
 
-    Any other arguments are passed to model.check_permission (e.g. `read=True`).  We enforce here
+    Any other arguments are passed to Room.check_permission (e.g. `read=True`).  We enforce here
     that you pass at least one such permission (unless using `no_perms`); if you really need
     all-false (e.g. to only do ban check) then pass `read=False`.
     """
@@ -84,7 +84,7 @@ def legacy_check_user_room(
     user = model.User(session_id=pubkey, autovivify=True, touch=update_activity)
 
     if not no_perms:
-        if not model.check_permission(user, room, **perms):
+        if not room.check_permission(user, **perms):
             abort(http.FORBIDDEN)
 
     if update_activity:
@@ -159,12 +159,11 @@ def legacy_auth_token_challenge():
 
     token = utils.make_legacy_token(user.session_id)
     pk = utils.decode_hex_or_b64(user.session_id[2:], 32)
-    ct = crypto.server_encrypt(pk, token)
-    return jsonify(
+    return utils.jsonify_with_base64(
         {
             'status_code': 200,
             'challenge': {
-                'ciphertext': utils.encode_base64(ct),
+                'ciphertext': crypto.server_encrypt(pk, token),
                 'ephemeral_public_key': crypto.server_pubkey_base64,
             },
         }
@@ -189,7 +188,7 @@ def handle_post_legacy_message():
     msg['public_key'] = user.session_id
     msg['data'] = req.get('data')
     msg['signature'] = req.get('signature')
-    return jsonify({'status_code': 200, 'message': msg})
+    return utils.jsonify_with_base64({'status_code': 200, 'message': msg})
 
 
 @app.get("/legacy/messages")
@@ -199,8 +198,11 @@ def handle_legacy_get_messages():
 
     user, room = legacy_check_user_room(read=True)
 
-    return jsonify(
-        {'status_code': 200, 'messages': model.get_message_deprecated(room.id, from_id, limit)}
+    return utils.jsonify_with_base64(
+        {
+            'status_code': 200,
+            'messages': model.get_messages_deprecated(room, user, since=from_id, limit=limit),
+        }
     )
 
 
@@ -223,7 +225,7 @@ def handle_comapct_poll():
             }
         result.append(r)
 
-    return jsonify({'status_code': 200, 'results': result})
+    return utils.jsonify_with_base64({'status_code': 200, 'results': result})
 
 
 def handle_one_compact_poll(req):
@@ -231,9 +233,9 @@ def handle_one_compact_poll(req):
         get_pubkey_from_token(req.get('auth_token')) or '', req.get('room_id', ''), read=True
     )
 
-    messages = model.get_message_deprecated(room.id, req.get('from_message_server_id'))
+    messages = model.get_messages_deprecated(room, user, since=req.get('from_message_server_id'))
 
-    deletions = model.get_deletions_deprecated(room.id, req.get('from_deletion_server_id'))
+    deletions = model.get_deletions_deprecated(room, req.get('from_deletion_server_id'))
 
     mods = room.get_mods(user)
 
@@ -376,7 +378,7 @@ def handle_legacy_delete_messages(ids=None):
 
     in_params = ",".join("?" * len(ids))
 
-    is_moderator = model.check_permission(user, room, moderator=True)
+    is_moderator = room.check_permission(user, moderator=True)
 
     with db.tx() as cur:
         if not is_moderator:
@@ -437,7 +439,7 @@ def apply_ban(conn, user, room, to_ban):
         ).fetchone()[0]
     )
 
-    if is_mod and not model.check_permission(user, room, admin=True):
+    if is_mod and not room.check_permission(user, admin=True):
         app.logger.warn(
             "Cannot ban {} from {}: the ban target is a room moderator, "
             "but the ban initiator ({}) is not an admin".format(

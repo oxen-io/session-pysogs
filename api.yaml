@@ -1265,7 +1265,7 @@ components:
                 The session ID of the user who posted this message.  Omitted in contexts where the
                 information isn't available or isn't useful or available, such as in the
                 confirmation of submitting a post.
-        timestamp:
+        posted:
           type: number
           format: double
           description: >
@@ -1280,9 +1280,26 @@ components:
           type: integer
           format: int64
           description: >
-            Set to the room's current monotonic update counter when this message is first posted and
-            whenever the message is edited or deleted.  Thus an update to this value for the same
-            message indicates an update or deletion.
+            Set to the room's current monotonic update counter (*not* a timestamp!) when this
+            message is first posted and whenever the message is edited or deleted.  Thus an update
+            to this value for the same message indicates an update or deletion has occurred.
+        whisper:
+          type: boolean
+          description: >
+            If true then this message is a whisper for the current user (either directed at them, or
+            sent to all moderators).  Omitted when the message is not a whisper.
+        whisper_mods:
+          type: boolean
+          description: >
+            If true then this whisper is meant to be seen by all moderators, false for whispers
+            meant only for a specific user.  Omitted if the message is not a whisper.
+        whisper_to:
+          allOf:
+            - $ref: "#/components/schemas/SessionID"
+            - type: object
+              description: >
+                The session ID of the recipient of this whisper.  Omitted if the message is not a
+                whisper, or if the whisper is for all mods without a specific recipient.
         data:
           type: string
           format: byte
