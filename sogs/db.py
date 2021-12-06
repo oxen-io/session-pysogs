@@ -70,11 +70,17 @@ class LocalTxContextManager:
         return self.conn.cursor()
 
     def __exit__(self, exc_type, exc_value, traceback):
+        _conns.sp_num -= 1
         if exc_type is None:
+            # This can throw, which we want to propagate
             self.conn.execute(f"RELEASE SAVEPOINT sogs_sp_{self.sp_num}")
         else:
-            self.conn.execute(f"ROLLBACK TO SAVEPOINT sogs_sp_{self.sp_num}")
-        _conns.sp_num -= 1
+            # We're exiting the context by exception, so try to rollback but if this also fails then
+            # we want the original exception to propagate, not this one.
+            try:
+                self.conn.execute(f"ROLLBACK TO SAVEPOINT sogs_sp_{self.sp_num}")
+            except Exception:
+                pass
 
 
 # Shorter alias for convenience
