@@ -195,7 +195,7 @@ paths:
                   reason:
                     type: string
                     description: >
-                      A short, English-language string describing the reason the failure occured.
+                      A short, English-language string describing the reason the failure occurred.
                       This is for use as a fallback ONLY: clients should prefer to identify failure
                       through examining the other fields in the response and only use `reason` as a
                       user-facing failure description if no known failure is included (which might
@@ -619,8 +619,8 @@ paths:
                 global:
                   type: boolean
                   description: >
-                    If true then apply the the ban at the global level, i.e. server-wide. The
-                    invoking user must be a server-level moderator or admin.
+                    If true then apply the ban at the global level, i.e. server-wide. The invoking
+                    user must be a server-level moderator or admin.
                     
                     
                     Exclusive of `rooms`.
@@ -1011,13 +1011,25 @@ paths:
                         - type: array
                         - type: string
                           format: byte
-                      description: "The response body.  For responses with `content-type` set to `application/json` this will be the direct object or array response; for any other content otherwise this will be a string containing the base64-encoded response data."
+                      description: >
+                        The response body.  For responses with `content-type` set to
+                        `application/json` this will be the direct object or array response; for any
+                        other content otherwise this will be a string containing the base64-encoded
+                        response data.
 
   /sequence:
     post:
       tags: [Batch]
       summary: "Utility endpoint to submit a batch of sequenced, dependent requests."
-      description: "The requests are guaranteed to be performed sequentially in the order given in the request and will abort if any request does not return a status-`2xx` response.\n\nFor example, this can be used to ban and delete all of a user's messages by sequencing the ban followed by the delete_all: if the ban fails (e.g. because permission is denied) then the delete_all will not occur. The batch body and response are identical to the `/batch` endpoint; requests that are not carried out because of an earlier failure will have a response code of `412` (Precondition Failed)."
+      description: >
+        The requests are guaranteed to be performed sequentially in the order given in the request
+        and will abort if any request does not return a status-`2xx` response.
+        
+        For example, this can be used to ban and delete all of a user's messages by sequencing the
+        ban followed by the delete_all: if the ban fails (e.g. because permission is denied) then
+        the delete_all will not occur. The batch body and response are identical to the `/batch`
+        endpoint; requests that are not carried out because of an earlier failure will have a
+        response code of `412` (Precondition Failed)."
       requestBody:
         $ref: "#/paths/~1batch/post/requestBody"
       responses:
@@ -1028,7 +1040,9 @@ paths:
     post:
       tags: [Onion]
       summary: "Endpoint for submitting an encrypted onion request"
-      description: "The data is an onion-encrypted request for another endpoint, wrapped in an encrypted layer for this open group server"
+      description: >
+        The data is an onion-encrypted request for another endpoint, wrapped in an encrypted layer
+        for this open group server.
       requestBody:
         description: >
           Onion request endpoint information.  Note that the field descriptions here are *inside*
@@ -1087,7 +1101,7 @@ paths:
             Request completed.  The actual response will be base64-encoded and encrypted.  For
             requests that fail with an HTTP response (i.e. other than 200) the response will
             base64+decrypt to the json value `{"status_code": N}` where `N` is the integer error
-            code that occured (e.g. 404).
+            code that occurred (e.g. 404).
             
             For successful (i.e. 200) responses the returned value is whatever the body of the
             request returned.  (Returning headers via onion requests is not supported.)
