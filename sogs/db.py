@@ -127,6 +127,16 @@ def database_init():
         with open(config.DB_SCHEMA_FILE) as f, conn:
             conn.executescript(f.read())
 
+    # Database migrations/updates/etc.
+    migrate_v01x(conn)
+    add_new_columns(conn)
+    update_whisper_views(conn)
+    check_for_hacks(conn)
+
+    conn.close()
+
+
+def migrate_v01x(conn):
     n_rooms = conn.execute("SELECT COUNT(*) FROM rooms").fetchone()[0]
 
     # Migration from a v0.1.x database:
@@ -144,6 +154,8 @@ def database_init():
             )
             raise
 
+
+def add_new_columns(conn):
     # New columns that might need to be added:
     new_table_cols = {
         'messages': {
@@ -159,6 +171,8 @@ def database_init():
                 if name not in existing:
                     conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
 
+
+def update_whisper_views(conn):
     if 'whisper_to' not in (
         c['name'] for c in conn.execute("PRAGMA table_info('message_metadata')")
     ):
@@ -182,12 +196,6 @@ SELECT id, room, user, session_id, posted, edited, updated, whisper_to,
     FROM message_details
 """
             )
-
-    # Any future migrations (other than adding columns) goes here
-
-    check_for_hacks(conn)
-
-    conn.close()
 
 
 def check_for_hacks(conn):
