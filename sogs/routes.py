@@ -92,7 +92,7 @@ def get_recent_room_messages(room):
     # user by this point.
     user = None
 
-    if not room.check_permission(None, read=True):
+    if not room.check_permission(user, read=True):
         abort(http.FORBIDDEN)
 
-    return utils.jsonify_with_base64(room.get_messages_for(None, recent=True, limit=limit))
+    return utils.jsonify_with_base64(room.get_messages_for(user, recent=True, limit=limit))

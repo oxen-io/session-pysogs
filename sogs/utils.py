@@ -6,7 +6,7 @@ from . import http
 from . import session_pb2 as protobuf
 
 import json
-from flask import request, abort
+from flask import request, abort, Response
 
 
 def message_body(data: bytes):
@@ -60,8 +60,9 @@ def _json_b64_impl(val):
     if isinstance(val, list):
         return [_json_b64_impl(v) for v in val]
     if isinstance(val, dict):
-        return {_json_b64_impl(k): _json_b64_impl(v) for v, k in val.iter()}
+        return {_json_b64_impl(k): _json_b64_impl(v) for k, v in val.items()}
     return val
+
 
 def json_with_base64(val):
     """
@@ -76,7 +77,7 @@ def jsonify_with_base64(val):
     Returns a flask response set up for json (like flask.jsonify(...)), but uses json_with_base64
     for the encoding.
     """
-    return flask.Response(json_with_base64(val), mimetype="application/json")
+    return Response(json_with_base64(val), mimetype="application/json")
 
 
 def get_session_id(flask_request):

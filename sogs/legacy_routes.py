@@ -182,7 +182,7 @@ def handle_post_legacy_message():
     if filtration.should_drop_message_with_body(data):
         abort(http.FORBIDDEN)
 
-    msg = model.add_post_to_room(user.id, room.id, data, sig)
+    msg = model.add_post_to_room_deprecated(user, room, data, sig)
     if not msg:
         abort(http.TOO_MANY_REQUESTS)
     msg['public_key'] = user.session_id

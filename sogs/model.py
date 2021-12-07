@@ -588,7 +588,7 @@ def get_all_global_moderators():
 
 
 def add_post_to_room_deprecated(
-    user_id, room_id, data, sig, rate_limit_size=5, rate_limit_interval=16.0
+    user: User, room: Room, data: bytes, sig: bytes, rate_limit_size=5, rate_limit_interval=16.0
 ):
     """insert a post into a room from a user given room id and user id
     trims off padding and stores as needed
@@ -597,7 +597,7 @@ def add_post_to_room_deprecated(
         since_limit = time.time() - rate_limit_interval
         result = cur.execute(
             "SELECT COUNT(*) FROM messages WHERE room = ? AND user = ? AND posted >= ?",
-            [room_id, user_id, since_limit],
+            [room.id, user.id, since_limit],
         )
         row = result.fetchone()
         if row[0] >= rate_limit_size:
@@ -609,7 +609,7 @@ def add_post_to_room_deprecated(
 
         result = cur.execute(
             "INSERT INTO messages(room, user, data, data_size, signature) VALUES(?, ?, ?, ?, ?)",
-            [room_id, user_id, data, data_size, sig],
+            [room.id, user.id, data, data_size, sig],
         )
         lastid = result.lastrowid
         result = cur.execute("SELECT posted, id FROM messages WHERE id = ?", [lastid])
