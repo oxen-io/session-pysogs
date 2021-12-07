@@ -242,16 +242,24 @@ class Room:
         if opt_count > 1:
             raise RuntimeError("Cannot specify more than one of before=, after=, recent=")
 
-        cmp, order = ('>', 'ASC') if after is not None else ('<', 'DESC')
-
         for row in db.execute(
             f"""
             SELECT * FROM message_details
-            WHERE room = ? AND id {cmp} ? AND data IS NOT NULL
-                AND (whisper IS NULL OR whisper = ?{' OR whisper_mods' if mod else ''})
-            ORDER BY id {order} LIMIT ?
+            WHERE room = ? AND data IS NOT NULL
+                {'AND id > ?' if after else 'AND id < ?' if before else ''}
+                AND (
+                    whisper IS NULL
+                    {'OR whisper = ?' if user else ''}
+                    {'OR whisper_mods' if mod else ''}
+                )
+            ORDER BY id {'ASC' if after is not None else 'DESC'} LIMIT ?
             """,
-            (self.id, after if after is not None else before, user.id if user else None, limit),
+            (
+                self.id,
+                *(() if recent else (after,) if after is not None else (before,)),
+                *((user.id,) if user else ()),
+                limit,
+            ),
         ):
             data = utils.add_session_message_padding(row['data'], row['data_size'])
             msg = {x: row[x] for x in ('id', 'session_id', 'posted', 'updated', 'signature')}
