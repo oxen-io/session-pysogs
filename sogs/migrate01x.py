@@ -142,6 +142,13 @@ def migrate01x(conn):
                     else:
                         last_id = id
 
+                    # NB: the old database cleared the session ID when deleting a message (which is
+                    # bad, because no auditability at all), but also cleared it by setting it to the
+                    # fixed string 'deleted' because I guess the author didn't know NULL was a
+                    # thing?  We import them as such because our session_ids *can't* be null (and we
+                    # no longer clear it when deleting), but the data is gone from the imported
+                    # table so there's not much else we can do.
+
                     cur.execute(ins_user, (session_id,))
 
                     if config.IMPORT_ADJUST_MS:
