@@ -234,8 +234,7 @@ class Room:
         """
 
         mod = self.check_permission(user, moderator=True)
-        msgs = list()
-        result = None
+        msgs = []
 
         opt_count = sum((after is not None, before is not None, recent))
         if opt_count == 0:
@@ -244,7 +243,6 @@ class Room:
             raise RuntimeError("Cannot specify more than one of before=, after=, recent=")
 
         cmp, order = ('>', 'ASC') if after is not None else ('<', 'DESC')
-        or_whisper_mods = 'OR whisper_mods' if mod else ''
 
         for row in db.execute(
             f"""
@@ -265,6 +263,7 @@ class Room:
                 msg['whisper_mods'] = row['whisper_mods']
                 if row['whisper_to'] is not None:
                     msg['whisper_to'] = row['whisper_to']
+            msgs.append(msg)
 
         return msgs
 
@@ -644,13 +643,11 @@ def get_deletions_deprecated(room: Room, since):
 
 
 def get_messages_deprecated(room: Room, user: User, *, since, limit=256):
-    msgs = list()
-    result = None
     if since:
         # Handle id mapping from an old database import in case the client is requesting
         # messages since some id from the old db.
-        if db.ROOM_IMPORT_HACKS and room_id in db.ROOM_IMPORT_HACKS:
-            (max_old_id, offset) = db.ROOM_IMPORT_HACKS[room_id]
+        if db.ROOM_IMPORT_HACKS and room.id in db.ROOM_IMPORT_HACKS:
+            (max_old_id, offset) = db.ROOM_IMPORT_HACKS[room.id]
             if since <= max_old_id:
                 since += offset
 

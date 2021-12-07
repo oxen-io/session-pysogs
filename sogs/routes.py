@@ -2,7 +2,6 @@ from flask import abort, request, render_template, Response
 from .web import app
 from . import crypto
 from . import model
-from . import db
 from . import utils
 from . import config
 from . import http
