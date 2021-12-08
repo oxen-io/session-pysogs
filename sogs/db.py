@@ -1,4 +1,5 @@
 from . import config
+from . import crypto
 import os
 import sqlite3
 import logging
@@ -131,7 +132,11 @@ def database_init():
     migrate_v01x(conn)
     add_new_columns(conn)
     update_whisper_views(conn)
+    create_message_details_deleter(conn)
     check_for_hacks(conn)
+
+    # Make sure the system admin users exists
+    create_admin_user(conn)
 
     conn.close()
 
@@ -161,7 +166,8 @@ def add_new_columns(conn):
         'messages': {
             'whisper': 'INTEGER REFERENCES users(id)',
             'whisper_mods': 'BOOLEAN NOT NULL DEFAULT FALSE',
-        }
+        },
+        'user_permission_futures': {'banned': 'BOOLEAN'},
     }
 
     for table, cols in new_table_cols.items():
@@ -196,6 +202,26 @@ SELECT id, room, user, session_id, posted, edited, updated, whisper_to,
     FROM message_details
 """
             )
+
+
+def create_message_details_deleter(conn):
+    if not conn.execute(
+        """
+        SELECT EXISTS(
+            SELECT 1 FROM sqlite_master WHERE type = 'trigger' AND name = 'message_details_deleter'
+        )
+        """
+    ).fetchone()[0]:
+        conn.execute(
+            """
+CREATE TRIGGER message_details_deleter INSTEAD OF DELETE ON message_details
+FOR EACH ROW WHEN OLD.data IS NOT NULL
+BEGIN
+    UPDATE messages SET data = NULL, data_size = NULL, signature = NULL
+        WHERE id = OLD.id;
+END
+"""
+        )
 
 
 def check_for_hacks(conn):
@@ -233,6 +259,23 @@ def check_for_hacks(conn):
             ROOM_IMPORT_HACKS[room] = (id_max, offset)
     except Exception:
         pass
+
+
+def create_admin_user(conn):
+    """
+    We create a dummy user (with id 0) for system tasks such as changing moderators from
+    command-line, and give it the server's x25519 pubkey (with ff prepended, *not* 05) as a fake
+    default session_id.
+    """
+    conn.execute(
+        """
+        INSERT INTO users (id, session_id, moderator, admin, visible_mod)
+            VALUES (0, ?1, TRUE, TRUE, FALSE)
+        ON CONFLICT (id) DO UPDATE
+            SET session_id = ?1, moderator = TRUE, admin = TRUE, visible_mod = FALSE
+        """,
+        ("ff" + crypto.server_pubkey_hex,),
+    )
 
 
 database_init()

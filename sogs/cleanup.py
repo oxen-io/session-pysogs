@@ -87,12 +87,14 @@ def apply_permission_updates():
         now = time.time()
         cur.execute(
             """
-            INSERT INTO user_permission_overrides (room, user, read, write, upload)
-            SELECT room, user, read, write, upload FROM user_permission_futures WHERE at <= ?
+            INSERT INTO user_permission_overrides (room, user, read, write, upload, banned)
+            SELECT room, user, read, write, upload, banned FROM user_permission_futures
+                WHERE at <= ?
             ON CONFLICT (room, user) DO UPDATE SET
                 read = COALESCE(excluded.read, read),
                 write = COALESCE(excluded.write, write),
                 upload = COALESCE(excluded.upload, upload)
+                banned = COALESCE(excluded.banned, banned)
             """,
             (now,),
         )

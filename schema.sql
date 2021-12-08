@@ -114,7 +114,7 @@ CREATE TABLE files (
 );
 CREATE INDEX files_room ON files(room);
 CREATE INDEX files_expiry ON files(expiry);
--- When we delete a room all its files will have room set to NULL but we *also* need to make them
+-- When we delete a room all its files will have room set to NULL but we *also* need to mark them
 -- for immediate expiry so that the file pruner finds them to clean them up at the next cleanup
 -- check.
 CREATE TRIGGER room_expire_roomless AFTER UPDATE OF room ON files
@@ -156,6 +156,15 @@ SELECT messages.*, uposter.session_id, uwhisper.session_id AS whisper_to
     FROM messages
         JOIN users uposter ON messages.user = uposter.id
         LEFT JOIN users uwhisper ON messages.whisper = uwhisper.id;
+
+-- Delete trigger on message_details which lets us use a DELETE that gets transformed into an UPDATE
+-- that sets data, size, signature to NULL on the matched messages.
+CREATE TRIGGER message_details_deleter INSTEAD OF DELETE ON message_details
+FOR EACH ROW WHEN OLD.data IS NOT NULL
+BEGIN
+    UPDATE messages SET data = NULL, data_size = NULL, signature = NULL
+        WHERE id = OLD.id;
+END;
 
 -- View of `messages` that is useful for manually inspecting table contents by only returning the
 -- length (rather than raw bytes) for data/signature.
@@ -319,6 +328,7 @@ CREATE TABLE user_permission_futures (
     read BOOLEAN, /* Set this value @ at, if non-null */
     write BOOLEAN, /* Set this value @ at, if non-null */
     upload BOOLEAN, /* Set this value @ at, if non-null */
+    banned BOOLEAN, /* Set this value @ at, if non-null */
     PRIMARY KEY(room, user)
 ) WITHOUT ROWID;
 CREATE INDEX user_permissions_future_at ON user_permission_futures(at);
