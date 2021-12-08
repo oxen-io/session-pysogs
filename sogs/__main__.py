@@ -261,8 +261,7 @@ elif args.delete_moderators:
             u = model.User(session_id=sid)
             for room in rooms:
                 room.remove_moderator(u, removed_by=sysadmin)
-                print(
-                    f"Removed {u.session_id} as moderator/admin of {room.name} ({room.token})")
+                print(f"Removed {u.session_id} as moderator/admin of {room.name} ({room.token})")
 elif args.list_rooms:
     rooms = model.get_rooms()
     if rooms:
