@@ -127,6 +127,16 @@ def database_init():
         with open(config.DB_SCHEMA_FILE) as f, conn:
             conn.executescript(f.read())
 
+    # Database migrations/updates/etc.
+    migrate_v01x(conn)
+    add_new_columns(conn)
+    update_whisper_views(conn)
+    check_for_hacks(conn)
+
+    conn.close()
+
+
+def migrate_v01x(conn):
     n_rooms = conn.execute("SELECT COUNT(*) FROM rooms").fetchone()[0]
 
     # Migration from a v0.1.x database:
@@ -144,11 +154,48 @@ def database_init():
             )
             raise
 
-    # Any future migrations go here
 
-    check_for_hacks(conn)
+def add_new_columns(conn):
+    # New columns that might need to be added:
+    new_table_cols = {
+        'messages': {
+            'whisper': 'INTEGER REFERENCES users(id)',
+            'whisper_mods': 'BOOLEAN NOT NULL DEFAULT FALSE',
+        }
+    }
 
-    conn.close()
+    for table, cols in new_table_cols.items():
+        with conn:
+            existing = {c['name'] for c in conn.execute(f"PRAGMA table_info('{table}')")}
+            for name, definition in cols.items():
+                if name not in existing:
+                    conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
+
+
+def update_whisper_views(conn):
+    if 'whisper_to' not in (
+        c['name'] for c in conn.execute("PRAGMA table_info('message_metadata')")
+    ):
+        with conn:
+            conn.execute("DROP VIEW message_metadata")
+            conn.execute("DROP VIEW message_details")
+            conn.execute(
+                """
+CREATE VIEW message_details AS
+SELECT messages.*, uposter.session_id, uwhisper.session_id AS whisper_to
+    FROM messages
+        JOIN users uposter ON messages.user = uposter.id
+        LEFT JOIN users uwhisper ON messages.whisper = uwhisper.id
+"""
+            )
+            conn.execute(
+                """
+CREATE VIEW message_metadata AS
+SELECT id, room, user, session_id, posted, edited, updated, whisper_to,
+        length(data) AS data_unpadded, data_size, length(signature) as signature_length
+    FROM message_details
+"""
+            )
 
 
 def check_for_hacks(conn):

@@ -36,7 +36,9 @@ CREATE TABLE messages (
     updated INTEGER NOT NULL DEFAULT 0, /* set to the room's `updates` counter when posted/edited/deleted */
     data BLOB, /* Actual message content, not including trailing padding; set to null to delete a message */
     data_size INTEGER, /* The message size, including trailing padding (needed because the signature is over the padded data) */
-    signature BLOB /* Signature of `data` by `public_key`; set to null when deleting a message */
+    signature BLOB, /* Signature of `data` by `public_key`; set to null when deleting a message */
+    whisper INTEGER REFERENCES users(id), /* If set: this is a whisper meant for the given user */
+    whisper_mods BOOLEAN NOT NULL DEFAULT FALSE, /* If true: this is a whisper that all mods should see (may or may not have a `whisper` target) */
 );
 CREATE INDEX messages_room ON messages(room, posted);
 CREATE INDEX messages_updated ON messages(room, updated);
@@ -147,14 +149,19 @@ END;
 
 
 -- Effectively the same as `messages` except that it also includes the `session_id` from the users
--- table of the user who posted it, which we often need when returning a message list to clients.
+-- table of the user who posted it, and the session id of the whisper recipient (as `whisper_to`) if
+-- a directed whisper.
 CREATE VIEW message_details AS
-SELECT messages.*, users.session_id FROM messages JOIN users ON messages.user = users.id;
+SELECT messages.*, uposter.session_id, uwhisper.session_id AS whisper_to
+    FROM messages
+        JOIN users uposter ON messages.user = uposter.id
+        LEFT JOIN users uwhisper ON messages.whisper = uwhisper.id;
 
 -- View of `messages` that is useful for manually inspecting table contents by only returning the
 -- length (rather than raw bytes) for data/signature.
 CREATE VIEW message_metadata AS
-SELECT id, room, user, session_id, posted, edited, updated, length(data) AS data_unpadded, data_size, length(signature) as signature_length
+SELECT id, room, user, session_id, posted, edited, updated, whisper_to,
+        length(data) AS data_unpadded, data_size, length(signature) as signature_length
     FROM message_details;
 
 

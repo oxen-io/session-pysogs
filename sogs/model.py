@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Optional
+
 from . import config
 from . import db
 from . import utils
@@ -94,6 +96,7 @@ class Room:
             bool(row[c]) for c in ('read', 'write', 'upload')
         )
         self._image = None  # Retrieved on demand
+        self._perm_cache = {}
 
     @property
     def image(self):
@@ -126,6 +129,73 @@ class Room:
             (self.id, time.time() - cutoff),
         ).fetchone()[0]
 
+    def check_permission(
+        self,
+        user: Optional[User],
+        *,
+        admin=False,
+        moderator=False,
+        read=False,
+        write=False,
+        upload=False,
+    ):
+        """
+        Checks whether `user` has the required permissions for this room and isn't banned.  Returns
+        True if the user satisfies the permissions, false otherwise.  If no user is provided then
+        permissions are checked against the room's defaults.
+
+        Looked up permissions are cached within the Room instance so that looking up the same user
+        multiple times (i.e. from multiple parts of the code) does not re-query the database.
+
+        Named arguments are as follows:
+        - admin -- if true then the user must have admin access to the room
+        - moderator -- if true then the user must have moderator (or admin) access to the room
+        - read -- if true then the user must have read access
+        - write -- if true then the user must have write access
+        - upload -- if true then the user must have upload access
+
+        You can specify multiple permissions as True, in which case all must be satisfied.  If you
+        specify no permissions as required then the check only checks whether a user is banned but
+        otherwise requires no specific permission.
+        """
+
+        if user is None:
+            is_banned, can_read, can_write, can_upload, is_mod, is_admin = (
+                False,
+                self.default_read,
+                self.default_write,
+                self.default_upload,
+                False,
+                False,
+            )
+        else:
+            if user.id not in self._perm_cache:
+                row = db.execute(
+                    """
+                    SELECT banned, read, write, upload, moderator, admin FROM user_permissions
+                    WHERE room = ? AND user = ?
+                    """,
+                    [self.id, user.id],
+                ).fetchone()
+                self._perm_cache[user.id] = list(row)
+
+            is_banned, can_read, can_write, can_upload, is_mod, is_admin = self._perm_cache[user.id]
+
+        if is_admin:
+            return True
+        if admin:
+            return False
+        if is_mod:
+            return True
+        if moderator:
+            return False
+        return (
+            not is_banned
+            and (not read or can_read)
+            and (not write or can_write)
+            and (not upload or can_upload)
+        )
+
     def messages_size(self):
         """Returns the number and total size (in bytes) of non-deleted messages currently stored in
         this room.  Size is reflects the size of uploaded message bodies, not necessarily the size
@@ -139,6 +209,71 @@ class Room:
             """,
             (self.id,),
         ).fetchone()[0:2]
+
+    def get_messages_for(
+        self,
+        user: Optional[User],
+        *,
+        after: int = None,
+        before: int = None,
+        recent: bool = False,
+        limit: int = 256,
+    ):
+        """
+        Returns up to `limit` messages that `user` should see: that is, all non-deleted room
+        messages plus any whispers directed to the user and, if the user is a moderator, any
+        whispers meant to be displayed to moderators.
+
+        Exactly one of `after`, `begin`, or `recent` must be specified: `after=N` returns messages
+        with ids greater than N in ascending order; `before=N` returns messages with ids less than N
+        in descending order; `recent=True` returns the most recent messages in descending order.
+
+        Note that data and signature are returned as bytes, *not* base64 encoded.  Session message
+        padding *is* appended to the data field (i.e. this returns the full value, not the
+        padding-trimmed value actually stored in the database).
+        """
+
+        mod = self.check_permission(user, moderator=True)
+        msgs = []
+
+        opt_count = sum((after is not None, before is not None, recent))
+        if opt_count == 0:
+            raise RuntimeError("Exactly one of before=, after=, or recent= is required")
+        if opt_count > 1:
+            raise RuntimeError("Cannot specify more than one of before=, after=, recent=")
+
+        for row in db.execute(
+            f"""
+            SELECT * FROM message_details
+            WHERE room = ? AND data IS NOT NULL
+                {'AND id > ?' if after else 'AND id < ?' if before else ''}
+                AND (
+                    whisper IS NULL
+                    {'OR whisper = ?' if user else ''}
+                    {'OR whisper_mods' if mod else ''}
+                )
+            ORDER BY id {'ASC' if after is not None else 'DESC'} LIMIT ?
+            """,
+            (
+                self.id,
+                *(() if recent else (after,) if after is not None else (before,)),
+                *((user.id,) if user else ()),
+                limit,
+            ),
+        ):
+            data = utils.add_session_message_padding(row['data'], row['data_size'])
+            msg = {x: row[x] for x in ('id', 'session_id', 'posted', 'updated', 'signature')}
+            msg['data'] = data
+            if row['edited'] is not None:
+                msg['edited'] = row['edited']
+            if row['whisper_to'] is not None or row['whisper_mods']:
+                msg['whisper'] = True
+                msg['whisper_mods'] = row['whisper_mods']
+                if row['whisper_to'] is not None:
+                    msg['whisper_to'] = row['whisper_to']
+            msgs.append(msg)
+
+        return msgs
 
     def attachments_size(self):
         """Returns the number and aggregate size of attachments currently stored in this room"""
@@ -459,56 +594,9 @@ def get_all_global_moderators():
     return (m, a, hm, ha)
 
 
-def check_permission(
-    user, room, *, admin=False, moderator=False, read=False, write=False, upload=False
+def add_post_to_room_deprecated(
+    user: User, room: Room, data: bytes, sig: bytes, rate_limit_size=5, rate_limit_interval=16.0
 ):
-    """
-    Checks whether `user` has the required permissions for room `room`, and isn't banned.  Returns
-    True if the user satisfies the permissions, false otherwise.  `user` can be either a session_id
-    string, or a User instance; `room` can either be a Room instance or a numeric room id (but not a
-    room token).
-
-    Named arguments specify the permissions to require:
-    - admin -- if true then the user must have admin access to the room
-    - moderator -- if true then the user must have moderator (or admin) access to the room
-    - read -- if true then the user must have read access
-    - write -- if true then the user must have write access
-    - upload -- if true then the user must have upload access
-
-    You can specify multiple options as true, in which case all must be satisfied.  If you specify
-    no flags as required then the check only checks whether a user is banned but otherwise requires
-    no specific permission.
-    """
-
-    if not isinstance(user, User):
-        user = User(session_id=user, autovivify=True, touch=True)
-    user.touch()
-
-    row = db.execute(
-        """
-        SELECT banned, read, write, upload, moderator, admin FROM user_permissions
-        WHERE room = ? AND user = ?
-        """,
-        [room.id if isinstance(room, Room) else room, user.id],
-    ).fetchone()
-
-    if row['admin']:
-        return True
-    if admin:
-        return False
-    if row['moderator']:
-        return True
-    if moderator:
-        return False
-    return (
-        not row['banned']
-        and (not read or row['read'])
-        and (not write or row['write'])
-        and (not upload or row['upload'])
-    )
-
-
-def add_post_to_room(user_id, room_id, data, sig, rate_limit_size=5, rate_limit_interval=16.0):
     """insert a post into a room from a user given room id and user id
     trims off padding and stores as needed
     """
@@ -516,7 +604,7 @@ def add_post_to_room(user_id, room_id, data, sig, rate_limit_size=5, rate_limit_
         since_limit = time.time() - rate_limit_interval
         result = cur.execute(
             "SELECT COUNT(*) FROM messages WHERE room = ? AND user = ? AND posted >= ?",
-            [room_id, user_id, since_limit],
+            [room.id, user.id, since_limit],
         )
         row = result.fetchone()
         if row[0] >= rate_limit_size:
@@ -528,19 +616,19 @@ def add_post_to_room(user_id, room_id, data, sig, rate_limit_size=5, rate_limit_
 
         result = cur.execute(
             "INSERT INTO messages(room, user, data, data_size, signature) VALUES(?, ?, ?, ?, ?)",
-            [room_id, user_id, data, data_size, sig],
+            [room.id, user.id, data, data_size, sig],
         )
         lastid = result.lastrowid
         result = cur.execute("SELECT posted, id FROM messages WHERE id = ?", [lastid])
         row = result.fetchone()
-        msg = {'timestamp': utils.convert_time(row['posted']), 'server_id': row['id']}
+        msg = {'timestamp': utils.legacy_convert_time(row['posted']), 'server_id': row['id']}
 
     send_mule("message_posted", msg["server_id"])
 
     return msg
 
 
-def get_deletions_deprecated(room_id, since):
+def get_deletions_deprecated(room: Room, since):
     if since:
         result = db.execute(
             """
@@ -548,7 +636,7 @@ def get_deletions_deprecated(room_id, since):
             WHERE room = ? AND updated > ? AND data IS NULL
             ORDER BY updated ASC LIMIT 256
             """,
-            [room_id, since],
+            [room.id, since],
         )
     else:
         result = db.execute(
@@ -557,49 +645,33 @@ def get_deletions_deprecated(room_id, since):
             WHERE room = ? AND data IS NULL
             ORDER BY updated DESC LIMIT 256
             """,
-            [room_id],
+            [room.id],
         )
     return [{'deleted_message_id': row[0], 'id': row[1]} for row in result]
 
 
-def get_message_deprecated(room_id, since, limit=256):
-    msgs = list()
-    result = None
+def get_messages_deprecated(room: Room, user: User, *, since, limit=256):
     if since:
         # Handle id mapping from an old database import in case the client is requesting
         # messages since some id from the old db.
-        if db.ROOM_IMPORT_HACKS and room_id in db.ROOM_IMPORT_HACKS:
-            (max_old_id, offset) = db.ROOM_IMPORT_HACKS[room_id]
+        if db.ROOM_IMPORT_HACKS and room.id in db.ROOM_IMPORT_HACKS:
+            (max_old_id, offset) = db.ROOM_IMPORT_HACKS[room.id]
             if since <= max_old_id:
                 since += offset
 
-        result = db.execute(
-            """
-            SELECT * FROM message_details
-            WHERE room = ? AND id > ? AND data IS NOT NULL
-            ORDER BY id ASC LIMIT ?
-            """,
-            [room_id, since, limit],
-        )
-    else:
-        result = db.execute(
-            """
-            SELECT * FROM message_details
-            WHERE room = ? AND data IS NOT NULL
-            ORDER BY id DESC LIMIT ?
-            """,
-            [room_id, limit],
-        )
-    for row in result:
-        data = utils.add_session_message_padding(row['data'], row['data_size'])
+        msgs = room.get_messages_for(user, after=since, limit=limit)
 
-        msgs.append(
-            {
-                'server_id': row[0],
-                'public_key': row[-1],
-                'timestamp': utils.convert_time(row['posted']),
-                'data': utils.encode_base64(data),
-                'signature': utils.encode_base64(row['signature']),
-            }
-        )
-    return msgs
+    else:
+        msgs = room.get_messages_for(user, recent=True, limit=limit)
+
+    # Transform new API fields into legacy Session fields
+    return [
+        {
+            'server_id': m['id'],
+            'public_key': m['session_id'],
+            'timestamp': utils.legacy_convert_time(m['posted']),
+            'data': m['data'],
+            'signature': m['signature'],
+        }
+        for m in msgs
+    ]

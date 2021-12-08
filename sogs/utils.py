@@ -5,7 +5,8 @@ from . import config
 from . import http
 from . import session_pb2 as protobuf
 
-from flask import request, abort
+import json
+from flask import request, abort, Response
 
 
 def message_body(data: bytes):
@@ -53,6 +54,32 @@ def decode_hex_or_b64(data: bytes, size: int):
     raise ValueError("Invalid value: could not decode as hex or base64")
 
 
+def _json_b64_impl(val):
+    if isinstance(val, bytes):
+        return encode_base64(val)
+    if isinstance(val, list):
+        return [_json_b64_impl(v) for v in val]
+    if isinstance(val, dict):
+        return {_json_b64_impl(k): _json_b64_impl(v) for k, v in val.items()}
+    return val
+
+
+def json_with_base64(val):
+    """
+    Returns val encoded in json, but with any `bytes` values encoded as base64 strings.  Note that
+    this base64-conversion only supports following lists and dicts.
+    """
+    return json.dumps(_json_b64_impl(val))
+
+
+def jsonify_with_base64(val):
+    """
+    Returns a flask response set up for json (like flask.jsonify(...)), but uses json_with_base64
+    for the encoding.
+    """
+    return Response(json_with_base64(val), mimetype="application/json")
+
+
 def get_session_id(flask_request):
     return flask_request.headers.get("X-SOGS-Pubkey")
 
@@ -72,8 +99,8 @@ def make_legacy_token(session_id):
     return crypto.server_sign(session_id)
 
 
-def convert_time(float_time):
-    """take a float and convert it into something session likes"""
+def legacy_convert_time(float_time):
+    """take a float unix timestamp and convert it into something legacy Session likes"""
     return int(float_time * 1000)
 
 

@@ -1,8 +1,7 @@
-from flask import abort, request, jsonify, render_template, Response
+from flask import abort, request, render_template, Response
 from .web import app
 from . import crypto
 from . import model
-from . import db
 from . import utils
 from . import config
 from . import http
@@ -88,33 +87,11 @@ def get_recent_room_messages(room):
     """get list of recent messages"""
     limit = utils.get_int_param('limit', 100, min=1, max=256)
 
-    msgs = list()
-    with db.tx() as cur:
-        # FIXME: need to check user permissions here too
-        rows = cur.execute(
-            """
-            SELECT
-                messages.id, session_id, posted, edited, data, data_size, signature
-            FROM messages JOIN users ON messages.user = users.id
-            WHERE messages.room = (SELECT id FROM rooms WHERE token = ?1)
-                AND data IS NOT NULL
-            ORDER BY messages.id DESC LIMIT ?2
-            """,
-            (room.token, limit),
-        )
-        for id, session_id, posted, edited, data, data_size, signature in rows:
-            m = {
-                'id': id,
-                'session_id': session_id,
-                'timestamp': utils.convert_time(posted),
-                'signature': utils.encode_base64(signature),
-            }
-            if edited is not None:
-                m['edited'] = edited
-            if len(data) < data_size:
-                # Re-pad the message (we strip off padding when storing)
-                data += b'\x00' * (data_size - len(data))
-            m['data'] = utils.encode_base64(data)
-            msgs.append(m)
+    # FIXME: this is temporary, for the basic front-end; for proper implementation we should have a
+    # user by this point.
+    user = None
 
-    return jsonify(msgs)
+    if not room.check_permission(user, read=True):
+        abort(http.FORBIDDEN)
+
+    return utils.jsonify_with_base64(room.get_messages_for(user, recent=True, limit=limit))
