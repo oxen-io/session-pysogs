@@ -1075,7 +1075,9 @@ class User:
             raise BadPermission()
 
         with db.tx() as cur:
-            cur.execute("UPDATE users SET moderator = FALSE, admin = FALSE WHERE id = ?", self.id)
+            cur.execute(
+                "UPDATE users SET moderator = FALSE, admin = FALSE WHERE id = ?", (self.id,)
+            )
         self.global_admin = False
         self.global_moderator = False
 

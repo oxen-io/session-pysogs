@@ -18,7 +18,7 @@ Examples:
     python3 -msogs --add-room xyz --name 'XYZ Room'
 
     # Add 2 admins to each of rooms 'xyz' and 'abc':
-    python3 -msogs --rooms abc xyz --add-moderators 050123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef 0500112233445566778899aabbccddeeff00112233445566778899aabbccddeeff --admin
+    python3 -msogs --rooms abc xyz --admin --add-moderators 050123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef 0500112233445566778899aabbccddeeff00112233445566778899aabbccddeeff
 
      # Add a global moderator visible as a moderator of all rooms:
     python3 -msogs --add-moderators 050123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef --rooms=+ --visible
@@ -179,17 +179,20 @@ elif args.add_moderators:
         sys.exit(1)
     for a in args.add_moderators:
         if not re.fullmatch(r'05[A-Fa-f0-9]{64}', a):
-            print("Error: '{}' is not a valid session id".format(a), file=sys.stderr)
+            print(f"Error: '{a}' is not a valid session id", file=sys.stderr)
             sys.exit(1)
     if len(args.rooms) > 1 and ('*' in args.rooms or '+' in args.rooms):
         print(
             "Error: '+'/'*' arguments to --rooms cannot be used with other rooms", file=sys.stderr
         )
         sys.exit(1)
+
+    sysadmin = model.SystemUser()
+
     if args.rooms == ['+']:
         for sid in args.add_moderators:
             u = model.User(session_id=sid)
-            u.set_moderator(admin=args.admin, visible=args.visible)
+            u.set_moderator(admin=args.admin, visible=args.visible, added_by=sysadmin)
             print(
                 "Added {} as {} global {}".format(
                     sid,
@@ -204,12 +207,12 @@ elif args.add_moderators:
             try:
                 rooms = [model.Room(token=r) for r in args.rooms]
             except model.NoSuchRoom as nsr:
-                print("No such room: '{}'".format(nsr.token), file=sys.stderr)
+                print(f"No such room: '{nsr.token}'", file=sys.stderr)
 
         for sid in args.add_moderators:
             u = model.User(session_id=sid)
             for room in rooms:
-                room.set_moderator(u, admin=args.admin, visible=not args.hidden)
+                room.set_moderator(u, admin=args.admin, visible=not args.hidden, added_by=sysadmin)
                 print(
                     "Added {} as {} {} of {} ({})".format(
                         u.session_id,
@@ -226,22 +229,25 @@ elif args.delete_moderators:
         sys.exit(1)
     for a in args.delete_moderators:
         if not re.fullmatch(r'05[A-Fa-f0-9]{64}', a):
-            print("Error: '{}' is not a valid session id".format(a), file=sys.stderr)
+            print(f"Error: '{a}' is not a valid session id", file=sys.stderr)
             sys.exit(1)
     if len(args.rooms) > 1 and ('*' in args.rooms or '+' in args.rooms):
         print(
             "Error: '+'/'*' arguments to --rooms cannot be used with other rooms", file=sys.stderr
         )
         sys.exit(1)
+
+    sysadmin = model.SystemUser()
+
     if args.rooms == ['+']:
         for sid in args.delete_moderators:
             u = model.User(session_id=sid)
             was_admin = u.global_admin
             if not u.global_admin and not u.global_moderator:
-                print("{} was not a global moderator".format(u.session_id))
+                print(f"{u.session_id} was not a global moderator")
             else:
-                u.remove_moderator()
-            print("Removed {} as global {}".format(sid, "admin" if was_admin else "moderator"))
+                u.remove_moderator(removed_by=sysadmin)
+                print(f"Removed {sid} as global {'admin' if was_admin else 'moderator'}")
     else:
         if args.rooms == ['*']:
             rooms = model.get_rooms()
@@ -249,17 +255,14 @@ elif args.delete_moderators:
             try:
                 rooms = [model.Room(token=r) for r in args.rooms]
             except model.NoSuchRoom as nsr:
-                print("No such room: '{}'".format(nsr.token), file=sys.stderr)
+                print(f"No such room: '{nsr.token}'", file=sys.stderr)
 
         for sid in args.delete_moderators:
             u = model.User(session_id=sid)
             for room in rooms:
-                room.remove_moderator(u)
+                room.remove_moderator(u, removed_by=sysadmin)
                 print(
-                    "Removed {} as moderator/admin of {} ({})".format(
-                        u.session_id, room.name, room.token
-                    )
-                )
+                    f"Removed {u.session_id} as moderator/admin of {room.name} ({room.token})")
 elif args.list_rooms:
     rooms = model.get_rooms()
     if rooms:
