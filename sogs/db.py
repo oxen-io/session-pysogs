@@ -205,23 +205,16 @@ SELECT id, room, user, session_id, posted, edited, updated, whisper_to,
 
 
 def create_message_details_deleter(conn):
-    if not conn.execute(
+    conn.execute(
         """
-        SELECT EXISTS(
-            SELECT 1 FROM sqlite_master WHERE type = 'trigger' AND name = 'message_details_deleter'
-        )
-        """
-    ).fetchone()[0]:
-        conn.execute(
-            """
-CREATE TRIGGER message_details_deleter INSTEAD OF DELETE ON message_details
+CREATE TRIGGER IF NOT EXISTS message_details_deleter INSTEAD OF DELETE ON message_details
 FOR EACH ROW WHEN OLD.data IS NOT NULL
 BEGIN
     UPDATE messages SET data = NULL, data_size = NULL, signature = NULL
         WHERE id = OLD.id;
 END
 """
-        )
+    )
 
 
 def check_for_hacks(conn):
