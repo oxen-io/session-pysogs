@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from typing import Optional, Union
+import flask
 
 from . import config
 from . import db
 from . import utils
 from . import crypto
 from . import filtration
+from . import http
 from .omq import send_mule
 from .web import app
 
@@ -69,6 +71,22 @@ class PostRateLimited(PostRejected):
 
     def __init__(self, msg=None):
         super().__init__("Rate limited" if msg is None else msg)
+
+
+# Map uncaught model exceptions into flask http exceptions
+@app.errorhandler(NotFound)
+def abort_bad_room(e):
+    flask.abort(http.NOT_FOUND)
+
+
+@app.errorhandler(BadPermission)
+def abort_perm_denied(e):
+    flask.abort(http.FORBIDDEN)
+
+
+@app.errorhandler(PostRejected)
+def abort_post_rejected(e):
+    flask.abort(http.TOO_MANY_REQUESTS)
 
 
 class Room:
