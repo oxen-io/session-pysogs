@@ -1,38 +1,92 @@
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, Union
+import flask
 
 from . import config
 from . import db
 from . import utils
+from . import crypto
+from . import filtration
+from . import http
 from .omq import send_mule
+from .web import app
 
+import os
+import re
 import time
 
 
-class NoSuchRoom(LookupError):
+class NotFound(LookupError):
+    """Base class for NoSuchRoom, NoSuchFile, etc."""
+
+    pass
+
+
+class NoSuchRoom(NotFound):
     """Thrown when trying to construct a Room from a token that doesn't exist"""
 
     def __init__(self, token):
         self.token = token
-        super().__init__("No such room: {}".format(token))
+        super().__init__(f"No such room: {token}")
 
 
-class NoSuchFile(LookupError):
+class NoSuchFile(NotFound):
     """Thrown when trying to construct a File from a token that doesn't exist"""
 
     def __init__(self, id):
         self.id = id
-        super().__init__("No such file: {}".format(id))
+        super().__init__(f"No such file: {id}")
 
 
-class NoSuchUser(LookupError):
+class NoSuchUser(NotFound):
     """Thrown when attempting to retrieve a user that doesn't exist and auto-vivification of the
     user room is disabled"""
 
     def __init__(self, session_id):
         self.session_id = session_id
-        super().__init__("No such user: {}".format(session_id))
+        super().__init__(f"No such user: {session_id}")
+
+
+class BadPermission(RuntimeError):
+    """Thrown when attempt to perform an action that the given user does not have permission to do;
+    for example, attempting to delete someone else's posts when not a moderator."""
+
+    def __init__(self, msg=None):
+        super().__init__("Permission denied" if msg is None else msg)
+
+
+class PostRejected(RuntimeError):
+    """
+    Thrown when a post is refused for some reason other than a permission error (e.g. the post
+    contains bad words)
+    """
+
+    def __init__(self, msg=None):
+        super().__init__("Post rejected" if msg is None else msg)
+
+
+class PostRateLimited(PostRejected):
+    """Thrown when attempting to post too frequently in a room"""
+
+    def __init__(self, msg=None):
+        super().__init__("Rate limited" if msg is None else msg)
+
+
+# Map uncaught model exceptions into flask http exceptions
+@app.errorhandler(NotFound)
+def abort_bad_room(e):
+    flask.abort(http.NOT_FOUND)
+
+
+@app.errorhandler(BadPermission)
+def abort_perm_denied(e):
+    flask.abort(http.FORBIDDEN)
+
+
+@app.errorhandler(PostRejected)
+def abort_post_rejected(e):
+    flask.abort(http.TOO_MANY_REQUESTS)
 
 
 class Room:
@@ -98,6 +152,10 @@ class Room:
         self._image = None  # Retrieved on demand
         self._perm_cache = {}
 
+    def __str__(self):
+        """Returns `Room[token]` when converted to a str"""
+        return f"Room[{self.token}]"
+
     @property
     def image(self):
         """
@@ -152,7 +210,8 @@ class Room:
         - moderator -- if true then the user must have moderator (or admin) access to the room
         - read -- if true then the user must have read access
         - write -- if true then the user must have write access
-        - upload -- if true then the user must have upload access
+        - upload -- if true then the user must have upload access; this should usually be combined
+          with write=True.
 
         You can specify multiple permissions as True, in which case all must be satisfied.  If you
         specify no permissions as required then the check only checks whether a user is banned but
@@ -196,6 +255,27 @@ class Room:
             and (not upload or can_upload)
         )
 
+    # Shortcuts for check_permission calls
+
+    def check_unbanned(self, user: User):
+        return self.check_permission(user)
+
+    def check_read(self, user: Optional[User]):
+        return self.check_permission(read=True)
+
+    def check_write(self, user: Optional[User]):
+        return self.check_permission(write=True)
+
+    def check_upload(self, user: Optional[User]):
+        """Checks for both upload *and* write permission"""
+        return self.check_permission(write=True, upload=True)
+
+    def check_moderator(self, user: User):
+        return self.check_permission(user, moderator=True)
+
+    def check_admin(self, user: User):
+        return self.check_permission(user, admin=True)
+
     def messages_size(self):
         """Returns the number and total size (in bytes) of non-deleted messages currently stored in
         this room.  Size is reflects the size of uploaded message bodies, not necessarily the size
@@ -233,7 +313,7 @@ class Room:
         padding-trimmed value actually stored in the database).
         """
 
-        mod = self.check_permission(user, moderator=True)
+        mod = self.check_moderator(user)
         msgs = []
 
         opt_count = sum((after is not None, before is not None, recent))
@@ -241,6 +321,13 @@ class Room:
             raise RuntimeError("Exactly one of before=, after=, or recent= is required")
         if opt_count > 1:
             raise RuntimeError("Cannot specify more than one of before=, after=, recent=")
+
+        # Handle id mapping from an old database import in case the client is requesting
+        # messages since some id from the old db.
+        if after is not None and db.ROOM_IMPORT_HACKS and self.id in db.ROOM_IMPORT_HACKS:
+            max_old_id, offset = db.ROOM_IMPORT_HACKS[self.id]
+            if after <= max_old_id:
+                after += offset
 
         for row in db.execute(
             f"""
@@ -274,6 +361,202 @@ class Room:
             msgs.append(msg)
 
         return msgs
+
+    def add_post(
+        self,
+        user: User,
+        data: bytes,
+        sig: bytes,
+        *,
+        whisper_to: Optional[Union[User, str]] = None,
+        whisper_mods: bool = False,
+    ):
+        """
+        Adds a post to the room.  The user must have write permissions.
+
+        Raises BadPermission() if the user doesn't have posting permission; PostRejected() if the
+        post was rejected (such as subclass PostRateLimited() if the post was rejected for too
+        frequent posting).
+
+        Returns the message details.
+        """
+        if not self.check_write(user):
+            raise BadPermission()
+
+        whisper_mods = bool(whisper_mods)
+        if (whisper_to or whisper_mods) and not self.check_moderator(user):
+            app.logger.warn(f"Cannot post a whisper to {self}: {user} is not a moderator")
+            raise BadPermission()
+
+        if not isinstance(whisper_to, User):
+            whisper_to = User(session_id=whisper_to, autovivify=True, touch=False)
+
+        if not self.check_admin(user) and filtration.should_drop_message_with_body(data):
+            raise PostRejected("filtration rejected message")
+
+        with db.tx() as cur:
+            if not self.check_admin(user):
+
+                # TODO: These really should be room properties, not random global constants (these
+                # are carried over from old SOGS).
+                rate_limit_size = 5
+                rate_limit_interval = 16.0
+
+                since_limit = time.time() - rate_limit_interval
+                result = cur.execute(
+                    "SELECT COUNT(*) FROM messages WHERE room = ? AND user = ? AND posted >= ?",
+                    (self.id, user.id, since_limit),
+                )
+
+                row = result.fetchone()
+                if row[0] >= rate_limit_size:
+                    raise PostRateLimited()
+
+            data_size = len(data)
+            unpadded_data = utils.remove_session_message_padding(data)
+
+            result = cur.execute(
+                """
+                INSERT INTO messages
+                    (room, user, data, data_size, signature, whipser_to, whisper_mods)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (self.id, user.id, unpadded_data, data_size, sig, whisper_to.id, whisper_mods),
+            )
+            msg_id = result.lastrowid
+            row = cur.execute(
+                "SELECT posted, updated FROM messages WHERE id = ?", (msg_id,)
+            ).fetchone()
+            msg = {
+                'id': msg_id,
+                'session_id': user.session_id,
+                'posted': row[0],
+                'updated': row[1],
+                'data': data,
+                'signature': sig,
+            }
+            if whisper_to or whisper_mods:
+                msg['whisper'] = True
+                msg['whisper_mods'] = whisper_mods
+                if whisper_to:
+                    msg['whisper_to'] = whisper_to.session_id
+
+        send_mule("message_posted", msg['id'])
+        return msg
+
+    def delete_posts(self, message_ids: list[int], deleter: User):
+        """
+        Deletes the messages with the given ids.  The given user performing the delete must be a
+        moderator of the room.
+
+        Returns the ids actually deleted (that is, already-deleted and non-existent ids are not
+        returned).
+
+        Throws BadPermission (without deleting anything) if attempting to delete any posts that the
+        given user does not have permission to delete.
+        """
+
+        deleted = []
+        i = 0
+        with db.tx() as cur:
+            # Process in slices of 50 (in case we're given more than 50) because that's a lot of
+            # parameters to bind and we want to avoid hitting bind limits.
+            while i < len(message_ids):
+                n_ids = min(len(message_ids) - i, 50)
+
+                # First filter out ids that are already deleted (e.g. because of a race condition of
+                # multiple mods) or that aren't part of the room.  It wouldn't hurt the query to
+                # "delete" them again, but we want to avoid passing them to the mule multiple times.
+                ids = [
+                    r[0]
+                    for r in cur.execute(
+                        f"""
+                        SELECT id FROM messages WHERE room = ? AND data IS NOT NULL
+                            AND id IN ({','.join('?' * n_ids)})
+                        """,
+                        [self.id, *message_ids[i : i + 50]],
+                    )
+                ]
+
+                if ids:
+                    id_in = "id IN ({})".format(','.join('?' * len(ids)))
+
+                    if not self.check_moderator(deleter):
+                        # If not a moderator then we only proceed if all of the messages are the
+                        # user's own:
+                        res = cur.execute(
+                            f"SELECT EXISTS( SELECT * FROM messages WHERE user != ? AND {id_in} )",
+                            [deleter.id, *ids],
+                        )
+                        if res.fetchone()[0]:
+                            raise BadPermission()
+
+                    cur.execute(f"DELETE FROM message_details WHERE {id_in}", ids)
+
+                    deleted += ids
+                i += 50
+
+        return deleted
+
+    def delete_all_posts(self, poster: User, *, deleter: User):
+        """
+        Delete all posts and attachments made by `poster` from the room.  `deleter` must be a
+        moderator if not deleting his/her own posts, and must be an `admin` if trying to delete all
+        of the posts of another admin.
+        """
+
+        fail = None
+        if poster.id != deleter.id and not self.check_moderator(deleter):
+            fail = "user is not a moderator"
+        elif self.check_admin(poster) and not self.check_admin(deleter):
+            fail = "only admins can delete all posts of another admin"
+
+        if fail is not None:
+            app.logger.warn(
+                f"Error deleting all posts by {poster} from {self} by {deleter}: {fail}"
+            )
+            raise BadPermission()
+
+        with db.tx() as cur:
+            deleted = [
+                r[0]
+                for r in cur.execute(
+                    "SELECT id FROM messages WHERE room = ? AND user = ? AND data IS NOT NULL",
+                    (self.id, poster.id),
+                )
+            ]
+
+            cur.execute(
+                "DELETE FROM message_details WHERE room = ? AND user = ?", (self.id, poster.id)
+            )
+
+            # Set up files for deletion, but don't wipe out the room image in case the target was
+            # the one who uploaded it:
+            image = self.image
+            omit_id = image.id if image.uploader == poster.id else None
+
+            # TODO: Eventually we can drop this: once uploads have to be properly associated with
+            # posts then the post deletion should trigger automatic expiry of post attachments.
+
+            # Don't actually delete right now but set room to NULL so that the images aren't
+            # retrievable, and set expiry to now so that they'll be picked up by the next db
+            # cleanup.
+            cur.execute(
+                f"""
+                UPDATE files SET room = NULL, expiry = ? WHERE room = ? AND uploader = ?
+                    {'AND id != ?' if omit_id else ''}
+                """,
+                (time.time(), self.id, poster.id, *((omit_id,) if omit_id else ())),
+            )
+            files_removed = cur.rowcount
+
+        # FIXME: send `deleted` to mule
+
+        app.logger.debug(
+            f"Delete all posts by {poster} from {self}: {len(deleted)} posts, {files_removed} files"
+        )
+
+        return len(deleted), files_removed
 
     def attachments_size(self):
         """Returns the number and aggregate size of attachments currently stored in this room"""
@@ -346,36 +629,248 @@ class Room:
 
         return (m, a, hm, ha)
 
-    def set_moderator(self, user: User, *, admin=False, visible=True):
-        """Sets `user` as a moderator or admin of this room.  Replaces current
-        admin/moderator/visible status with the new values if the user is already a moderator/admin
-        of the room."""
+    def set_moderator(self, user: User, *, added_by: User, admin=False, visible=True):
+        """
+        Sets `user` as a moderator or admin of this room.  Replaces current admin/moderator/visible
+        status with the new values if the user is already a moderator/admin of the room.
+
+        added_by is the user performing the update and must have admin permission.
+        """
+
+        if not self.check_admin(added_by):
+            app.logger.warn(
+                f"Unable to set {user} as {'admin' if admin else 'moderator'} of {self}: "
+                f"{added_by} is not an admin"
+            )
+            raise BadPermission()
+
+        db.execute(
+            """
+            INSERT INTO user_permission_overrides (room, user, moderator, admin, visible_mod)
+            VALUES (?, ?, TRUE, ?, ?)
+            ON CONFLICT (room, user) DO UPDATE SET
+                moderator = excluded.moderator,
+                admin = excluded.admin,
+                visible_mod = excluded.visible_mod
+            """,
+            (self.id, user.id, admin, visible),
+        )
+
+        app.logger.info(f"{added_by} set {user} as {'admin' if admin else 'moderator'} of {self}")
+
+    def remove_moderator(self, user: User, *, removed_by: User):
+        """Remove `user` as a moderator/admin of this room.  Requires admin permission."""
+
+        if not self.check_admin(removed_by):
+            raise BadPermission()
+
+        db.execute(
+            """
+            UPDATE user_permission_overrides
+            SET moderator = FALSE, admin = FALSE, visible_mod = TRUE
+            WHERE room = ? AND user = ?
+            """,
+            (self.id, user.id),
+        )
+
+        app.logger.info(f"{removed_by} removed {user} as mod/admin of {self}")
+
+    def ban_user(self, to_ban: User, *, mod: User, timeout: Optional[float] = None):
+        """
+        Adds a ban to this room of `to_ban`, banned by `mod`, with the ban lasting for `timeout`
+        seconds (or forever, if timeout is omitted or None).
+
+        Raises BadPermission is the given `mod` is lacking the required permission to institute the
+        ban (i.e. not-a-moderator, or not-an-admin if trying to ban a room moderator/admin, or
+        trying to ban a global mod/admin from a room).
+        """
+
+        fail = None
+        if not self.check_moderator(mod):
+            fail = "user is not a moderator"
+        elif to_ban.id == mod.id:
+            fail = "self-ban not permitted"
+        elif to_ban.global_moderator:
+            fail = "global mods/admins cannot be banned"
+        elif self.check_moderator(to_ban) and not self.check_admin(mod):
+            fail = "only admins can ban room mods/admins"
+
+        if fail is not None:
+            app.logger.warn(f"Error banning {to_ban} from {self} by {mod}: {fail}")
+            raise BadPermission()
+
+        # TODO: log the banning action for auditing
 
         with db.tx() as cur:
             cur.execute(
                 """
-                INSERT INTO user_permission_overrides (room, user, moderator, admin, visible_mod)
-                VALUES (?, ?, TRUE, ?, ?)
-                ON CONFLICT (room, user) DO UPDATE SET
-                    moderator = excluded.moderator,
-                    admin = excluded.admin,
-                    visible_mod = excluded.visible_mod
+                INSERT INTO user_permission_overrides (room, user, banned, moderator, admin)
+                    VALUES (?, ?, TRUE, FALSE, FALSE)
+                ON CONFLICT (room, user) DO
+                    UPDATE SET banned = TRUE, moderator = FALSE, admin = FALSE
                 """,
-                (self.id, user.id, admin, visible),
+                (self.id, to_ban.id),
             )
 
-    def remove_moderator(self, user: User):
-        """Remove `user` as a moderator/admin of this room."""
+            if timeout:
+                cur.execute(
+                    """
+                    INSERT INTO user_permission_futures (room, user, at, banned)
+                        VALUES (?, ?, ?, FALSE)
+                    """,
+                    (self.id, to_ban.id, time.time() + timeout),
+                )
 
-        with db.tx() as cur:
-            cur.execute(
+        app.logger.debug(f"Banned {to_ban} from {self} (banned by {mod})")
+
+    def unban_user(self, to_unban: User, *, mod: User):
+        """
+        Removes a user ban from a user, if present.  `mod` must be a moderator.
+
+        Returns true if a ban was removed, false if the user wasn't banned.
+
+        Throws on other errors (e.g. permission denied).
+        """
+
+        if not self.check_moderator(mod):
+            app.logger.warn(f"Error unbanning {to_unban} from {self} by {mod}: not a moderator")
+            raise BadPermission()
+
+        cur = db.cur()
+        cur.execute(
+            """
+            UPDATE user_permission_overrides SET banned = FALSE
+            WHERE room = ? AND user = ? AND banned
+            """,
+            (self.id, to_unban.id),
+        )
+        if cur.rowcount > 0:
+            app.logger.debug(f"{mod} unbanned {to_unban} from {self}")
+            return True
+
+        app.logger.debug(f"{mod} unbanned {to_unban} from {self} (but user was already unbanned)")
+        return False
+
+    def get_bans(self):
+        """
+        Retrieves all the session IDs banned from this room.  This does not check permissions: i.e.
+        it should only be accessed by moderators/admins.
+        """
+
+        return [
+            r[0]
+            for r in db.execute(
+                "SELECT session_id FROM user_permissions WHERE room = ? AND banned", (self.id,)
+            )
+        ]
+
+    def get_file(self, file_id: int):
+        """Retrieves a file uploaded to this room by id.  Returns None if not found."""
+        row = db.execute(
+            "SELECT * FROM files WHERE room = ? AND id = ?", (self.id, file_id)
+        ).fetchone()
+
+        if not row and db.HAVE_FILE_ID_HACKS:
+            row = db.execute(
                 """
-                UPDATE user_permission_overrides
-                SET moderator = FALSE, admin = FALSE, visible_mod = TRUE
-                WHERE room = ? AND user = ?
+                SELECT * FROM files WHERE id = (
+                    SELECT file FROM file_id_hacks WHERE room = ? AND old_file_id = ?
+                )
                 """,
-                (self.id, user.id),
-            )
+                (self.id, file_id),
+            ).fetchone()
+
+        if row:
+            return File(row)
+        return None
+
+    def upload_file(
+        self,
+        content: bytes,
+        uploader: User,
+        *,
+        filename: Optional[str] = None,
+        lifetime: Optional[float] = config.UPLOAD_DEFAULT_EXPIRY_DAYS * 86400.0,
+    ):
+        """
+        Uploads a file to this room.  The uploader must have write and upload permissions.
+
+        Arguments:
+
+        - content -- the file content in bytes
+        - uploader -- the user who is uploading the file
+        - filename -- the filename as provided by the user, or None if no filename provided
+        - lifetime -- how long (in seconds) the file should last before expiring; can be None for a
+          file that should never expire.
+
+        Returns the id of the newly inserted file row.  Throws on error.
+        """
+
+        if not self.check_upload(uploader):
+            raise BadPermission()
+
+        files_dir = "uploads/" + self.token
+        os.makedirs(files_dir, exist_ok=True)
+
+        if filename is not None:
+            filename = re.sub(config.UPLOAD_FILENAME_BAD, "_", filename)
+
+        file_id, file_path = None, None
+
+        try:
+            # Begin a transaction; if this context exits with exception we want to roll back the
+            # database addition; we catch *outside* the context so that we catch on commit, as well,
+            # so that we also clean up the stored file on disk if the transaction fails to commit.
+            with db.tx() as cur:
+                expiry = None if lifetime is None else time.time() + lifetime
+
+                # Insert the file row first with path='tmp' then come back and update it to the
+                # proper path, which we want to base on the resulting file id.
+                cur.execute(
+                    """
+                    INSERT INTO files (room, uploader, size, expiry, filename, path)
+                    VALUES (?, ?, ?, ?, ?, 'tmp')
+                    """,
+                    (self.id, uploader.id, len(content), expiry, filename),
+                )
+
+                file_id = cur.lastrowid
+
+                if filename is None:
+                    filename = '(unnamed)'
+
+                if len(filename) > config.UPLOAD_FILENAME_MAX:
+                    filename = (
+                        filename[: config.UPLOAD_FILENAME_KEEP_PREFIX]
+                        + "..."
+                        + filename[-config.UPLOAD_FILENAME_KEEP_SUFFIX :]
+                    )
+
+                file_path = f"{files_dir}/{file_id}_{filename}"
+
+                with open(file_path, 'wb') as f:
+                    f.write(content)
+
+                cur.execute("UPDATE files SET path = ? WHERE id = ?", (file_path, file_id))
+
+                return file_id
+
+        except Exception as e:
+            app.logger.warn(f"Failed to write/update file {file_path}: {e}")
+            if file_path is not None:
+                try:
+                    os.unlink(file_path)
+                except Exception:
+                    pass
+            raise
+
+    def set_room_image(self, file: Union[File, int]):
+        """Sets a room image to a file (can be either the file id, or File instance)"""
+
+        db.execute(
+            "UPDATE rooms SET image = ? WHERE id = ?",
+            (file.id if isinstance(file, File) else file, self.id),
+        )
 
 
 class File:
@@ -506,6 +1001,18 @@ class User:
             with db.tx() as cur:
                 self._touch(cur)
 
+    def __str__(self):
+        """Returns string representation of a user: U[050123…cdef], the id prefixed with @ or % if
+        the user is a global admin or moderator, respectively."""
+        if len(self.session_id) != 66:
+            # Something weird (e.g. the "deleted" id from an old sogs import), just print directly
+            return f"U[{self.session_id}]"
+        return "U[{}{}…{}]".format(
+            '@' if self.global_admin else '%' if self.global_moderator else '',
+            self.session_id[:6],
+            self.session_id[-4:],
+        )
+
     def _touch(self, cur):
         cur.execute(
             """
@@ -526,11 +1033,28 @@ class User:
             with db.tx() as cur:
                 self._touch(cur)
 
-    def set_moderator(self, *, admin=False, visible=False):
+    def update_room_activity(self, room):
+        db.execute(
+            """
+            INSERT INTO room_users (user, room) VALUES (?, ?)
+            ON CONFLICT(user, room) DO UPDATE
+            SET last_active = ((julianday('now') - 2440587.5)*86400.0)
+            """,
+            (self.id, room.id),
+        )
+
+    def set_moderator(self, *, added_by: User, admin=False, visible=False):
         """
         Make this user a global moderator or admin.  If the user is already a global mod/admin then
         their status is updated according to the given arguments (that is, this can promote/demote).
         """
+
+        if not added_by.global_admin:
+            app.logger.warn(
+                f"Cannot set {self} as global {'admin' if admin else 'moderator'}: "
+                f"{added_by} is not a global admin"
+            )
+            raise BadPermission()
 
         with db.tx() as cur:
             cur.execute(
@@ -541,12 +1065,31 @@ class User:
         self.global_moderator = True
         self.visible_mod = visible
 
-    def remove_moderator(self):
+    def remove_moderator(self, *, removed_by: User):
         """Removes this user's global moderator/admin status, if set."""
+
+        if not removed_by.global_admin:
+            app.logger.warn(
+                f"Cannot remove {self} as global mod/admin: {removed_by} is not an admin"
+            )
+            raise BadPermission()
+
         with db.tx() as cur:
-            cur.execute("UPDATE users SET moderator = FALSE, admin = FALSE WHERE id = ?", self.id)
+            cur.execute(
+                "UPDATE users SET moderator = FALSE, admin = FALSE WHERE id = ?", (self.id,)
+            )
         self.global_admin = False
         self.global_moderator = False
+
+
+class SystemUser(User):
+    """
+    User subclasses representing the local system for performing local operations, e.g. from the
+    command line.
+    """
+
+    def __init__(self):
+        super().__init__(session_id="ff" + crypto.server_pubkey_hex)
 
 
 def get_rooms():
@@ -594,40 +1137,6 @@ def get_all_global_moderators():
     return (m, a, hm, ha)
 
 
-def add_post_to_room_deprecated(
-    user: User, room: Room, data: bytes, sig: bytes, rate_limit_size=5, rate_limit_interval=16.0
-):
-    """insert a post into a room from a user given room id and user id
-    trims off padding and stores as needed
-    """
-    with db.tx() as cur:
-        since_limit = time.time() - rate_limit_interval
-        result = cur.execute(
-            "SELECT COUNT(*) FROM messages WHERE room = ? AND user = ? AND posted >= ?",
-            [room.id, user.id, since_limit],
-        )
-        row = result.fetchone()
-        if row[0] >= rate_limit_size:
-            # rate limit hit
-            return
-
-        data_size = len(data)
-        data = utils.remove_session_message_padding(data)
-
-        result = cur.execute(
-            "INSERT INTO messages(room, user, data, data_size, signature) VALUES(?, ?, ?, ?, ?)",
-            [room.id, user.id, data, data_size, sig],
-        )
-        lastid = result.lastrowid
-        result = cur.execute("SELECT posted, id FROM messages WHERE id = ?", [lastid])
-        row = result.fetchone()
-        msg = {'timestamp': utils.legacy_convert_time(row['posted']), 'server_id': row['id']}
-
-    send_mule("message_posted", msg["server_id"])
-
-    return msg
-
-
 def get_deletions_deprecated(room: Room, since):
     if since:
         result = db.execute(
@@ -648,30 +1157,3 @@ def get_deletions_deprecated(room: Room, since):
             [room.id],
         )
     return [{'deleted_message_id': row[0], 'id': row[1]} for row in result]
-
-
-def get_messages_deprecated(room: Room, user: User, *, since, limit=256):
-    if since:
-        # Handle id mapping from an old database import in case the client is requesting
-        # messages since some id from the old db.
-        if db.ROOM_IMPORT_HACKS and room.id in db.ROOM_IMPORT_HACKS:
-            (max_old_id, offset) = db.ROOM_IMPORT_HACKS[room.id]
-            if since <= max_old_id:
-                since += offset
-
-        msgs = room.get_messages_for(user, after=since, limit=limit)
-
-    else:
-        msgs = room.get_messages_for(user, recent=True, limit=limit)
-
-    # Transform new API fields into legacy Session fields
-    return [
-        {
-            'server_id': m['id'],
-            'public_key': m['session_id'],
-            'timestamp': utils.legacy_convert_time(m['posted']),
-            'data': m['data'],
-            'signature': m['signature'],
-        }
-        for m in msgs
-    ]

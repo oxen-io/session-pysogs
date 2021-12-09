@@ -7,12 +7,8 @@ from . import db
 from . import utils
 from . import config
 from . import http
-from . import filtration
 from .omq import send_mule
-
-import os
-import time
-import re
+from .utils import jsonify_with_base64
 
 # Legacy endpoints, to eventually be deleted.  These are invoked automatically if the client invokes
 # an endpoint (via onion request) that doesn't start with a `/` -- we prepend `/legacy/` and submit
@@ -88,15 +84,7 @@ def legacy_check_user_room(
             abort(http.FORBIDDEN)
 
     if update_activity:
-        with db.tx() as cur:
-            cur.execute(
-                """
-                INSERT INTO room_users (user, room) VALUES (?, ?)
-                ON CONFLICT(user, room) DO UPDATE
-                SET last_active = ((julianday('now') - 2440587.5)*86400.0)
-                """,
-                (user.id, room.id),
-            )
+        user.update_room_activity(room)
 
     return (user, room)
 
@@ -159,7 +147,7 @@ def legacy_auth_token_challenge():
 
     token = utils.make_legacy_token(user.session_id)
     pk = utils.decode_hex_or_b64(user.session_id[2:], 32)
-    return utils.jsonify_with_base64(
+    return jsonify_with_base64(
         {
             'status_code': 200,
             'challenge': {
@@ -168,6 +156,17 @@ def legacy_auth_token_challenge():
             },
         }
     )
+
+
+def legacy_transform_message(m):
+    """Transform new API fields into legacy Session fields"""
+    return {
+        'server_id': m['id'],
+        'public_key': m['session_id'],
+        'timestamp': utils.legacy_convert_time(m['posted']),
+        'data': m['data'],
+        'signature': m['signature'],
+    }
 
 
 @app.post("/legacy/messages")
@@ -179,16 +178,9 @@ def handle_post_legacy_message():
     data = utils.decode_base64(req.get('data'))
     sig = utils.decode_base64(req.get('signature'))
 
-    if filtration.should_drop_message_with_body(data):
-        abort(http.FORBIDDEN)
-
-    msg = model.add_post_to_room_deprecated(user, room, data, sig)
-    if not msg:
-        abort(http.TOO_MANY_REQUESTS)
-    msg['public_key'] = user.session_id
-    msg['data'] = req.get('data')
-    msg['signature'] = req.get('signature')
-    return utils.jsonify_with_base64({'status_code': 200, 'message': msg})
+    return jsonify_with_base64(
+        {'status_code': 200, 'message': legacy_transform_message(room.add_post(user, data, sig))}
+    )
 
 
 @app.get("/legacy/messages")
@@ -198,10 +190,13 @@ def handle_legacy_get_messages():
 
     user, room = legacy_check_user_room(read=True)
 
-    return utils.jsonify_with_base64(
+    return jsonify_with_base64(
         {
             'status_code': 200,
-            'messages': model.get_messages_deprecated(room, user, since=from_id, limit=limit),
+            'messages': [
+                legacy_transform_message(m)
+                for m in room.get_messages_for(user, limit=limit, after=from_id, recent=not from_id)
+            ],
         }
     )
 
@@ -225,7 +220,7 @@ def handle_comapct_poll():
             }
         result.append(r)
 
-    return utils.jsonify_with_base64({'status_code': 200, 'results': result})
+    return jsonify_with_base64({'status_code': 200, 'results': result})
 
 
 def handle_one_compact_poll(req):
@@ -233,7 +228,11 @@ def handle_one_compact_poll(req):
         get_pubkey_from_token(req.get('auth_token')) or '', req.get('room_id', ''), read=True
     )
 
-    messages = model.get_messages_deprecated(room, user, since=req.get('from_message_server_id'))
+    after = req.get('from_message_server_id', None)
+    messages = [
+        legacy_transform_message(m)
+        for m in room.get_messages_for(user, after=after, recent=not after)
+    ]
 
     deletions = model.get_deletions_deprecated(room, req.get('from_deletion_server_id'))
 
@@ -265,63 +264,8 @@ def process_legacy_file_upload_for_room(
     if len(file_content) > config.UPLOAD_FILE_MAX_SIZE:
         abort(http.ERROR_PAYLOAD_TOO_LARGE)
 
-    files_dir = "uploads/" + room.token
-    os.makedirs(files_dir, exist_ok=True)
-
-    # FIXME: when making this code generic, filename should be provided by new API users
-    filename = None
-
-    if filename is not None:
-        filename = re.sub(config.UPLOAD_FILENAME_BAD, "_", filename)
-
-    file_id, file_path = None, None
-
-    try:
-        # Begin a transaction; if this context exits with exception we want to roll back the
-        # database addition; we catch *outside* the context so that we catch on commit, as well, so
-        # that we also clean up the stored file on disk if the transaction fails to commit.
-        with db.tx() as cur:
-            expiry = None if lifetime is None else time.time() + lifetime
-
-            # Insert the file row first, but with nonsense path because we want to put the ID in the
-            # path, which we won't have until after the insert; we'll come back and update it.
-            cur.execute(
-                """
-                INSERT INTO files (room, uploader, size, expiry, filename, path)
-                VALUES (?, ?, ?, ?, ?, 'tmp')
-                """,
-                (room.id, user.id, len(file_content), expiry, filename),
-            )
-
-            file_id = cur.lastrowid
-
-            if filename is None:
-                filename = '(unnamed)'
-
-            if len(filename) > config.UPLOAD_FILENAME_MAX:
-                filename = (
-                    filename[: config.UPLOAD_FILENAME_KEEP_PREFIX]
-                    + "..."
-                    + filename[-config.UPLOAD_FILENAME_KEEP_SUFFIX :]
-                )
-
-            file_path = "{}/{}_{}".format(files_dir, file_id, filename)
-
-            with open(file_path, 'wb') as f:
-                f.write(file_content)
-
-            cur.execute("UPDATE files SET path = ? WHERE id = ?", (file_path, file_id))
-
-            return file_id
-
-    except Exception as e:
-        app.logger.warn("Failed to write/update file {}: {}".format(file_path, e))
-        if file_path is not None:
-            try:
-                os.unlink(file_path)
-            except Exception:
-                pass
-        abort(http.ERROR_INTERNAL_SERVER_ERROR)
+    filename = None  # legacy Session doesn't provide a filename, just a random blob
+    return room.upload_file(file_content, user, filename=filename, lifetime=lifetime)
 
 
 @app.post("/legacy/files")
@@ -335,8 +279,7 @@ def handle_legacy_store_file():
 def handle_legacy_upload_room_image(room):
     user, room = legacy_check_user_room(write=True, upload=True, moderator=True)
     file_id = process_legacy_file_upload_for_room(user, room, lifetime=None)
-    with db.tx() as cur:
-        cur.execute("UPDATE rooms SET image = ? WHERE id = ?", [file_id, room.id])
+    room.set_room_image(file_id)
     return jsonify({'status_code': 200, 'result': file_id})
 
 
@@ -344,24 +287,13 @@ def handle_legacy_upload_room_image(room):
 def handle_legacy_get_file(file_id):
     user, room = legacy_check_user_room(read=True)
 
-    with db.tx() as cur:
-        row = cur.execute(
-            "SELECT path FROM files WHERE room = ? AND id = ?", (room.id, file_id)
-        ).fetchone()
-        if not row and db.HAVE_FILE_ID_HACKS:
-            row = cur.execute(
-                """
-                SELECT path FROM files WHERE id = (
-                    SELECT file FROM file_id_hacks WHERE room = ? AND old_file_id = ?)
-                """,
-                (room.id, file_id),
-            ).fetchone()
-        if not row:
-            abort(http.NOT_FOUND)
+    file = room.get_file(file_id)
+    if not file:
+        abort(http.NOT_FOUND)
 
-    with open(row[0], 'rb') as f:
+    with open(file.path, 'rb') as f:
         file_content = f.read()
-    return jsonify({'status_code': 200, 'result': utils.encode_base64(file_content)})
+    return jsonify_with_base64({'status_code': 200, 'result': file_content})
 
 
 @app.post("/legacy/delete_messages")
@@ -370,41 +302,11 @@ def handle_legacy_delete_messages(ids=None):
 
     if ids is None:
         ids = request.json['ids']
-    if len(ids) > 997:
-        # 997 because we need two binds for room/user, 999 is the maximum number of bind parameters
-        # for sqlite (pre-3.32), and because that's already a huge number of things to delete at
-        # once.  (Older SOGS had no such limit, but that's insane).
-        abort(http.BAD_REQUEST)
 
-    in_params = ",".join("?" * len(ids))
+    ids = room.delete_posts(ids, user)
 
-    is_moderator = room.check_permission(user, moderator=True)
-
-    with db.tx() as cur:
-        if not is_moderator:
-            # If not a moderator then we only proceed if all of the messages are the user's own:
-            res = cur.execute(
-                """
-                SELECT EXISTS(SELECT * FROM messages WHERE room = ? AND user != ? AND id IN ({}))
-                """.format(
-                    in_params
-                ),
-                [room.id, user.id, *ids],
-            )
-            if res.fetchone()[0]:
-                abort(http.UNAUTHORIZED)
-
-        cur.execute(
-            """
-            UPDATE messages SET data = NULL, data_size = NULL, signature = NULL
-            WHERE room = ? AND id IN ({})
-            """.format(
-                in_params
-            ),
-            [room.id, *ids],
-        )
-
-    send_mule("messages_deleted", ids)
+    if ids:
+        send_mule("messages_deleted", ids)
 
     return jsonify({'status_code': 200})
 
@@ -414,92 +316,24 @@ def handle_legacy_single_delete(msgid):
     return handle_legacy_delete_messages(ids=[msgid])
 
 
-def ban_checks():
-    user, room = legacy_check_user_room(moderator=True)
-
-    to_ban = model.User(session_id=request.json['public_key'], autovivify=True)
-
-    # Global mods/admins aren't bannable at all (at the room level)
-    if to_ban.global_moderator:
-        app.logger.warn(
-            "Cannot ban {} from {}: user is a global moderator".format(
-                to_ban.session_id, room.token
-            )
-        )
-        abort(http.FORBIDDEN)
-
-    return user, room, to_ban
-
-
-def apply_ban(conn, user, room, to_ban):
-    is_mod = bool(
-        conn.execute(
-            "SELECT moderator FROM user_permissions WHERE room = ? AND user = ?",
-            (room.id, to_ban.id),
-        ).fetchone()[0]
-    )
-
-    if is_mod and not room.check_permission(user, admin=True):
-        app.logger.warn(
-            "Cannot ban {} from {}: the ban target is a room moderator, "
-            "but the ban initiator ({}) is not an admin".format(
-                to_ban.session_id, room.token, user.session_id
-            )
-        )
-        abort(http.FORBIDDEN)
-
-    conn.execute(
-        """
-        INSERT INTO user_permission_overrides (room, user, banned, moderator, admin)
-        VALUES (?, ?, TRUE, FALSE, FALSE)
-        ON CONFLICT (room, user) DO UPDATE SET banned = TRUE, moderator = FALSE, admin = FALSE
-        """,
-        (room.id, to_ban.id),
-    )
-
-
 @app.post("/legacy/block_list")
 def handle_legacy_ban():
-    user, room, to_ban = ban_checks()
+    user, room = legacy_check_user_room(moderator=True)
+    ban = model.User(session_id=request.json['public_key'], autovivify=True)
 
-    with db.conn as conn:
-        apply_ban(conn, user, room, to_ban)
+    room.ban_user(to_ban=ban, mod=user)
 
     return jsonify({"status_code": 200})
 
 
 @app.post("/legacy/ban_and_delete_all")
 def handle_legacy_banhammer():
-    user, room, to_ban = ban_checks()
+    mod, room = legacy_check_user_room(moderator=True)
+    ban = model.User(session_id=request.json['public_key'], autovivify=True)
 
-    with db.conn as conn:
-        apply_ban(conn, user, room, to_ban)
-
-        cur = conn.cursor()
-        cur.execute(
-            """
-            UPDATE messages SET data = NULL, data_size = NULL, signature = NULL
-            WHERE room = ? AND user = ?
-            """,
-            (room.id, to_ban.id),
-        )
-
-        posts_removed = cur.rowcount
-
-        # We don't actually delete from disk right now, but clear the room (so that they aren't
-        # retrievable) and set them to be expired (so that the next file pruning will delete them
-        # from disk).
-        cur.execute(
-            "UPDATE files SET room = NULL, expiry = ? WHERE room = ? AND uploader = ?",
-            (time.time(), room.id, to_ban.id),
-        )
-        files_removed = cur.rowcount
-
-    app.logger.info(
-        "Banned {} from room {}: {} messages and {} files deleted".format(
-            to_ban.session_id, room.token, posts_removed, files_removed
-        )
-    )
+    with db.tx():
+        room.ban_user(to_ban=ban, mod=mod)
+        room.delete_all_posts(ban, deleter=mod)
 
     return jsonify({"status_code": 200})
 
@@ -507,20 +341,8 @@ def handle_legacy_banhammer():
 @app.delete("/legacy/block_list/<SessionID:session_id>")
 def handle_legacy_unban(session_id):
     user, room = legacy_check_user_room(moderator=True)
-
-    try:
-        to_unban = model.User(session_id=session_id, autovivify=False)
-    except model.NoSuchUser:
-        abort(http.NOT_FOUND)
-
-    with db.tx() as cur:
-        cur.execute(
-            "UPDATE user_permission_overrides SET banned = FALSE WHERE room = ? AND user = ?",
-            (room.id, to_unban.id),
-        )
-        updated = cur.rowcount
-
-    if updated > 0:
+    to_unban = model.User(session_id=session_id, autovivify=False)
+    if room.unban_user(to_unban, mod=user):
         return jsonify({"status_code": 200})
 
     abort(http.NOT_FOUND)
@@ -528,25 +350,18 @@ def handle_legacy_unban(session_id):
 
 @app.get("/legacy/block_list")
 def handle_legacy_banlist():
-    # Can't go through the usual legacy_check_user_room call here, because we want to continue here
-    # even if we are banned:
+    # Bypass permission checks here because we want to continue even if we are banned:
     user, room = legacy_check_user_room(no_perms=True)
 
     # If you are a moderator then we show you everything; if you are banned we show you just
     # yourself; otherwise we show you nothing.
-    row = db.execute(
-        "SELECT banned, moderator FROM user_permissions WHERE room = ? AND user = ?",
-        (room.id, user.id),
-    ).fetchone()
-    banned, mod = bool(row[0]), bool(row[1])
-    bans = []
-    if banned:
-        bans.append(user.session_id)
-    elif mod:
-        rows = db.execute(
-            "SELECT session_id FROM user_permissions WHERE room = ? AND banned", (room.id,)
-        )
-        bans = [row[0] for row in rows]
+    if not room.check_unbanned(user):
+        bans = [user.session_id]
+    elif room.check_moderator(user):
+        bans = room.get_bans()
+    else:
+        bans = []
+
     return jsonify({"status_code": 200, "banned_members": bans})
 
 
@@ -569,18 +384,8 @@ def handle_legacy_add_admin():
         abort(http.BAD_REQUEST)
 
     mod = model.User(session_id=session_id, autovivify=True)
-    with db.tx() as cur:
-        cur.execute(
-            """
-            INSERT INTO user_permission_overrides (user, room, admin) VALUES (?, ?, TRUE)
-            ON CONFLICT (room, user) DO UPDATE SET admin = TRUE
-            """,
-            (mod.id, room.id),
-        )
+    room.add_admin(mod, admin=True, visible=True, added_by=user)
 
-    app.logger.info(
-        "{} added admin {} to room {}".format(user.session_id, mod.session_id, room.token)
-    )
     return jsonify({"status_code": 200})
 
 
@@ -591,23 +396,7 @@ def handle_legacy_add_admin():
 def handle_legacy_remove_admin(session_id):
     user, room = legacy_check_user_room(admin=True)
 
-    try:
-        mod = model.User(session_id=session_id, autovivify=False)
-    except model.NoSuchUser:
-        abort(http.NOT_FOUND)
+    mod = model.User(session_id=session_id, autovivify=False)
+    room.remove_moderator(mod, removed_by=user)
 
-    with db.tx() as cur:
-        cur.execute(
-            """
-            UPDATE user_permission_overrides SET moderator = FALSE, admin = FALSE
-            WHERE user = ? AND room = ?
-            """,
-            (mod.id, room.id),
-        )
-
-    app.logger.info(
-        "{} removed moderator/admin {} from room {}".format(
-            user.session_id, mod.session_id, room.token
-        )
-    )
     return jsonify({"status_code": 200})
