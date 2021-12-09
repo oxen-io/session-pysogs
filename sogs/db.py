@@ -183,8 +183,8 @@ def update_whisper_views(conn):
         c['name'] for c in conn.execute("PRAGMA table_info('message_metadata')")
     ):
         with conn:
-            conn.execute("DROP VIEW message_metadata")
-            conn.execute("DROP VIEW message_details")
+            conn.execute("DROP VIEW IF EXISTS message_metadata")
+            conn.execute("DROP VIEW IF EXISTS message_details")
             conn.execute(
                 """
 CREATE VIEW message_details AS

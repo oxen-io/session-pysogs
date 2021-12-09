@@ -38,7 +38,7 @@ CREATE TABLE messages (
     data_size INTEGER, /* The message size, including trailing padding (needed because the signature is over the padded data) */
     signature BLOB, /* Signature of `data` by `public_key`; set to null when deleting a message */
     whisper INTEGER REFERENCES users(id), /* If set: this is a whisper meant for the given user */
-    whisper_mods BOOLEAN NOT NULL DEFAULT FALSE, /* If true: this is a whisper that all mods should see (may or may not have a `whisper` target) */
+    whisper_mods BOOLEAN NOT NULL DEFAULT FALSE /* If true: this is a whisper that all mods should see (may or may not have a `whisper` target) */
 );
 CREATE INDEX messages_room ON messages(room, posted);
 CREATE INDEX messages_updated ON messages(room, updated);
