@@ -15,8 +15,7 @@ if not hasattr(flask.Flask, 'post'):
     for method in ('get', 'post', 'put', 'delete', 'patch'):
         _add_flask_method(method)
 
-from . import logging  # noqa: F401, E402
-from . import routes  # noqa: F401, E402
-from . import onion_request  # noqa: F401, E402
-from . import legacy_routes  # noqa: F401, E402
-from . import cleanup  # noqa: F401, E402
+from . import routes
+from . import onion_request
+from . import legacy_routes
+from . import cleanup

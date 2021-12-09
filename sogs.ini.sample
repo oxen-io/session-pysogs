@@ -1,0 +1,102 @@
+; SOGS configuration.  Copy this file to sogs.ini and edit as desired.  It can be left mostly (or
+; entirely) empty: defaults are shown in the comments.
+
+[db]
+
+; The database connection string url for the sogs database where everything is stored.  For sqlite
+; (currently the only supported database) this is `sqlite:///` followed by the path.  E.g.
+; `sqlite:///sogs.db` for sogs.db in the current working directory, or `sqlite:////path/to/sogs.db`
+; for an absolute URL.
+;url = sqlite:///sogs.db
+
+
+[crypto]
+
+; Path to the x25519 private key file; this is a 32-byte file containing the raw private key data.
+;
+;key_file = key_x25519
+
+
+[net]
+
+; Base url for generating self-referring links, for example for the open group URL and QR code shown
+; when accessing via a web browser.  Can be http, https, and may or may not include a port.  This
+; should be the address of a front-end proxy server (e.g. nginx or apache2) that forwards uwsgi
+; requests to pysogs.  Using HTTPS is possible but not particularly recommended: onion requests are
+; already encrypted and so the extra layer of HTTPS encryption does not make requests more secure.
+;
+;base_url = http://example.net
+
+
+; Listening address for oxenmq requests. The socket uses curve encryption using the same x25519 key
+; as the server itself.  Can be specified as a multiline value to listen on multiple
+; addresses/ports.
+;
+;omq_listen = tcp://*:22028
+
+
+; Internal listening address (usually a unix socket path starting with ipc://) for inter-process
+; communication between sogs processes.  This is unauthenticated and so must not be a publicly
+; accessible address!
+;
+;omq_internal = ipc://./omq.sock
+
+
+; Whether we should show recent messages for public rooms on the sogs room page when visited by a
+; browser.
+;
+;http_show_recent = yes
+
+
+[files]
+
+; How long newly uploaded files should be stored before being cleaned up, in days.  Note that
+; changing this only affects new files.  This limit does not apply to room images and attachments in
+; pinned messages, both of which do not expire.
+;
+;expiry = 15
+
+
+; The maximum size of files we accept, in bytes.  Note that onion requests impose a maximum size of
+; messages, and so this should not be larger than 6MB, but can be reduced to not accept larger files
+; in open groups.  Value is in bytes.
+;
+;max_size = 6000000
+
+
+[rooms]
+
+; How many days we consider a user to be "active" in a room without having at least retrieved
+; messages from the room, in days.  (This must be ≤ active_prune_threshold, below).
+;
+;active_threshold = 7
+
+
+; How long we store user-room activity information, so that we can determine "active within the past
+; x days" values other than the default.
+;
+;active_prune_threshold = 60
+
+
+[messages]
+
+; How long we keep message edit/deletion history, in days.
+;
+;history_prune_threshold = 30
+
+
+; Path to a file containing "bad" words for message filtration.  This feature in temporary and will
+; be removed once more robust bot/spam filtering is available.  The default is to use the file
+; `badwords.txt` if it exists, and nothing if it doesn't.  If specified explicitly then the file
+; must exist.
+;
+;bad_words =
+
+
+
+[log]
+
+; The log level controlling which messages should be displayed.  One of: CRITICAL, ERROR, WARNING,
+; INFO, or DEBUG.
+;
+;level = WARNING
