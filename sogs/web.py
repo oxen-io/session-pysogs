@@ -1,6 +1,8 @@
 import flask
+from . import config
 
 app = flask.Flask(__name__)
+app.logger.setLevel(config.LOG_LEVEL)
 
 # Monkey-patch app.get/post/etc. for Flask <2 compatibility; this has to be before the imports,
 # below, because they depend on this existing.

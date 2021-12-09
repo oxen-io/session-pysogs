@@ -4,10 +4,10 @@ import re
 import logging
 import coloredlogs
 
-from .web import app
+logger = logging.getLogger("config")
 
 # Set up colored logging; we come back to set the level once we know it
-coloredlogs.install(level='NOTSET', milliseconds=True, isatty=True)
+coloredlogs.install(milliseconds=True, isatty=True)
 
 # Default config settings; most of these are configurable via config.ini (see it for details).
 DB_PATH = 'sogs.db'
@@ -39,20 +39,20 @@ def load_config():
     else:
         conf_ini = 'sogs.ini'
         if not os.path.exists(conf_ini):
-            app.logger.info("sogs.ini does not exist; using all config defaults")
+            logger.info("sogs.ini does not exist; using all config defaults")
             conf_ini = None
 
     if not conf_ini:
         return
 
-    app.logger.info(f"Loading config from {conf_ini}")
+    logger.info(f"Loading config from {conf_ini}")
     cp = configparser.ConfigParser()
     cp.read(conf_ini)
 
     # Set log level up first (we'll set it again below, mainly to log it if we have debug logging
     # enabled).
     if 'log' in cp.sections() and 'level' in cp['log']:
-        app.logger.setLevel(cp['log']['level'])
+        logger.setLevel(cp['log']['level'])
 
     # Map of: section => { param => ('GLOBAL', test lambda, value lambda) }
     # global is the string name of the global variable to set
@@ -92,11 +92,11 @@ def load_config():
 
     for s in cp.sections():
         if s not in setting_map:
-            app.logger.warning(f"Ignoring unknown section [{s}] in {conf_ini}")
+            logger.warning(f"Ignoring unknown section [{s}] in {conf_ini}")
             continue
         for opt in cp[s]:
             if opt not in setting_map[s]:
-                app.logger.warning(f"Ignoring unknown config setting [{s}].{opt} in {conf_ini}")
+                logger.warning(f"Ignoring unknown config setting [{s}].{opt} in {conf_ini}")
                 continue
 
             value = cp[s][opt]
@@ -105,7 +105,7 @@ def load_config():
             assert isinstance(conf, tuple) and 1 <= len(conf) <= 3
             assert conf[0] in globals()
 
-            app.logger.debug(f"Loaded config setting [{s}].{opt}={value}")
+            logger.debug(f"Loaded config setting [{s}].{opt}={value}")
 
             if len(conf) >= 2 and conf[1]:
                 if not conf[1](value):
@@ -114,13 +114,12 @@ def load_config():
             if len(conf) >= 3 and conf[2]:
                 value = conf[2](value)
 
-            app.logger.debug(f"Set config.{conf[0]} = {value}")
+            logger.debug(f"Set config.{conf[0]} = {value}")
             globals()[conf[0]] = value
 
 
 try:
     load_config()
-    app.logger.setLevel(LOG_LEVEL)
 except Exception as e:
-    app.logger.critical(f"Failed to load config: {e}")
+    logger.critical(f"Failed to load config: {e}")
     raise

@@ -7,7 +7,6 @@ from . import db
 from . import config
 from . import model
 from . import crypto
-from . import logging  # noqa: F401
 
 ap = AP(
     epilog="""
