@@ -1,98 +1,102 @@
-![example workflow](https://github.com/oxen-io/session-open-group-server/actions/workflows/check.yml/badge.svg)
+## Manual Installation Instructions
 
-[API Documentation](https://github.com/oxen-io/session-open-group-server/blob/main/DOCUMENTATION.md)
+#### Debs guide coming soon
 
-[CLI Reference](https://github.com/oxen-io/session-open-group-server/blob/main/CLI.md)
+### Step 1: Clone the PySOGS repo:
 
-Want to build from source? See [BUILDING.md](https://github.com/oxen-io/session-open-group-server/blob/main/BUILDING.md).  
-Want to deploy using Docker? See [DOCKER.md](https://github.com/oxen-io/session-open-group-server/blob/main/DOCKER.md).
+```git clone https://github.com/oxen-io/session-pysogs```
 
-## Installation Instructions
+### Step 2: Grab dependencies:
 
-### [Video Guide](https://www.youtube.com/watch?v=D83gKXn6iTI)
+``` apt install python3-{coloredlogs,uwsgidecorators,flask,cryptography,nacl,pil,protobuf,openssl,qrencode} uwsgi-plugin-python3 ```
 
-**Note:** .debs for the Session Open Group server are currently only available for Ubuntu 20.04.  
-For other operating systems, you can either [build from source](https://github.com/oxen-io/session-open-group-server/blob/main/BUILDING.md) or use [Docker](https://github.com/oxen-io/session-open-group-server/blob/main/DOCKER.md).
+You will also need python3-oxenmq , python3-oxenc and python3-pyonionreq
 
-### Step 1: Pull in the Session open group server executable:
+If you are on a debian based system these can be fetched from the deb.oxen.io repo, to add that repo execute the following
 
-```
-sudo curl -so /etc/apt/trusted.gpg.d/oxen.gpg https://deb.oxen.io/pub.gpg
+```sudo curl -so /etc/apt/trusted.gpg.d/oxen.gpg https://deb.oxen.io/pub.gpg
 echo "deb https://deb.oxen.io $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/oxen.list
 sudo apt update
-sudo apt install session-open-group-server
 ```
 
-### Step 2: Add a room
+then 
 
-Add a room of your choice with the following command:
+```sudo apt install python3-oxenmq python3-oxenc python3-pyonionreq```
+
+### Step 3: Adjust configuration
+
+Navigate to cloned directory 
+
+```cd session-pysogs```
+
+Make copy of uwsgi.ini file
+
+```cp contrib/uwsgi-sogs-direct.ini uwsgi-sogs.ini```
+
+open in text editor of your choice
+
+```nano uwsgi-sogs.ini```
+
+Change relevant config settings including chdir, uid, gid other settings like http port can be altered if required
+
+```chdir = LOCATION_OF_CLONED_DIRECTORY
+uid = USER_RUNNING_SOGS
+gid = USER_RUNNING_SOGS
+http = :UNUSED_PORT
+```
+Make copy of sogs.ini file 
+
+```cp sogs.ini.sample sogs.ini```
+
+Open in text editor of your choice
+
+```nano sogs.ini```
+
+Uncomment and change the base URL to your base URL, this can be a domain name or a public ip address
+
+For example
+```base_url = http://232.111.62.186```
+or 
+```base_url = http://example.com```
+
+### Step 4: Run SOGS
+
+Once configured you can start PySOGS by running the following command while inside the root directory
+
+```uwsgi uwsgi-sogs.ini```
+
+You will want to setup a system service or run SOGS in a separate terminal window so that you can execute administrative commands while SOGS is running
+
+### Step 5: Add room 
+
+in the root directory run 
+
+```python3 -msogs --add-room ROOMNAME```
+
+replacing ROOMNAME with the desired name of the room, this should produce a result similar to below
 
 ```
-session-open-group-server --add-room {room_id} {room_name}
+Created room fishing:
+
+fishing
+=======
+Name: fishing
+Description: None
+URL: http://5.161.62.186/fishing?public_key=e8303ae6992a8bfe0c6c1f1ebeb93f0f124d8548bc2dc687c94c81602692bc51
 ```
 
-`room_id` must be lowercase and consist of only letters, numbers and underscores.
+This URL can be used in Session to join the group
 
-For **example**:
+### Step 6: Add moderator to room
 
-```
-session-open-group-server --add-room fish FishingAustralia
-```
+in the root directory run 
 
-### Step 3: Print your server's URL
+```python3 -msogs --rooms ROOMNAME --add-moderators SESSIONID```
 
-Print the URL users can use to join rooms on your open group server by running:
+for example 
 
-```
-session-open-group-server --print-url
-```
+```python3 -msogs --rooms fishing --add-moderators 05d871fc80ca007eed9b2f4df72853e2a2d5465a92fcb1889fb5c84aa2833b3b40```
 
-This will output a result similar to:
+### Step 6: Check web viewer functionality
 
-```
-http://[host_name_or_ip]/[room_id]?public_key=2054fa3271f27ec9e55492c85d022f9582cb4aa2f457e4b885147fb913b9c131
-```
-
-You will need to replace `[host_name_or_ip]` with the IP address of your VPS or the domain mapping to your IP address, and `[room_id]` with the ID of one of the rooms you created earlier.
-
-For **example**:
-
-```
-http://116.203.217.101/fish?public_key=2054fa3271f27ec9e55492c85d022f9582cb4aa2f457e4b885147fb913b9c131
-```
-
-This URL can then be used to join the group inside the Session app.
-
-### Step 4: Make yourself a moderator
-
-Make yourself a moderator using the following command: 
-
-```
-session-open-group-server --add-moderator {your_session_id} {room_id}
-```
-
-For **example**:
-
-```
-session-open-group-server --add-moderator 05d871fc80ca007eed9b2f4df72853e2a2d5465a92fcb1889fb5c84aa2833b3b40 fish
-```
-
-
-### Step 5: Add an image for your new room (Optional)
-
-- Add your room on Session desktop using the URL printed earlier
-- Use Session desktop to upload a picture for your room
-
-Or
-
-- Upload a JPG to your VPS
-- Put it in `/var/lib/session-open-group-server/files`
-- Rename it to `{room_id}` (no file extension)
-
-## Customization
-
-The default options the Session open group server runs with should be fine in most cases, but if you like you can run on a custom port or host, specify the path to the X25519 key pair you want to use, etc. To do this, simply add [the right arguments](https://github.com/oxen-io/session-open-group-server/blob/main/BUILDING.md#step-3-run-it) to the `ExecStart` line in your systemd service file (normally located under `/etc/systemd/system`) and restart your service using:
-
-```
-systemctl restart session-open-group-server.service
-```
+Navigating to your BaseURL should display a web viewer of your open group 
