@@ -261,14 +261,14 @@ class Room:
         return self.check_permission(user)
 
     def check_read(self, user: Optional[User]):
-        return self.check_permission(read=True)
+        return self.check_permission(user, read=True)
 
     def check_write(self, user: Optional[User]):
-        return self.check_permission(write=True)
+        return self.check_permission(user, write=True)
 
     def check_upload(self, user: Optional[User]):
         """Checks for both upload *and* write permission"""
-        return self.check_permission(write=True, upload=True)
+        return self.check_permission(user, write=True, upload=True)
 
     def check_moderator(self, user: User):
         return self.check_permission(user, moderator=True)
@@ -388,7 +388,7 @@ class Room:
             app.logger.warn(f"Cannot post a whisper to {self}: {user} is not a moderator")
             raise BadPermission()
 
-        if not isinstance(whisper_to, User):
+        if whisper_to and not isinstance(whisper_to, User):
             whisper_to = User(session_id=whisper_to, autovivify=True, touch=False)
 
         if not self.check_admin(user) and filtration.should_drop_message_with_body(data):
@@ -418,10 +418,18 @@ class Room:
             result = cur.execute(
                 """
                 INSERT INTO messages
-                    (room, user, data, data_size, signature, whipser_to, whisper_mods)
+                    (room, user, data, data_size, signature, whisper, whisper_mods)
                     VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                (self.id, user.id, unpadded_data, data_size, sig, whisper_to.id, whisper_mods),
+                (
+                    self.id,
+                    user.id,
+                    unpadded_data,
+                    data_size,
+                    sig,
+                    whisper_to.id if whisper_to else None,
+                    whisper_mods,
+                ),
             )
             msg_id = result.lastrowid
             row = cur.execute(
