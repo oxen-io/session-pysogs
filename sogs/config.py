@@ -11,7 +11,7 @@ coloredlogs.install(milliseconds=True, isatty=True, logger=logger)
 
 # Default config settings; most of these are configurable via config.ini (see it for details).
 DB_PATH = 'sogs.db'
-DB_SCHEMA_FILE = 'schema.sql'
+DB_SCHEMA_FILE = 'schema.sql'  # Not configurable, just a constant
 KEY_FILE = 'key_x25519'
 URL_BASE = 'http://example.net'
 HTTP_SHOW_RECENT = True
@@ -31,6 +31,8 @@ IMPORT_ADJUST_MS = 0
 PROFANITY_FILTER = False
 PROFANITY_SILENT = True
 PROFANITY_CUSTOM = None
+TEMPLATE_PATH = 'templates'
+STATIC_PATH = 'static'
 
 
 def load_config():
@@ -94,6 +96,10 @@ def load_config():
             'profanity_filter': bool_opt('PROFANITY_FILTER'),
             'profanity_silent': bool_opt('PROFANITY_SILENT'),
             'profanity_custom': ('PROFANITY_CUSTOM', path_exists, val_or_none),
+        },
+        'web': {
+            'template_path': ('TEMPLATE_PATH', path_exists, val_or_none),
+            'static_path': ('STATIC_PATH', path_exists, val_or_none),
         },
         'log': {'level': ('LOG_LEVEL',)},
     }

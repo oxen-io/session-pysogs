@@ -1,12 +1,11 @@
-import base64
-
 from . import crypto
 from . import config
 from . import http
 from . import session_pb2 as protobuf
 
-import json
+import base64
 from flask import request, abort, Response
+import json
 
 
 def message_body(data: bytes):

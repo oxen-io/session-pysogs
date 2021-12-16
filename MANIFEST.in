@@ -1,0 +1,3 @@
+include sogs/schema.sql
+include sogs/static/*
+include sogs/templates/*
