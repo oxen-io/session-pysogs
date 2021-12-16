@@ -7,7 +7,7 @@ import coloredlogs
 logger = logging.getLogger("config")
 
 # Set up colored logging; we come back to set the level once we know it
-coloredlogs.install(milliseconds=True, isatty=True)
+coloredlogs.install(milliseconds=True, isatty=True, logger=logger)
 
 # Default config settings; most of these are configurable via config.ini (see it for details).
 DB_PATH = 'sogs.db'
