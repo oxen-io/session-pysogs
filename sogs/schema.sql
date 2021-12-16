@@ -37,6 +37,7 @@ CREATE TABLE messages (
     data BLOB, /* Actual message content, not including trailing padding; set to null to delete a message */
     data_size INTEGER, /* The message size, including trailing padding (needed because the signature is over the padded data) */
     signature BLOB, /* Signature of `data` by `public_key`; set to null when deleting a message */
+    filtered BOOLEAN NOT NULL DEFAULT FALSE, /* If true then we accept the message but never distribute it (e.g. for silent filtration) */
     whisper INTEGER REFERENCES users(id), /* If set: this is a whisper meant for the given user */
     whisper_mods BOOLEAN NOT NULL DEFAULT FALSE /* If true: this is a whisper that all mods should see (may or may not have a `whisper` target) */
 );

@@ -1,6 +1,7 @@
 ; SOGS configuration.  Copy this file to sogs.ini and edit as desired.  It can be left mostly (or
 ; entirely) empty: defaults are shown in the comments.
 
+
 [db]
 
 ; The database connection string url for the sogs database where everything is stored.  For sqlite
@@ -85,12 +86,28 @@
 ;history_prune_threshold = 30
 
 
-; Path to a file containing "bad" words for message filtration.  This feature in temporary and will
-; be removed once more robust bot/spam filtering is available.  The default is to use the file
-; `badwords.txt` if it exists, and nothing if it doesn't.  If specified explicitly then the file
-; must exist.
+; Whether we should pass words through a profanity filter, rejecting messages that contain profane
+; words (and common permutations of those words).  (Note that profanity filters are never applied to
+; room or server admins).
 ;
-;bad_words =
+;profanity_filter = no
+
+
+; Whether the profanity filter should be "silent" or not.  If enabled (the default), then messages
+; containing banned words are accepted by the server but quarantined and never distributed to other
+; users.  If disabled then users will receive an error when attempting to post a message containing
+; profanity.
+;
+;profanity_silent = yes
+
+
+; Path to a file containing a custom profanity list for the profanity filter.  If not specified then
+; the default list of the Python `better_profanity` library is used,
+; https://raw.githubusercontent.com/snguyenthanh/better_profanity/master/better_profanity/profanity_wordlist.txt
+; To add/remove words download that file, modify as needed, and set this value to the path to that
+; file.
+;
+;profanity_custom =
 
 
 

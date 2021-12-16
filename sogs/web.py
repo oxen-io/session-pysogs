@@ -1,8 +1,9 @@
 import flask
 from . import config
+import coloredlogs
 
 app = flask.Flask(__name__)
-app.logger.setLevel(config.LOG_LEVEL)
+coloredlogs.install(milliseconds=True, isatty=True, logger=app.logger, level=config.LOG_LEVEL)
 
 # Monkey-patch app.get/post/etc. for Flask <2 compatibility; this has to be before the imports,
 # below, because they depend on this existing.
