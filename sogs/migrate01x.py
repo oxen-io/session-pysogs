@@ -7,8 +7,10 @@ from . import utils
 import os
 import logging
 import time
+import coloredlogs
 
 logger = logging.getLogger(__name__)
+coloredlogs.install(milliseconds=True, isatty=True, logger=logger, level=config.LOG_LEVEL)
 
 
 def migrate01x(conn):
