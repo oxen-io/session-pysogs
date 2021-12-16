@@ -1,0 +1,17 @@
+[Unit]
+Description=Session Open Group Server
+After=network-online.target
+Conflicts=sogs-standalone.service
+
+[Service]
+User=_loki
+Type=notify
+KillSignal=SIGQUIT
+NotifyAccess=all
+Restart=always
+RestartSec=5s
+ExecStart=/usr/bin/uwsgi --ini /etc/sogs/uwsgi-proxied.ini
+
+[Install]
+WantedBy=multi-user.target
+Alias=sogs.service

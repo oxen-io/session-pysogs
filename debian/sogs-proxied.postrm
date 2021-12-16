@@ -1,0 +1,12 @@
+#!/bin/sh
+
+#DEBHELPER#
+
+if [ "$1" = purge ]; then
+    for f in /etc/sogs/{sogs,uwsgi-proxied}.ini /etc/nginx/sites-available/sogs-proxy /etc/apache2/sites-available/sogs-proxy.conf; do
+        ucf --purge $f
+        rm -f $f
+    done
+
+    rm -f /etc/apache2/sites-enabled/sogs-proxy.conf /etc/nginx/sites-enabled/sogs-proxy
+fi

@@ -1,0 +1,3 @@
+debian/sogs-proxy.nginx.conf /usr/share/sogs-proxied
+debian/sogs-proxy.apache2.conf /usr/share/sogs-proxied
+debian/sogs /usr/sbin

@@ -1,0 +1,2 @@
+/usr/share/sogs-proxied/sogs-proxy.nginx.conf /usr/share/python3-sogs/sogs-proxy.nginx.conf
+/usr/share/sogs-proxied/sogs-proxy.apache2.conf /usr/share/python3-sogs/sogs-proxy.apache2.conf

@@ -1,0 +1,4 @@
+sogs.ini.sample /usr/share/python3-sogs
+contrib/uwsgi-sogs-standalone.ini /usr/share/python3-sogs
+contrib/uwsgi-sogs-proxied.ini /usr/share/python3-sogs
+contrib/uwsgi-sogs-proxied-socket.ini /usr/share/python3-sogs

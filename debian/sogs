@@ -1,0 +1,21 @@
+#!/bin/sh -e
+
+export SOGS_CONFIG=/etc/sogs/sogs.ini
+cd /var/lib/session-open-group-server
+
+if ! [ -e sogs.db ] || ! [ -e key_x25519 ]; then
+    echo "Error: /var/lib/session-open-group-server/sogs.db or .../key_x25519 do not exist; has the package been configured and successfully started?" >&2
+    exit 43
+fi
+
+uid=$(id -u)
+if [ "$uid" != "0" ]; then
+    if [ "$(id -un)" = _loki ]; then
+        exec /usr/bin/python3 -msogs "$@"
+    fi
+
+    echo "This script must run as root (e.g. via sudo)" >&2
+    exit 44
+fi
+
+exec su -s /usr/bin/python3 _loki -- -msogs "$@"

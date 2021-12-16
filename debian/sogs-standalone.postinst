@@ -1,0 +1,60 @@
+#!/bin/sh -e
+
+if [ "$1" = configure ]; then
+    . /usr/share/debconf/confmodule
+
+    # Create _loki user if it doesn't yet exist
+    if ! getent passwd _loki >/dev/null; then
+        adduser --force-badname --system --quiet --home /var/lib/oxen --group --gecos "Oxen daemons" _loki
+    fi
+    # Make sure the group gets created (in case _loki was pre-existing)
+    if ! getent group _loki >/dev/null; then
+        addgroup --force-badname --system --quiet _loki
+    fi
+    # Make sure the _loki user is part of the _loki group
+    if ! id -Gn _loki | grep -qw _loki; then
+       adduser --force-badname --quiet _loki _loki
+    fi
+    # Create the SOGS folder
+    SOGS=/var/lib/session-open-group-server
+    mkdir -p $SOGS
+    # Set permissions
+    su -s /bin/sh _loki -c "test -O $SOGS && test -G $SOGS" || \
+        chown _loki:_loki $SOGS
+
+    if ! [ -e $SOGS/key_x25519 ] && [ -e $SOGS/x25519_private_key.pem ]; then
+        echo -n "Importing old SOGS private key"
+        cd $SOGS
+        su -s /bin/sh _loki -c "python3 -msogs.key_convert -i $SOGS/x25519_private_key.pem -o $SOGS/key_x25519"
+    fi
+
+    db_get session-pysogs/url-http
+    URL="${RET:-http://example.net}"
+    tmpconf=$(mktemp --tmpdir sogs.ini.XXXXXXXXXX)
+    tmpconf_uwsgi=$(mktemp --tmpdir uwsgi-standalone.ini.XXXXXXXXXX)
+
+    HOST="${RET#http://}"
+    case "$HOST" in
+        *:*) PORT="${HOST##*:}" ;;
+        *) PORT=80 ;;
+    esac
+
+    sed -e "s#^;base_url = http.*#base_url = $URL#" /usr/share/python3-sogs/sogs.ini.sample >$tmpconf
+    sed -e "
+        /^#/d;
+        /^uid /d;
+        /^gid /d;
+        s#^chdir = .*#chdir = /var/lib/session-open-group-server#;
+        s#^http =.*#http = :$PORT#" \
+        /usr/share/python3-sogs/uwsgi-sogs-standalone.ini >$tmpconf_uwsgi
+    echo "env = SOGS_CONFIG=/etc/sogs/sogs.ini" >>$tmpconf_uwsgi
+
+    chmod 644 $tmpconf $tmpconf_uwsgi
+
+    mkdir -p /etc/sogs
+    export UCF_FORCE_CONFFMISS=1
+    ucf --debconf-ok $tmpconf /etc/sogs/sogs.ini
+    ucf --debconf-ok $tmpconf_uwsgi /etc/sogs/uwsgi-standalone.ini
+fi
+
+#DEBHELPER#

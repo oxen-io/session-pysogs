@@ -1,0 +1,71 @@
+Template: session-pysogs/url
+Type: string
+Default: http://
+Description: Enter your SOGS public URL
+ SOGS needs to know its own URL to be able to properly generating external links
+ to itself.  Enter the publicly accessible URL for this server here.  URLs must
+ start with http:// or https://, and can be a hostname or IP, optionally
+ followed by a port.
+ .
+ Using a hostname rather than a bare IP is recommended as it allows the server
+ to move in the future without disconnecting existing Session clients using the
+ server's rooms.
+ .
+ Note that you must also configure a front-end webserver (such as nginx or
+ apache2) as a reverse proxy for the sogs server at http://127.3.2.1:4242.  If
+ you use an https:// URL then you must additionally set up an HTTPS certificates
+ in that front-end proxy server, for example using the certbot package with
+ LetsEncrypt certificates.
+ .
+ Examples: https://sogs.example.net, http://example.com:8080,
+ http://198.51.100.42
+ 
+
+Template: session-pysogs/url-http
+Type: string
+Default: http://
+Description: Enter your SOGS public URL
+ SOGS needs to know its own URL to be able to properly generating external links
+ to itself.  Enter the publicly accessible URL for this server here.  URLs must
+ start with http:// and can be a hostname or IP, optionally followed by a port
+ (to use a port other than the default 80).
+ .
+ HTTPS connections are not supported by sogs-standalone; if you want HTTPS
+ support then you should uninstall this package and install the sogs-proxied
+ package instead.
+ .
+ Using a hostname rather than a bare IP is recommended as it allows the server
+ to move in the future without disconnecting existing Session clients using the
+ server's rooms.
+ .
+ Examples: http://sogs.example.net, http://example.com:8080,
+ http://198.51.100.42
+
+Template: session-pysogs/url-invalid
+Type: boolean
+Default: true
+Description: Retry SOGS public URL?
+ Invalid URL entered.
+ .
+ You entered an invalid SOGS URL.  Choose yes here to return to the URL entry
+ dialog and try again.  If you say no here your sogs server will generate
+ invalid URLs until you manually fix the setting in /etc/sogs/sogs.ini.
+
+Template: session-pysogs/activate-http-config
+Type: boolean
+Default: true
+Description: Activate HTTP config?
+ This package includes automatic configuration for nginx and apache2 that can
+ automatically set up those servers to proxy requests to the SOGS backend server.
+ .
+ Should I activate those site configurations now?
+ .
+ If you answer No here you will have to activate the sogs-proxy site manually
+ later on (using the a2ensite command for apache2, or creating a symlink in
+ /etc/nginx/sites-enabled for nginx).
+ .
+ Note that the activate configurations only take effect of apache2 or nginx is
+ installed and running.
+ .
+ To use some other front-end proxy or to configure it yourself, say No here and
+ make your front-end server proxy all requests to http://127.3.2.1:4242.

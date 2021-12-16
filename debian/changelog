@@ -1,0 +1,11 @@
+session-pysogs (0.2.0~git20211216-2) sid; urgency=medium
+
+  * Rebuild with fixes.
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Thu, 16 Dec 2021 18:27:36 -0400
+
+session-pysogs (0.2.0~git20211216-1) sid; urgency=medium
+
+  * Initial debian packaging.
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Tue, 14 Dec 2021 16:43:02 -0400

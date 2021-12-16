@@ -1,0 +1,42 @@
+From: Jason Rhinelander <jason@imaginary.ca>
+Date: Thu, 16 Dec 2021 15:48:23 -0400
+Subject: Use sogs instead of python3 -msogs
+
+For deb package we include a sogs script that changes to the appropriate
+user to invoke the command; this patch rewrites the help messages to
+reflect that.
+---
+ sogs/__main__.py | 9 +++++----
+ 1 file changed, 5 insertions(+), 4 deletions(-)
+
+diff --git a/sogs/__main__.py b/sogs/__main__.py
+index 89e92db..1e2d9cf 100644
+--- a/sogs/__main__.py
++++ b/sogs/__main__.py
+@@ -9,21 +9,22 @@ from . import model
+ from . import crypto
+ 
+ ap = AP(
++    prog="sogs",
+     epilog="""
+ 
+ Examples:
+ 
+     # Add new room 'xyz':
+-    python3 -msogs --add-room xyz --name 'XYZ Room'
++    sogs --add-room xyz --name 'XYZ Room'
+ 
+     # Add 2 admins to each of rooms 'xyz' and 'abc':
+-    python3 -msogs --rooms abc xyz --admin --add-moderators 050123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef 0500112233445566778899aabbccddeeff00112233445566778899aabbccddeeff
++    sogs --rooms abc xyz --admin --add-moderators 050123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef 0500112233445566778899aabbccddeeff00112233445566778899aabbccddeeff
+ 
+      # Add a global moderator visible as a moderator of all rooms:
+-    python3 -msogs --add-moderators 050123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef --rooms=+ --visible
++    sogs --add-moderators 050123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef --rooms=+ --visible
+ 
+      # List room info:
+-    python3 -msogs -L
++    sogs -L
+ 
+ """,  # noqa: E501
+     formatter_class=RawDescriptionHelpFormatter,

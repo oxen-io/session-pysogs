@@ -1,0 +1,97 @@
+#!/bin/sh -e
+
+reload_nginx=
+restart_apache=
+
+if [ "$1" = configure ]; then
+    . /usr/share/debconf/confmodule
+
+    # Create _loki user if it doesn't yet exist
+    if ! getent passwd _loki >/dev/null; then
+        adduser --force-badname --system --quiet --home /var/lib/oxen --group --gecos "Oxen daemons" _loki
+    fi
+    # Make sure the group gets created (in case _loki was pre-existing)
+    if ! getent group _loki >/dev/null; then
+        addgroup --force-badname --system --quiet _loki
+    fi
+    # Make sure the _loki user is part of the _loki group
+    if ! id -Gn _loki | grep -qw _loki; then
+       adduser --force-badname --quiet _loki _loki
+    fi
+    # Create the SOGS folder
+    SOGS=/var/lib/session-open-group-server
+    mkdir -p $SOGS
+    # Set permissions
+    su -s /bin/sh _loki -c "test -O $SOGS && test -G $SOGS" || \
+        chown _loki:_loki $SOGS
+
+    if ! [ -e $SOGS/key_x25519 ] && [ -e $SOGS/x25519_private_key.pem ]; then
+        echo -n "Importing old SOGS private key"
+        cd $SOGS
+        su -s /bin/sh _loki -c "python3 -msogs.key_convert -i $SOGS/x25519_private_key.pem -o $SOGS/key_x25519"
+    fi
+
+    db_get session-pysogs/url || true
+    URL="$RET"
+    tmpconf=$(mktemp --tmpdir sogs.ini.XXXXXXXXXX)
+    tmpconf_nginx=$(mktemp --tmpdir sogs-proxy.XXXXXXXXXX)
+    tmpconf_apache2=$(mktemp --tmpdir sogs-proxy.conf.XXXXXXXXXX)
+    tmpconf_uwsgi=$(mktemp --tmpdir uwsgi-proxied.ini.XXXXXXXXXX)
+
+    HOST="${URL#http://}"
+    HOST="${HOST%:*}"
+
+    sed -e "s#^;base_url = http.*#base_url = $URL#" /usr/share/python3-sogs/sogs.ini.sample >$tmpconf
+    sed -e "s/INSERT_SERVER_NAME_HERE/$HOST/" /usr/share/sogs-proxied/sogs-proxy.nginx.conf >${tmpconf_nginx}
+    sed -e "s/INSERT_SERVER_NAME_HERE/$HOST/" /usr/share/sogs-proxied/sogs-proxy.apache2.conf >${tmpconf_apache2}
+    sed -e "
+        /^#/d;
+        /^uid /d;
+        /^gid /d;
+        s#^chdir = .*#chdir = /var/lib/session-open-group-server#" \
+        /usr/share/doc/python3-sogs/uwsgi-sogs-proxied.ini >$tmpconf_uwsgi
+    echo "env = SOGS_CONFIG=/etc/sogs/sogs.ini" >>$tmpconf_uwsgi
+
+    chmod 644 $tmpconf $tmpconf_uwsgi $tmpconf_apache2 $tmpconf_nginx
+
+    mkdir -p /etc/sogs /etc/nginx/sites-available /etc/apache2/sites-available
+    export UCF_FORCE_CONFFMISS=1
+    ucf --debconf-ok ${tmpconf} /etc/sogs/sogs.ini
+    ucf --debconf-ok ${tmpconf_nginx} /etc/nginx/sites-available/sogs-proxy
+    ucf --debconf-ok ${tmpconf_apache2} /etc/apache2/sites-available/sogs-proxy.conf
+    ucf --debconf-ok ${tmpconf_uwsgi} /etc/sogs/uwsgi-proxied.ini
+
+    db_get session-pysogs/activate-http-config || true
+    if [ "$RET" = "true" ]; then
+        if [ -d /etc/nginx/sites-enabled ] && ! [ -e /etc/nginx/sites-enabled/sogs-proxy ]; then
+            ln -snf ../sites-available/sogs-proxy /etc/nginx/sites-enabled/sogs-proxy
+            reload_nginx=1
+        fi
+        if [ -d /etc/apache2/sites-enabled ] && ! [ -e /etc/apache2/sites-enabled/sogs-proxy.conf ]; then
+            ln -snf ../sites-available/sogs-proxy.conf /etc/apache2/sites-enabled/sogs-proxy.conf
+            reload_apache=1
+        fi
+        if [ -e /etc/apache2/mods-available/proxy_http.load ] \
+            && ! [ -e /etc/apache2/mods-enabled/proxy_http.load ] \
+            && command -v a2enmod >/dev/null; then
+            a2enmod -q -m proxy_http
+            restart_apache=1
+        fi
+    fi
+fi
+
+#DEBHELPER#
+
+if [ "$1" = configure ]; then
+    if [ -n "$restart_apache$reload_apache" ] && systemctl is-active apache2.service >/dev/null; then
+        if [ -n "$restart_apache" ]; then
+            deb-systemd-invoke restart apache2.service || true
+        else
+            deb-systemd-invoke reload apache2.service || true
+        fi
+    fi
+
+    if [ -n "$reload_nginx" ] && systemctl is-active nginx.service >/dev/null; then
+        deb-systemd-invoke reload nginx.service || true
+    fi
+fi

@@ -1,0 +1,19 @@
+[Unit]
+Description=Session Open Group Server
+After=network-online.target
+Conflicts=sogs-proxied.service
+
+[Service]
+User=_loki
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+Type=notify
+KillSignal=SIGQUIT
+NotifyAccess=all
+Restart=always
+RestartSec=5s
+ExecStart=/usr/bin/uwsgi --ini /etc/sogs/uwsgi-standalone.ini
+
+[Install]
+WantedBy=multi-user.target
+Alias=sogs.service

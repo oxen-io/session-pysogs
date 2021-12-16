@@ -1,0 +1,10 @@
+#!/bin/sh
+
+#DEBHELPER#
+
+if [ "$1" = purge ]; then
+    for f in /etc/sogs/{sogs,uwsgi-standalone}.ini; do
+        ucf --purge $f
+        rm -f $f
+    done
+fi
