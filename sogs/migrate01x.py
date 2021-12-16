@@ -247,6 +247,8 @@ def migrate01x(conn):
                 # wouldn't actually fetch any new deletions until the counter catches up.  Fix that
                 # up by incrementing the updates counter if necessary.
                 top_del_id = rconn.execute("SELECT MAX(id) FROM deleted_messages").fetchone()[0]
+                if top_del_id is None:
+                    top_del_id = 0
 
                 cur.execute(
                     "UPDATE rooms SET updates = ? WHERE id = ?", (max(updated, top_del_id), room_id)
