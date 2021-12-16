@@ -7,7 +7,6 @@ from . import config
 from . import db
 from . import utils
 from . import crypto
-from . import filtration
 from . import http
 from .omq import send_mule
 from .web import app
@@ -15,6 +14,14 @@ from .web import app
 import os
 import re
 import time
+from better_profanity import profanity
+
+
+if config.PROFANITY_FILTER:
+    if config.PROFANITY_CUSTOM:
+        profanity.load_censor_words_from_file(config.PROFANITY_FILTER)
+    else:
+        profanity.load_censor_words()
 
 
 class NotFound(LookupError):
@@ -285,7 +292,7 @@ class Room:
             """
             SELECT COUNT(*), COALESCE(SUM(data_size), 0)
             FROM messages
-            WHERE room = ? AND data IS NOT NULL
+            WHERE room = ? AND data IS NOT NULL AND NOT filtered
             """,
             (self.id,),
         ).fetchone()[0:2]
@@ -332,7 +339,7 @@ class Room:
         for row in db.execute(
             f"""
             SELECT * FROM message_details
-            WHERE room = ? AND data IS NOT NULL
+            WHERE room = ? AND data IS NOT NULL AND NOT filtered
                 {'AND id > ?' if after else 'AND id < ?' if before else ''}
                 AND (
                     whisper IS NULL
@@ -391,8 +398,17 @@ class Room:
         if whisper_to and not isinstance(whisper_to, User):
             whisper_to = User(session_id=whisper_to, autovivify=True, touch=False)
 
-        if not self.check_admin(user) and filtration.should_drop_message_with_body(data):
-            raise PostRejected("filtration rejected message")
+        filtered = False
+        if (
+            config.PROFANITY_FILTER
+            and not self.check_admin(user)
+            and profanity.contains_profanity(utils.message_body(data))
+        ):
+            if config.PROFANITY_SILENT:
+                filtered = True
+            else:
+                # FIXME: can we send back some error code that makes Session not retry submission?
+                raise PostRejected("filtration rejected message")
 
         with db.tx() as cur:
             if not self.check_admin(user):
@@ -418,8 +434,8 @@ class Room:
             result = cur.execute(
                 """
                 INSERT INTO messages
-                    (room, user, data, data_size, signature, whisper, whisper_mods)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    (room, user, data, data_size, signature, filtered, whisper, whisper_mods)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     self.id,
@@ -427,6 +443,7 @@ class Room:
                     unpadded_data,
                     data_size,
                     sig,
+                    filtered,
                     whisper_to.id if whisper_to else None,
                     whisper_mods,
                 ),

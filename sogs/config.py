@@ -28,7 +28,9 @@ ROOM_ACTIVE_PRUNE_THRESHOLD = 60
 ROOM_DEFAULT_ACTIVE_THRESHOLD = 7
 MESSAGE_HISTORY_PRUNE_THRESHOLD = 30
 IMPORT_ADJUST_MS = 0
-BAD_WORDS_FILE = 'badwords.txt' if os.path.exists('badwords.txt') else None
+PROFANITY_FILTER = True
+PROFANITY_SILENT = True
+PROFANITY_CUSTOM = None
 
 
 def load_config():
@@ -54,6 +56,14 @@ def load_config():
     if 'log' in cp.sections() and 'level' in cp['log']:
         logger.setLevel(cp['log']['level'])
 
+    path_exists = lambda path: not path or os.path.exists(path)
+    val_or_none = lambda path: path if path else None
+
+    truthy = ('y', 'yes', 'Y', 'Yes', 'true', 'True', '1')
+    falsey = ('n', 'no', 'N', 'No', 'false', 'False', '0')
+    booly = truthy + falsey
+    bool_opt = lambda name: (name, lambda x: x in booly, lambda x: x in truthy)
+
     # Map of: section => { param => ('GLOBAL', test lambda, value lambda) }
     # global is the string name of the global variable to set
     # test lambda returns True/False for validation (if None/omitted, accept anything)
@@ -69,11 +79,7 @@ def load_config():
                 lambda x: [y for y in x.splitlines() if len(y)],
             ),
             'omq_internal': ('OMQ_INTERNAL', lambda x: re.search('^(?:tcp|ipc)://.', x)),
-            'http_show_recent': (
-                'HTTP_SHOW_RECENT',
-                lambda x: x in ('yes', 'no'),
-                lambda x: x == 'yes',
-            ),
+            'http_show_recent': bool_opt('HTTP_SHOW_RECENT'),
         },
         'files': {
             'expiry': ('UPLOAD_DEFAULT_EXPIRY_DAYS', None, float),
@@ -85,7 +91,9 @@ def load_config():
         },
         'messages': {
             'history_prune_threshold': ('MESSAGE_HISTORY_PRUNE_THRESHOLD', None, float),
-            'bad_words': ('BAD_WORDS_FILE', os.path.exists),
+            'profanity_filter': bool_opt('PROFANITY_FILTER'),
+            'profanity_silent': bool_opt('PROFANITY_SILENT'),
+            'profanity_custom': ('PROFANITY_CUSTOM', path_exists, val_or_none),
         },
         'log': {'level': ('LOG_LEVEL',)},
     }

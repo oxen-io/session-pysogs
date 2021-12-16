@@ -131,7 +131,7 @@ def database_init():
     # Database migrations/updates/etc.
     migrate_v01x(conn)
     add_new_columns(conn)
-    update_whisper_views(conn)
+    update_message_views(conn)
     create_message_details_deleter(conn)
     check_for_hacks(conn)
 
@@ -166,6 +166,7 @@ def add_new_columns(conn):
         'messages': {
             'whisper': 'INTEGER REFERENCES users(id)',
             'whisper_mods': 'BOOLEAN NOT NULL DEFAULT FALSE',
+            'filtered': 'BOOLEAN NOT NULL DEFAULT FALSE',
         },
         'user_permission_futures': {'banned': 'BOOLEAN'},
     }
@@ -178,10 +179,9 @@ def add_new_columns(conn):
                     conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
 
 
-def update_whisper_views(conn):
-    if 'whisper_to' not in (
-        c['name'] for c in conn.execute("PRAGMA table_info('message_metadata')")
-    ):
+def update_message_views(conn):
+    cols = [c['name'] for c in conn.execute("PRAGMA table_info('message_metadata')")]
+    if any(x not in cols for x in ('whisper_to', 'filtered')):
         with conn:
             conn.execute("DROP VIEW IF EXISTS message_metadata")
             conn.execute("DROP VIEW IF EXISTS message_details")
@@ -197,7 +197,7 @@ SELECT messages.*, uposter.session_id, uwhisper.session_id AS whisper_to
             conn.execute(
                 """
 CREATE VIEW message_metadata AS
-SELECT id, room, user, session_id, posted, edited, updated, whisper_to,
+SELECT id, room, user, session_id, posted, edited, updated, filtered, whisper_to,
         length(data) AS data_unpadded, data_size, length(signature) as signature_length
     FROM message_details
 """

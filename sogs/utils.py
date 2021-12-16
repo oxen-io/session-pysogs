@@ -11,9 +11,9 @@ from flask import request, abort, Response
 
 def message_body(data: bytes):
     """given a bunch of bytes for a protobuf message return the message's body"""
-    msg = protobuf.DataMessage()
-    msg.ParseFromString(data)
-    return msg.body
+    msg = protobuf.Content()
+    msg.ParseFromString(remove_session_message_padding(data))
+    return msg.dataMessage.body
 
 
 def encode_base64(data: bytes):
@@ -148,7 +148,7 @@ def remove_session_message_padding(data: bytes):
     # strip off all the 0x00's and then find something that isn't 0x80, then we're supposed to use
     # the whole thing (without the 0's stripped off).  Session code has a comment "This is dumb"
     # describing all of this.  I concur.
-    if data and data[-1] in (b'\x00', b'\x80'):
+    if data and data[-1] in (0x00, 0x80):
         stripped_data = data.rstrip(b'\x00')
         if stripped_data and stripped_data[-1] == 0x80:
             data = stripped_data[:-1]
@@ -160,5 +160,5 @@ def add_session_message_padding(data: bytes, length):
     is written).  Returns the padded value."""
 
     if length > len(data):
-        data += b'\x80' + b'\x00' * (length - len(data))
+        data += b'\x80' + b'\x00' * (length - len(data) - 1)
     return data
