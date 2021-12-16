@@ -384,7 +384,7 @@ def handle_legacy_add_admin():
         abort(http.BAD_REQUEST)
 
     mod = model.User(session_id=session_id, autovivify=True)
-    room.add_admin(mod, admin=True, visible=True, added_by=user)
+    room.set_moderator(mod, admin=True, visible=True, added_by=user)
 
     return jsonify({"status_code": 200})
 
