@@ -14,14 +14,15 @@ from .web import app
 import os
 import re
 import time
-from better_profanity import profanity
 
 
 if config.PROFANITY_FILTER:
+    import better_profanity
+
     if config.PROFANITY_CUSTOM:
-        profanity.load_censor_words_from_file(config.PROFANITY_FILTER)
+        better_profanity.profanity.load_censor_words_from_file(config.PROFANITY_FILTER)
     else:
-        profanity.load_censor_words()
+        better_profanity.profanity.load_censor_words()
 
 
 class NotFound(LookupError):
@@ -399,16 +400,15 @@ class Room:
             whisper_to = User(session_id=whisper_to, autovivify=True, touch=False)
 
         filtered = False
-        if (
-            config.PROFANITY_FILTER
-            and not self.check_admin(user)
-            and profanity.contains_profanity(utils.message_body(data))
-        ):
-            if config.PROFANITY_SILENT:
-                filtered = True
-            else:
-                # FIXME: can we send back some error code that makes Session not retry submission?
-                raise PostRejected("filtration rejected message")
+        if config.PROFANITY_FILTER and not self.check_admin(user):
+            import better_profanity
+
+            if better_profanity.profanity.contains_profanity(utils.message_body(data)):
+                if config.PROFANITY_SILENT:
+                    filtered = True
+                else:
+                    # FIXME: can we send back some error code that makes Session not retry?
+                    raise PostRejected("filtration rejected message")
 
         with db.tx() as cur:
             if not self.check_admin(user):

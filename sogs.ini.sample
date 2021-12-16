@@ -90,7 +90,7 @@
 ; words (and common permutations of those words).  (Note that profanity filters are never applied to
 ; room or server admins).
 ;
-;profanity_filter = yes
+;profanity_filter = no
 
 
 ; Whether the profanity filter should be "silent" or not.  If enabled (the default), then messages

@@ -28,7 +28,7 @@ ROOM_ACTIVE_PRUNE_THRESHOLD = 60
 ROOM_DEFAULT_ACTIVE_THRESHOLD = 7
 MESSAGE_HISTORY_PRUNE_THRESHOLD = 30
 IMPORT_ADJUST_MS = 0
-PROFANITY_FILTER = True
+PROFANITY_FILTER = False
 PROFANITY_SILENT = True
 PROFANITY_CUSTOM = None
 
@@ -59,8 +59,8 @@ def load_config():
     path_exists = lambda path: not path or os.path.exists(path)
     val_or_none = lambda path: path if path else None
 
-    truthy = ('y', 'yes', 'Y', 'Yes', 'true', 'True', '1')
-    falsey = ('n', 'no', 'N', 'No', 'false', 'False', '0')
+    truthy = ('y', 'yes', 'Y', 'Yes', 'true', 'True', 'on', 'On', '1')
+    falsey = ('n', 'no', 'N', 'No', 'false', 'False', 'off', 'Off', '0')
     booly = truthy + falsey
     bool_opt = lambda name: (name, lambda x: x in booly, lambda x: x in truthy)
 
