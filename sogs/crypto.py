@@ -16,7 +16,7 @@ import pyonionreq
 
 # generate seed as needed
 if not os.path.exists(config.KEY_FILE):
-    with open(config.KEY_FILE, 'wb') as f:
+    with open(os.open(config.KEY_FILE, os.O_CREAT | os.O_WRONLY, 0o400), 'wb') as f:
         f.write(PrivateKey.generate().encode())
 
 with open(config.KEY_FILE, 'rb') as f:

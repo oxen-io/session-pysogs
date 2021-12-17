@@ -4,6 +4,7 @@ import os
 import sqlite3
 import logging
 import threading
+import importlib.resources
 
 HAVE_FILE_ID_HACKS = False
 # roomid => (max, offset).  Max is the highest message id that was in the old table; offset is the
@@ -125,8 +126,7 @@ def database_init():
 
     if not have_messages:
         logging.warn("No database detected; creating new database schema")
-        with open(config.DB_SCHEMA_FILE) as f, conn:
-            conn.executescript(f.read())
+        conn.executescript(importlib.resources.read_text('sogs', 'schema.sql'))
 
     # Database migrations/updates/etc.
     migrate_v01x(conn)

@@ -4,4 +4,8 @@ skip-string-normalization = true
 skip-magic-trailing-comma = true
 target-version = ['py38']
 include = '\.py$'
-extend-exclude = 'sogs/session_pb2.py'
+exclude = 'sogs/.*_pb2.py'
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"

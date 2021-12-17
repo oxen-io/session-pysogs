@@ -110,6 +110,23 @@
 ;profanity_custom =
 
 
+[web]
+
+; If set this should be an absolute path where we look for templates for the web view pages.  When
+; unset (or empty) the default package resources (in sogs/templates) are used.  See also
+; [net].http_show_recent.  If you want to customize templates then make a copy of the sogs/templates
+; directory and set this to the path of that copy.
+;
+;template_path =
+
+
+; If set this should be an absolute path where we look for /static/* files for the web viewer.  When
+; unset/empty we use the default sogs/static resources.  If you want to modify them locally without
+; worrying about them conflicting with updates then make a copy of the sogs/static directory and set
+; this to the full path of the copy.
+;
+;static_path =
+
 
 [log]
 
