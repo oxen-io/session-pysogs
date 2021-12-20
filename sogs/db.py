@@ -100,8 +100,8 @@ class LocalTxContextManager:
                     self.conn.execute("ROLLBACK")
                 else:
                     self.conn.execute(f"ROLLBACK TO SAVEPOINT sogs_sp_{self.sp_num}")
-            except Exception:
-                pass
+            except Exception as e:
+                logging.warn(f"Failed to rollback database transaction: {e}")
 
 
 # Shorter alias for convenience

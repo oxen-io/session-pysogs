@@ -12,16 +12,19 @@ INTERVAL = 10
 
 def cleanup():
     with app.app_context():
-        app.logger.debug("Pruning expired items")
-        files = prune_files()
-        msg_hist = prune_message_history()
-        room_act = prune_room_activity()
-        perm_upd = apply_permission_updates()
-        app.logger.debug(
-            "Pruned {} files, {} msg hist, {} room activity, {} perm updates".format(
-                files, msg_hist, room_act, perm_upd
+        try:
+            app.logger.debug("Pruning expired items")
+            files = prune_files()
+            msg_hist = prune_message_history()
+            room_act = prune_room_activity()
+            perm_upd = apply_permission_updates()
+            app.logger.debug(
+                "Pruned {} files, {} msg hist, {} room activity, {} perm updates".format(
+                    files, msg_hist, room_act, perm_upd
+                )
             )
-        )
+        except Exception as e:
+            app.logger.warn(f"Periodic database cleanup failed: {e}")
 
 
 def prune_files():
@@ -93,7 +96,7 @@ def apply_permission_updates():
             ON CONFLICT (room, user) DO UPDATE SET
                 read = COALESCE(excluded.read, read),
                 write = COALESCE(excluded.write, write),
-                upload = COALESCE(excluded.upload, upload)
+                upload = COALESCE(excluded.upload, upload),
                 banned = COALESCE(excluded.banned, banned)
             """,
             (now,),
