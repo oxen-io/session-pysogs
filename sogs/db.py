@@ -46,19 +46,29 @@ def execute(query, *parameters):
 
 class LocalTxContextManager:
     """
-    Context manager that begins a transaction and yields a cursor on entry, commits on normal exit,
-    and rolls back on exit via exception.
+    Context manager that begins a transaction (with BEGIN IMMEDIATE, by default) and yields a cursor
+    on entry, commits on normal exit, and rolls back on exit via exception.
 
-    Internally this uses named savepoints with unique names, which allow transactions to be nested.
+    Internally this supports nesting via named savepoints with unique names on nested construction
+    within a thread.
 
     Intended use is with a context to wrap code in a transaction (using the `tx` alias):
 
         with db.tx() as cur:
             ...
+
+    Transactions are IMMEDIATE by default because SQLite's default DEFERRED transactions are a
+    recipe for concurrency failure (see SQLITE_BUSY_SNAPSHOT description in
+    https://www.sqlite.org/isolation.html).  If, however, you need transactional isolation for a
+    read-only transaction (i.e. because you need multiple SELECTs that depend on a consistent
+    snapshot of the data) then you can construct the transaction with the `read_only=True` kwarg to
+    use a DEFERRED transaction.  (It is technically not read-only, but if you try to use
+    modification on it you will probably end up crying at some future point).
     """
 
-    def __init__(self):
+    def __init__(self, *, read_only=False):
         self.conn = get_conn()
+        self.immediate = not read_only
 
     def __enter__(self):
         if not hasattr(_conns, 'sp_num'):
@@ -67,7 +77,10 @@ class LocalTxContextManager:
             _conns.sp_num += 1
 
         self.sp_num = _conns.sp_num
-        self.conn.execute(f"SAVEPOINT sogs_sp_{self.sp_num}")
+        if self.sp_num == 1:
+            self.conn.execute("BEGIN IMMEDIATE" if self.immediate else "BEGIN")
+        else:
+            self.conn.execute(f"SAVEPOINT sogs_sp_{self.sp_num}")
 
         return self.conn.cursor()
 
@@ -75,12 +88,18 @@ class LocalTxContextManager:
         _conns.sp_num -= 1
         if exc_type is None:
             # This can throw, which we want to propagate
-            self.conn.execute(f"RELEASE SAVEPOINT sogs_sp_{self.sp_num}")
+            if self.sp_num == 1:
+                self.conn.execute("COMMIT")
+            else:
+                self.conn.execute(f"RELEASE SAVEPOINT sogs_sp_{self.sp_num}")
         else:
             # We're exiting the context by exception, so try to rollback but if this also fails then
             # we want the original exception to propagate, not this one.
             try:
-                self.conn.execute(f"ROLLBACK TO SAVEPOINT sogs_sp_{self.sp_num}")
+                if self.sp_num == 1:
+                    self.conn.execute("ROLLBACK")
+                else:
+                    self.conn.execute(f"ROLLBACK TO SAVEPOINT sogs_sp_{self.sp_num}")
             except Exception:
                 pass
 
