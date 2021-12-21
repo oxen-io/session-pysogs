@@ -1,3 +1,14 @@
+session-pysogs (0.2.0-1) sid; urgency=medium
+
+  * 0.2.0 release!
+  * sqlite transaction deadlock fixes
+  * Fix broken query in DB cleanup code breaking future perm changes
+  * Don't increment thread-local counter before BEGIN
+  * Fix profanity custom file loading
+  * Doc reorg; GPLv3; remove obsolete rust docs
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Tue, 21 Dec 2021 14:32:46 -0400
+
 session-pysogs (0.2.0~git20211216-2) sid; urgency=medium
 
   * Rebuild with fixes.
