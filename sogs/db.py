@@ -72,17 +72,20 @@ class LocalTxContextManager:
 
     def __enter__(self):
         if not hasattr(_conns, 'sp_num'):
-            _conns.sp_num = 1
-        else:
-            _conns.sp_num += 1
+            _conns.sp_num = 0
 
-        self.sp_num = _conns.sp_num
+        self.sp_num = _conns.sp_num + 1
         if self.sp_num == 1:
             self.conn.execute("BEGIN IMMEDIATE" if self.immediate else "BEGIN")
         else:
             self.conn.execute(f"SAVEPOINT sogs_sp_{self.sp_num}")
 
-        return self.conn.cursor()
+        cur = self.conn.cursor()
+
+        # We do this down here so in case something above throws we won't leave it incremented.
+        _conns.sp_num += 1
+
+        return cur
 
     def __exit__(self, exc_type, exc_value, traceback):
         _conns.sp_num -= 1
