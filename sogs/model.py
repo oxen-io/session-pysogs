@@ -1106,6 +1106,11 @@ class User:
         self.global_admin = False
         self.global_moderator = False
 
+    @property
+    def system_user(self):
+        """True iff this is the special SOGS system user created for internal database tasks"""
+        return self.session_id[0:2] == "ff" and self.session_id[2:] == crypto.server_pubkey_hex
+
 
 class SystemUser(User):
     """
@@ -1156,6 +1161,8 @@ def get_all_global_moderators():
     m, hm, a, ha = [], [], [], []
     for row in db.execute("SELECT * FROM users WHERE moderator"):
         u = User(row=row)
+        if u.system_user:
+            continue
         lst = (a if u.global_admin else m) if u.visible_mod else (ha if u.global_admin else hm)
         lst.append(u)
 
