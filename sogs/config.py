@@ -10,7 +10,7 @@ logger = logging.getLogger("config")
 coloredlogs.install(milliseconds=True, isatty=True, logger=logger)
 
 # Default config settings; most of these are configurable via config.ini (see it for details).
-DB_PATH = 'sogs.db'
+DB_URL = 'sqlite:///sogs.db'
 DB_SCHEMA_FILE = 'schema.sql'  # Not configurable, just a constant
 KEY_FILE = 'key_x25519'
 URL_BASE = 'http://example.net'
@@ -71,7 +71,9 @@ def load_config():
     # test lambda returns True/False for validation (if None/omitted, accept anything)
     # value lambda extracts the value (if None/omitted use str value as-is)
     setting_map = {
-        'db': {'url': ('DB_PATH', lambda x: x.startswith('sqlite:///'), lambda x: x[10:])},
+        'db': {
+            'url': ('DB_URL', lambda x: x.startswith('sqlite:///'))
+        },
         'crypto': {'key_file': ('KEY_FILE',)},
         'net': {
             'base_url': ('URL_BASE', lambda x: re.search('^https?://.', x)),

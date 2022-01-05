@@ -9,7 +9,7 @@ from . import utils
 from . import crypto
 from . import http
 from .omq import send_mule
-from .web import app
+from .web import app, appdb, query
 
 import os
 import re
@@ -126,9 +126,9 @@ class Room:
         if sum(x is not None for x in (row, id, token)) != 1:
             raise ValueError("Room() error: exactly one of row/id/token must be specified")
         if token is not None:
-            row = db.execute("SELECT * FROM rooms WHERE token = ?", (token,)).fetchone()
+            row = query("SELECT * FROM rooms WHERE token = :t", t=token).first()
         elif id is not None:
-            row = db.execute("SELECT * FROM rooms WHERE id = ?", (id,)).fetchone()
+            row = query("SELECT * FROM rooms WHERE id = :id", id=id).first()
         if not row:
             raise NoSuchRoom(token if token is not None else id)
 
@@ -190,10 +190,11 @@ class Room:
         removed, so going beyond config.ROOM_ACTIVE_PRUNE_THRESHOLD days is useless.
         """
 
-        return db.execute(
-            "SELECT COUNT(*) FROM room_users WHERE room = ? AND last_active >= ?",
-            (self.id, time.time() - cutoff),
-        ).fetchone()[0]
+        return query(
+            "SELECT COUNT(*) FROM room_users WHERE room = :r AND last_active >= :since",
+            r=self.id,
+            since=time.time() - cutoff,
+        ).first()[0]
 
     def check_permission(
         self,
@@ -237,13 +238,14 @@ class Room:
             )
         else:
             if user.id not in self._perm_cache:
-                row = db.execute(
+                row = query(
                     """
                     SELECT banned, read, write, upload, moderator, admin FROM user_permissions
-                    WHERE room = ? AND user = ?
+                    WHERE room = :r AND user = :u
                     """,
-                    [self.id, user.id],
-                ).fetchone()
+                    r=self.id,
+                    u=user.id,
+                ).first()
                 self._perm_cache[user.id] = list(row)
 
             is_banned, can_read, can_write, can_upload, is_mod, is_admin = self._perm_cache[user.id]
@@ -289,14 +291,16 @@ class Room:
         this room.  Size is reflects the size of uploaded message bodies, not necessarily the size
         actually used to store the message, and does not include various ancillary metadata such as
         edit history, the signature, deleted entries, etc."""
-        return db.execute(
-            """
+        return list(
+            query(
+                """
             SELECT COUNT(*), COALESCE(SUM(data_size), 0)
             FROM messages
-            WHERE room = ? AND data IS NOT NULL AND NOT filtered
+            WHERE room = :r AND data IS NOT NULL AND NOT filtered
             """,
-            (self.id,),
-        ).fetchone()[0:2]
+                r=self.id,
+            ).first()[0:2]
+        )
 
     def get_messages_for(
         self,
@@ -337,24 +341,23 @@ class Room:
             if after <= max_old_id:
                 after += offset
 
-        for row in db.execute(
+        for row in query(
             f"""
             SELECT * FROM message_details
-            WHERE room = ? AND data IS NOT NULL AND NOT filtered
-                {'AND id > ?' if after else 'AND id < ?' if before else ''}
+            WHERE room = :r AND data IS NOT NULL AND NOT filtered
+                {'AND id > :after' if after else 'AND id < :before' if before else ''}
                 AND (
                     whisper IS NULL
-                    {'OR whisper = ?' if user else ''}
+                    {'OR whisper = :user' if user else ''}
                     {'OR whisper_mods' if mod else ''}
                 )
-            ORDER BY id {'ASC' if after is not None else 'DESC'} LIMIT ?
+            ORDER BY id {'ASC' if after is not None else 'DESC'} LIMIT :limit
             """,
-            (
-                self.id,
-                *(() if recent else (after,) if after is not None else (before,)),
-                *((user.id,) if user else ()),
-                limit,
-            ),
+            r=self.id,
+            after=after,
+            before=before,
+            user=user.id if user else None,
+            limit=limit,
         ):
             data = utils.add_session_message_padding(row['data'], row['data_size'])
             msg = {x: row[x] for x in ('id', 'session_id', 'posted', 'updated', 'signature')}
@@ -410,7 +413,7 @@ class Room:
                     # FIXME: can we send back some error code that makes Session not retry?
                     raise PostRejected("filtration rejected message")
 
-        with db.tx() as cur:
+        with appdb.begin_nested():
             if not self.check_admin(user):
 
                 # TODO: These really should be room properties, not random global constants (these
@@ -419,39 +422,41 @@ class Room:
                 rate_limit_interval = 16.0
 
                 since_limit = time.time() - rate_limit_interval
-                result = cur.execute(
-                    "SELECT COUNT(*) FROM messages WHERE room = ? AND user = ? AND posted >= ?",
-                    (self.id, user.id, since_limit),
-                )
+                recent_count = query(
+                    """
+                    SELECT COUNT(*) FROM messages
+                    WHERE room = :r AND user = :u AND posted >= :since
+                    """,
+                    r=self.id,
+                    u=user.id,
+                    since=since_limit,
+                ).first()[0]
 
-                row = result.fetchone()
-                if row[0] >= rate_limit_size:
+                if recent_count >= rate_limit_size:
                     raise PostRateLimited()
 
             data_size = len(data)
             unpadded_data = utils.remove_session_message_padding(data)
 
-            result = cur.execute(
+            result = query(
                 """
                 INSERT INTO messages
                     (room, user, data, data_size, signature, filtered, whisper, whisper_mods)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES
+                    (:r, :u, :data, :data_size, :signature, :filtered, :whisper, :whisper_mods)
                 """,
-                (
-                    self.id,
-                    user.id,
-                    unpadded_data,
-                    data_size,
-                    sig,
-                    filtered,
-                    whisper_to.id if whisper_to else None,
-                    whisper_mods,
-                ),
+                r=self.id,
+                u=user.id,
+                data=unpadded_data,
+                data_size=data_size,
+                signature=sig,
+                filtered=filtered,
+                whisper=whisper_to.id if whisper_to else None,
+                whisper_mods=whisper_mods,
             )
             msg_id = result.lastrowid
-            row = cur.execute(
-                "SELECT posted, updated FROM messages WHERE id = ?", (msg_id,)
-            ).fetchone()
+            assert msg_id is not None
+            row = query("SELECT posted, updated FROM messages WHERE id = :m", m=msg_id).first()
             msg = {
                 'id': msg_id,
                 'session_id': user.session_id,
@@ -483,40 +488,40 @@ class Room:
 
         deleted = []
         i = 0
-        with db.tx() as cur:
+        with appdb.begin_nested():
             # Process in slices of 50 (in case we're given more than 50) because that's a lot of
             # parameters to bind and we want to avoid hitting bind limits.
             while i < len(message_ids):
-                n_ids = min(len(message_ids) - i, 50)
-
                 # First filter out ids that are already deleted (e.g. because of a race condition of
                 # multiple mods) or that aren't part of the room.  It wouldn't hurt the query to
                 # "delete" them again, but we want to avoid passing them to the mule multiple times.
-                ids = [
+                ids = tuple(
                     r[0]
-                    for r in cur.execute(
-                        f"""
-                        SELECT id FROM messages WHERE room = ? AND data IS NOT NULL
-                            AND id IN ({','.join('?' * n_ids)})
+                    for r in query(
+                        """
+                        SELECT id FROM messages
+                        WHERE room = :r AND data IS NOT NULL AND id IN :ids
                         """,
-                        [self.id, *message_ids[i : i + 50]],
+                        r=self.id,
+                        ids=tuple(message_ids[i : i + 50]),
                     )
-                ]
+                )
 
                 if ids:
-                    id_in = "id IN ({})".format(','.join('?' * len(ids)))
-
                     if not self.check_moderator(deleter):
                         # If not a moderator then we only proceed if all of the messages are the
                         # user's own:
-                        res = cur.execute(
-                            f"SELECT EXISTS( SELECT * FROM messages WHERE user != ? AND {id_in} )",
-                            [deleter.id, *ids],
+                        res = query(
+                            """
+                            SELECT EXISTS( SELECT * FROM messages WHERE user != :u AND id IN :ids )
+                            """,
+                            u=deleter.id,
+                            ids=ids,
                         )
-                        if res.fetchone()[0]:
+                        if res.first()[0]:
                             raise BadPermission()
 
-                    cur.execute(f"DELETE FROM message_details WHERE {id_in}", ids)
+                    query("DELETE FROM message_details WHERE id IN :ids", ids=ids)
 
                     deleted += ids
                 i += 50
@@ -542,17 +547,18 @@ class Room:
             )
             raise BadPermission()
 
-        with db.tx() as cur:
+        with appdb.begin_nested():
             deleted = [
                 r[0]
-                for r in cur.execute(
-                    "SELECT id FROM messages WHERE room = ? AND user = ? AND data IS NOT NULL",
-                    (self.id, poster.id),
+                for r in query(
+                    "SELECT id FROM messages WHERE room = :r AND user = :u AND data IS NOT NULL",
+                    room=self.id,
+                    u=poster.id,
                 )
             ]
 
-            cur.execute(
-                "DELETE FROM message_details WHERE room = ? AND user = ?", (self.id, poster.id)
+            query(
+                "DELETE FROM message_details WHERE room = :r AND user = :u", r=self.id, u=poster.id
             )
 
             # Set up files for deletion, but don't wipe out the room image in case the target was
@@ -566,14 +572,17 @@ class Room:
             # Don't actually delete right now but set room to NULL so that the images aren't
             # retrievable, and set expiry to now so that they'll be picked up by the next db
             # cleanup.
-            cur.execute(
+            result = query(
                 f"""
-                UPDATE files SET room = NULL, expiry = ? WHERE room = ? AND uploader = ?
-                    {'AND id != ?' if omit_id else ''}
+                UPDATE files SET room = NULL, expiry = :now WHERE room = :r AND uploader = :u
+                    {'AND id != :omit' if omit_id else ''}
                 """,
-                (time.time(), self.id, poster.id, *((omit_id,) if omit_id else ())),
+                now=time.time(),
+                r=self.id,
+                u=poster.id,
+                omit=omit_id,
             )
-            files_removed = cur.rowcount
+            files_removed = result.rowcount
 
         # FIXME: send `deleted` to mule
 
@@ -585,9 +594,11 @@ class Room:
 
     def attachments_size(self):
         """Returns the number and aggregate size of attachments currently stored in this room"""
-        return db.execute(
-            "SELECT COUNT(*), COALESCE(SUM(size), 0) FROM files WHERE room = ?", (self.id,)
-        ).fetchone()[0:2]
+        return [
+            query(
+                "SELECT COUNT(*), COALESCE(SUM(size), 0) FROM files WHERE room = :r", r=self.id
+            ).first()[0:2]
+        ]
 
     def get_mods(self, user=None):
         """
@@ -608,12 +619,12 @@ class Room:
             None if user is None else user.session_id if isinstance(user, User) else user
         )
 
-        for session_id, visible, admin in db.execute(
+        for session_id, visible, admin in query(
             """
             SELECT session_id, visible_mod, admin FROM user_permissions
-            WHERE room = ? AND moderator
+            WHERE room = :r AND moderator
             """,
-            [self.id],
+            r=self.id,
         ):
             if session_id is not None and session_id == curr_session_id:
                 we_are_hidden = not visible
@@ -642,13 +653,13 @@ class Room:
         """
 
         m, hm, a, ha = [], [], [], []
-        for session_id, visible, admin in db.execute(
+        for session_id, visible, admin in query(
             """
             SELECT session_id, o.visible_mod, o.admin
             FROM user_permission_overrides o JOIN users ON o.user = users.id
-            WHERE room = ? AND o.moderator
+            WHERE room = :r AND o.moderator
             """,
-            [self.id],
+            r=self.id,
         ):
             ((a if admin else m) if visible else (ha if admin else hm)).append(session_id)
 
@@ -669,16 +680,19 @@ class Room:
             )
             raise BadPermission()
 
-        db.execute(
+        query(
             """
             INSERT INTO user_permission_overrides (room, user, moderator, admin, visible_mod)
-            VALUES (?, ?, TRUE, ?, ?)
+            VALUES (:r, :u, TRUE, :admin, :visible)
             ON CONFLICT (room, user) DO UPDATE SET
                 moderator = excluded.moderator,
                 admin = excluded.admin,
                 visible_mod = excluded.visible_mod
             """,
-            (self.id, user.id, admin, visible),
+            r=self.id,
+            u=user.id,
+            admin=admin,
+            visible=visible,
         )
 
         app.logger.info(f"{added_by} set {user} as {'admin' if admin else 'moderator'} of {self}")
@@ -689,13 +703,14 @@ class Room:
         if not self.check_admin(removed_by):
             raise BadPermission()
 
-        db.execute(
+        query(
             """
             UPDATE user_permission_overrides
             SET moderator = FALSE, admin = FALSE, visible_mod = TRUE
-            WHERE room = ? AND user = ?
+            WHERE room = :r AND user = :u
             """,
-            (self.id, user.id),
+            r=self.id,
+            u=user.id,
         )
 
         app.logger.info(f"{removed_by} removed {user} as mod/admin of {self}")
@@ -726,24 +741,27 @@ class Room:
 
         # TODO: log the banning action for auditing
 
-        with db.tx() as cur:
-            cur.execute(
+        with appdb.begin_nested():
+            query(
                 """
                 INSERT INTO user_permission_overrides (room, user, banned, moderator, admin)
-                    VALUES (?, ?, TRUE, FALSE, FALSE)
+                    VALUES (:r, :ban, TRUE, FALSE, FALSE)
                 ON CONFLICT (room, user) DO
                     UPDATE SET banned = TRUE, moderator = FALSE, admin = FALSE
                 """,
-                (self.id, to_ban.id),
+                r=self.id,
+                ban=to_ban.id,
             )
 
             if timeout:
-                cur.execute(
+                query(
                     """
                     INSERT INTO user_permission_futures (room, user, at, banned)
-                        VALUES (?, ?, ?, FALSE)
+                        VALUES (:r, :banned, :at, FALSE)
                     """,
-                    (self.id, to_ban.id, time.time() + timeout),
+                    r=self.id,
+                    banned=to_ban.id,
+                    at=time.time() + timeout,
                 )
 
         app.logger.debug(f"Banned {to_ban} from {self} (banned by {mod})")
@@ -761,15 +779,15 @@ class Room:
             app.logger.warn(f"Error unbanning {to_unban} from {self} by {mod}: not a moderator")
             raise BadPermission()
 
-        cur = db.cur()
-        cur.execute(
+        result = query(
             """
             UPDATE user_permission_overrides SET banned = FALSE
-            WHERE room = ? AND user = ? AND banned
+            WHERE room = :r AND user = :unban AND banned
             """,
-            (self.id, to_unban.id),
+            r=self.id,
+            unban=to_unban.id,
         )
-        if cur.rowcount > 0:
+        if result.rowcount > 0:
             app.logger.debug(f"{mod} unbanned {to_unban} from {self}")
             return True
 
@@ -784,26 +802,25 @@ class Room:
 
         return [
             r[0]
-            for r in db.execute(
-                "SELECT session_id FROM user_permissions WHERE room = ? AND banned", (self.id,)
+            for r in query(
+                "SELECT session_id FROM user_permissions WHERE room = :r AND banned", r=self.id
             )
         ]
 
     def get_file(self, file_id: int):
         """Retrieves a file uploaded to this room by id.  Returns None if not found."""
-        row = db.execute(
-            "SELECT * FROM files WHERE room = ? AND id = ?", (self.id, file_id)
-        ).fetchone()
+        row = query("SELECT * FROM files WHERE room = :r AND id = :f", r=self.id, f=file_id).first()
 
         if not row and db.HAVE_FILE_ID_HACKS:
-            row = db.execute(
+            row = query(
                 """
                 SELECT * FROM files WHERE id = (
-                    SELECT file FROM file_id_hacks WHERE room = ? AND old_file_id = ?
+                    SELECT file FROM file_id_hacks WHERE room = :r AND old_file_id = :old_fid
                 )
                 """,
-                (self.id, file_id),
-            ).fetchone()
+                r=self.id,
+                old_fid=file_id,
+            ).first()
 
         if row:
             return File(row)
@@ -846,20 +863,24 @@ class Room:
             # Begin a transaction; if this context exits with exception we want to roll back the
             # database addition; we catch *outside* the context so that we catch on commit, as well,
             # so that we also clean up the stored file on disk if the transaction fails to commit.
-            with db.tx() as cur:
+            with appdb.begin_nested():
                 expiry = None if lifetime is None else time.time() + lifetime
 
                 # Insert the file row first with path='tmp' then come back and update it to the
                 # proper path, which we want to base on the resulting file id.
-                cur.execute(
+                result = query(
                     """
                     INSERT INTO files (room, uploader, size, expiry, filename, path)
-                    VALUES (?, ?, ?, ?, ?, 'tmp')
+                    VALUES (:r, :u, :size, :expiry, :filename, 'tmp')
                     """,
-                    (self.id, uploader.id, len(content), expiry, filename),
+                    r=self.id,
+                    u=uploader.id,
+                    size=len(content),
+                    expiry=expiry,
+                    filename=filename,
                 )
 
-                file_id = cur.lastrowid
+                file_id = result.lastrowid
 
                 if filename is None:
                     filename = '(unnamed)'
@@ -876,7 +897,7 @@ class Room:
                 with open(file_path, 'wb') as f:
                     f.write(content)
 
-                cur.execute("UPDATE files SET path = ? WHERE id = ?", (file_path, file_id))
+                query("UPDATE files SET path = :p WHERE id = :f", p=file_path, f=file_id)
 
                 return file_id
 
@@ -892,9 +913,10 @@ class Room:
     def set_room_image(self, file: Union[File, int]):
         """Sets a room image to a file (can be either the file id, or File instance)"""
 
-        db.execute(
-            "UPDATE rooms SET image = ? WHERE id = ?",
-            (file.id if isinstance(file, File) else file, self.id),
+        query(
+            "UPDATE rooms SET image = :file WHERE id = :r",
+            r=self.id,
+            file=file.id if isinstance(file, File) else file,
         )
 
 
@@ -922,7 +944,7 @@ class File:
         if sum(x is not None for x in (id, row)) != 1:
             raise ValueError("File() error: exactly one of id/row is required")
         if id is not None:
-            row = db.execute("SELECT * FROM files WHERE id = ?", (id,)).fetchone()
+            row = query("SELECT * FROM files WHERE id = :f", f=id).first()
             if not row:
                 raise NoSuchFile(id)
 
@@ -998,19 +1020,17 @@ class User:
 
         self._touched = False
         if session_id is not None:
-            row = db.execute("SELECT * FROM users WHERE session_id = ?", (session_id,)).fetchone()
+            row = query("SELECT * FROM users WHERE session_id = :s", s=session_id).first()
 
             if not row and autovivify:
-                with db.tx() as cur:
-                    cur.execute("INSERT INTO users (session_id) VALUES (?)", (session_id,))
-                    row = cur.execute(
-                        "SELECT * FROM users WHERE session_id = ?", (session_id,)
-                    ).fetchone()
+                with appdb.begin_nested():
+                    query("INSERT INTO users (session_id) VALUES (:s)", s=session_id)
+                    row = query("SELECT * FROM users WHERE session_id = :s", s=session_id).first()
                 # No need to re-touch this user since we just created them:
                 self._touched = True
 
         elif id is not None:
-            row = db.execute("SELECT * FROM users WHERE id = ?", (id,)).fetchone()
+            row = query("SELECT * FROM users WHERE id = :u", u=id).fetchone()
 
         if row is None:
             raise NoSuchUser(session_id if session_id is not None else id)
@@ -1023,8 +1043,8 @@ class User:
         )
 
         if touch:
-            with db.tx() as cur:
-                self._touch(cur)
+            with appdb.begin_nested():
+                self._touch()
 
     def __str__(self):
         """Returns string representation of a user: U[050123…cdef], the id prefixed with @ or % if
@@ -1038,13 +1058,13 @@ class User:
             self.session_id[-4:],
         )
 
-    def _touch(self, cur):
-        cur.execute(
+    def _touch(self):
+        query(
             """
             UPDATE users SET last_active = ((julianday('now') - 2440587.5)*86400.0)
-            WHERE id = ?
+            WHERE id = :u
             """,
-            (self.id,),
+            u=self.id,
         )
         self._touched = True
 
@@ -1055,17 +1075,18 @@ class User:
         to True.
         """
         if not self._touched or force:
-            with db.tx() as cur:
-                self._touch(cur)
+            with appdb.begin_nested():
+                self._touch()
 
     def update_room_activity(self, room):
-        db.execute(
+        query(
             """
-            INSERT INTO room_users (user, room) VALUES (?, ?)
+            INSERT INTO room_users (user, room) VALUES (:u, :r)
             ON CONFLICT(user, room) DO UPDATE
             SET last_active = ((julianday('now') - 2440587.5)*86400.0)
             """,
-            (self.id, room.id),
+            u=self.id,
+            r=room.id,
         )
 
     def set_moderator(self, *, added_by: User, admin=False, visible=False):
@@ -1081,10 +1102,16 @@ class User:
             )
             raise BadPermission()
 
-        with db.tx() as cur:
-            cur.execute(
-                "UPDATE users SET moderator = TRUE, admin = ?, visible_mod = ? WHERE id = ?",
-                (admin, visible, self.id),
+        with appdb.begin_nested():
+            query(
+                """
+                UPDATE users
+                SET moderator = TRUE, admin = :admin, visible_mod = :visible
+                WHERE id = :u
+                """,
+                admin=admin,
+                visible=visible,
+                u=self.id,
             )
         self.global_admin = admin
         self.global_moderator = True
@@ -1099,10 +1126,8 @@ class User:
             )
             raise BadPermission()
 
-        with db.tx() as cur:
-            cur.execute(
-                "UPDATE users SET moderator = FALSE, admin = FALSE WHERE id = ?", (self.id,)
-            )
+        with appdb.begin_nested():
+            query("UPDATE users SET moderator = FALSE, admin = FALSE WHERE id = :u", u=self.id)
         self.global_admin = False
         self.global_moderator = False
 
@@ -1118,9 +1143,8 @@ class SystemUser(User):
 
 
 def get_rooms():
-    """get a list of all rooms"""
-    result = db.execute("SELECT * FROM rooms ORDER BY token")
-    return [Room(row) for row in result]
+    """Get a list of all rooms; does not check permissions."""
+    return [Room(row) for row in query("SELECT * FROM rooms ORDER BY token")]
 
 
 def get_readable_rooms(pubkey=None):
@@ -1129,14 +1153,15 @@ def get_readable_rooms(pubkey=None):
     rooms.
     """
     if pubkey is None:
-        result = db.execute("SELECT * FROM rooms WHERE read")
+        result = query("SELECT * FROM rooms WHERE read ORDER BY token")
     else:
-        result = db.execute(
+        result = query(
             """
             SELECT rooms.* FROM user_permissions perm JOIN rooms ON rooms.id = room
-            WHERE session_id = ? AND perm.read AND NOT perm.banned
+            WHERE session_id = :s AND perm.read AND NOT perm.banned
+            ORDER BY token
             """,
-            [pubkey],
+            s=pubkey,
         )
     return [Room(row) for row in result]
 
@@ -1154,7 +1179,7 @@ def get_all_global_moderators():
     """
 
     m, hm, a, ha = [], [], [], []
-    for row in db.execute("SELECT * FROM users WHERE moderator"):
+    for row in query("SELECT * FROM users WHERE moderator"):
         u = User(row=row)
         lst = (a if u.global_admin else m) if u.visible_mod else (ha if u.global_admin else hm)
         lst.append(u)
@@ -1164,21 +1189,22 @@ def get_all_global_moderators():
 
 def get_deletions_deprecated(room: Room, since):
     if since:
-        result = db.execute(
+        result = query(
             """
             SELECT id, updated FROM messages
-            WHERE room = ? AND updated > ? AND data IS NULL
+            WHERE room = :r AND updated > :since AND data IS NULL
             ORDER BY updated ASC LIMIT 256
             """,
-            [room.id, since],
+            r=room.id,
+            since=since,
         )
     else:
-        result = db.execute(
+        result = query(
             """
             SELECT id, updated FROM messages
-            WHERE room = ? AND data IS NULL
+            WHERE room = :r AND data IS NULL
             ORDER BY updated DESC LIMIT 256
             """,
-            [room.id],
+            r=room.id,
         )
     return [{'deleted_message_id': row[0], 'id': row[1]} for row in result]

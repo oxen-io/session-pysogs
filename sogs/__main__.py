@@ -1,7 +1,7 @@
 from argparse import ArgumentParser as AP, RawDescriptionHelpFormatter
 import re
 import sys
-import sqlite3
+import sqlalchemy
 
 from . import db
 from . import config
@@ -139,17 +139,20 @@ if args.add_room:
         )
         sys.exit(1)
 
-    try:
-        with db.tx() as cur:
-            cur.execute(
-                "INSERT INTO rooms(token, name, description) VALUES(?, ?, ?)",
-                [args.add_room, args.name or args.add_room, args.description],
+    with db.get_conn() as conn:
+        try:
+            db.query(
+                conn,
+                "INSERT INTO rooms(token, name, description) VALUES(:t, :n, :d)",
+                t=args.add_room,
+                n=args.name or args.add_room,
+                d=args.description,
             )
-    except sqlite3.IntegrityError:
-        print(f"Error: room '{args.add_room}' already exists!", file=sys.stderr)
-        sys.exit(1)
-    print(f"Created room {args.add_room}:")
-    print_room(model.Room(token=args.add_room))
+        except sqlalchemy.exc.IntegrityError:
+            print(f"Error: room '{args.add_room}' already exists!", file=sys.stderr)
+            sys.exit(1)
+        print(f"Created room {args.add_room}:")
+        print_room(model.Room(token=args.add_room))
 
 elif args.delete_room:
     try:
@@ -164,9 +167,9 @@ elif args.delete_room:
     else:
         res = input("Are you sure you want to delete this room? [yN] ")
     if res.startswith("y") or res.startswith("Y"):
-        with db.tx() as cur:
-            cur.execute("DELETE FROM rooms WHERE token = ?", [args.delete_room])
-            count = cur.rowcount
+        with db.get_conn() as conn:
+            result = db.query(conn, "DELETE FROM rooms WHERE token = ?", [args.delete_room])
+            count = result.rowcount
         print("Room deleted.")
     else:
         print("Aborted.")

@@ -1,4 +1,5 @@
 import flask
+from werkzeug.local import LocalProxy
 from . import config
 import coloredlogs
 
@@ -17,6 +18,38 @@ if not hasattr(flask.Flask, 'post'):
 
     for method in ('get', 'post', 'put', 'delete', 'patch'):
         _add_flask_method(method)
+
+
+def get_db_conn():
+    if 'conn' not in flask.g:
+        from . import db
+
+        flask.g.conn = db.get_conn()
+
+    return flask.g.conn
+
+
+@app.teardown_appcontext
+def teardown_db_conn(exception):
+    conn = flask.g.pop('conn', None)
+
+    if conn is not None:
+        conn.close()
+
+
+# An application-context, lazily evaluated database connection
+appdb = LocalProxy(get_db_conn)
+
+
+def query(*args, **kwargs):
+    """
+    Wrapper around db.query() that injects the application context database connection as the first
+    argument.  i.e. query("SELECT :x", x=1) is a shortcut for db.query(appdb, "SELECT :x", x=1).
+    """
+    from . import db
+
+    return db.query(appdb, *args, **kwargs)
+
 
 from . import routes
 from . import onion_request

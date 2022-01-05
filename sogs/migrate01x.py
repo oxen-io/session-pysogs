@@ -17,7 +17,7 @@ def migrate01x(conn):
 
     # Do the entire import in one transaction so that if anything fails we leave the db empty (so
     # that retrying will import from scratch).
-    with conn:
+    with conn.begin_nested():
 
         # Old database database.db is a single table database containing just the list of rooms:
         #    CREATE TABLE IF NOT EXISTS main (
@@ -31,17 +31,18 @@ def migrate01x(conn):
 
         logger.warn("{} rooms to import".format(len(rooms)))
 
-        cur = conn.cursor()
-        cur.execute(
+        db.query(
+            conn,
             """
             CREATE TABLE IF NOT EXISTS room_import_hacks (
                 room INTEGER PRIMARY KEY NOT NULL REFERENCES rooms(id),
                 old_message_id_max INTEGER NOT NULL,
                 message_id_offset INTEGER NOT NULL
             )
-            """
+            """,
         )
-        cur.execute(
+        db.query(
+            conn,
             """
             CREATE TABLE IF NOT EXISTS file_id_hacks (
                 room INTEGER NOT NULL REFERENCES rooms(id),
@@ -49,15 +50,20 @@ def migrate01x(conn):
                 file INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
                 PRIMARY KEY(room, old_file_id)
             )
-            """
+            """,
         )
 
         used_room_hacks, used_file_hacks = False, False
 
-        ins_user = """
-            INSERT INTO users (session_id, last_active) VALUES (?, 0.0)
-            ON CONFLICT (session_id) DO NOTHING
-            """
+        def ins_user(session_id):
+            return db.query(
+                conn,
+                """
+                INSERT INTO users (session_id, last_active) VALUES (:session_id, 0.0)
+                ON CONFLICT (session_id) DO NOTHING
+                """,
+                session_id=session_id,
+            )
 
         total_rooms, total_msgs, total_files = 0, 0, 0
 
@@ -71,8 +77,13 @@ def migrate01x(conn):
 
             logger.info("Importing room {} -- {}...".format(room_token, room_name))
 
-            cur.execute("INSERT INTO rooms (token, name) VALUES (?, ?)", (room_token, room_name))
-            room_id = cur.lastrowid
+            room_id = db.query(
+                conn,
+                "INSERT INTO rooms (token, name) VALUES (:token, :name)",
+                token=room_token,
+                name=room_name,
+            ).lastrowid
+            assert room_id
 
             with db.sqlite_connect(room_db_path) as rconn:
 
@@ -114,9 +125,9 @@ def migrate01x(conn):
                 # a monotonic updates field that we can make conform (for imported rows) to the
                 # imported deletion ids.
 
-                id_offset = cur.execute("SELECT COALESCE(MAX(id), 0) + 1 FROM messages").fetchone()[
-                    0
-                ]
+                id_offset = db.query(
+                    conn, "SELECT COALESCE( MAX(id), 0 ) + 1 FROM messages"
+                ).first()[0]
                 top_old_id, updated, imported_msgs = -1, 0, 0
 
                 n_msgs = rconn.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
@@ -151,7 +162,7 @@ def migrate01x(conn):
                     # no longer clear it when deleting), but the data is gone from the imported
                     # table so there's not much else we can do.
 
-                    cur.execute(ins_user, (session_id,))
+                    ins_user(session_id)
 
                     if config.IMPORT_ADJUST_MS:
                         timestamp += config.IMPORT_ADJUST_MS
@@ -177,21 +188,21 @@ def migrate01x(conn):
                                 )
                             )
 
-                        cur.execute(
+                        db.query(
+                            conn,
                             """
                             INSERT INTO messages
                                 (id, room, user, posted, data, data_size, signature)
-                            VALUES (?, ?, (SELECT id FROM users WHERE session_id = ?), ?, ?, ?, ?)
+                            VALUES (:m, :r, (SELECT id FROM users WHERE session_id = :session_id),
+                                :posted, :data, :data_size, :signature)
                             """,
-                            (
-                                id + id_offset,
-                                room_id,
-                                session_id,
-                                timestamp,
-                                data,
-                                data_size,
-                                signature,
-                            ),
+                            m=id + id_offset,
+                            r=room_id,
+                            session_id=session_id,
+                            posted=timestamp,
+                            data=data,
+                            data_size=data_size,
+                            signature=signature,
                         )
 
                     elif (
@@ -209,12 +220,17 @@ def migrate01x(conn):
                         # field).
 
                         updated += 1
-                        cur.execute(
+                        db.query(
+                            conn,
                             """
                             INSERT INTO messages (id, room, user, posted)
-                            VALUES (?, ?, (SELECT id FROM users WHERE session_id = ?), ?)
+                            VALUES (:m, :r, (SELECT id FROM users WHERE session_id = :session_id),
+                                :posted)
                             """,
-                            (id + id_offset, room_id, session_id, timestamp),
+                            m=id + id_offset,
+                            r=room_id,
+                            session_id=session_id,
+                            posted=timestamp,
                         )
 
                     else:
@@ -229,8 +245,11 @@ def migrate01x(conn):
                             )
                         )
 
-                    cur.execute(
-                        "UPDATE messages SET updated = ? WHERE id = ?", (updated, id + id_offset)
+                    db.query(
+                        conn,
+                        "UPDATE messages SET updated = :u WHERE id = :m",
+                        u=updated,
+                        m=id + id_offset,
                     )
                     imported_msgs += 1
                     if imported_msgs % 5000 == 0:
@@ -252,20 +271,26 @@ def migrate01x(conn):
                 if top_del_id is None:
                     top_del_id = 0
 
-                cur.execute(
-                    "UPDATE rooms SET updates = ? WHERE id = ?", (max(updated, top_del_id), room_id)
+                db.query(
+                    conn,
+                    "UPDATE rooms SET updates = :updates WHERE id = :r",
+                    updates=max(updated, top_del_id),
+                    r=room_id,
                 )
 
                 # If we have to offset rowids then make sure the hack table exists and insert our
                 # hack.
                 if id_offset != 0:
                     used_room_hacks = True
-                    cur.execute(
+                    db.query(
+                        conn,
                         """
                         INSERT INTO room_import_hacks (room, old_message_id_max, message_id_offset)
-                        VALUES (?, ?, ?)
+                        VALUES (:r, :old_max, :offset)
                         """,
-                        (room_id, top_old_id, id_offset),
+                        r=room_id,
+                        old_max=top_old_id,
+                        offset=id_offset,
                     )
 
                 # Files were stored in:
@@ -316,24 +341,28 @@ def migrate01x(conn):
                         )
                         timestamp = time.time()
 
-                    cur.execute(
+                    new_id = db.query(
+                        conn,
                         """
                         INSERT INTO files (room, size, uploaded, expiry, path)
-                        VALUES (?, ?, ?, ?, ?)
+                        VALUES (:r, :size, :uploaded, :expiry, :path)
                         """,
-                        (
-                            room_id,
-                            size,
-                            timestamp,
-                            timestamp + 86400 * config.UPLOAD_DEFAULT_EXPIRY_DAYS,
-                            path,
-                        ),
-                    )
-                    new_id = cur.lastrowid
+                        r=room_id,
+                        size=size,
+                        uploaded=timestamp,
+                        expiry=timestamp + 86400 * config.UPLOAD_DEFAULT_EXPIRY_DAYS,
+                        path=path,
+                    ).lastrowid
 
-                    cur.execute(
-                        "INSERT INTO file_id_hacks (room, old_file_id, file) VALUES (?, ?, ?)",
-                        (room_id, file_id, new_id),
+                    db.query(
+                        conn,
+                        """
+                        INSERT INTO file_id_hacks (room, old_file_id, file)
+                        VALUES (:r, :old, :new)
+                        """,
+                        r=room_id,
+                        old=file_id,
+                        new=new_id,
                     )
                     imported_files += 1
 
@@ -368,26 +397,28 @@ def migrate01x(conn):
                     files_dir = "uploads/" + room_token
                     os.makedirs(files_dir, exist_ok=True)
 
-                    cur.execute(
+                    file_id = db.query(
+                        conn,
                         """
                         INSERT INTO files (room, size, uploaded, expiry, path)
-                        VALUES (?, ?, ?, NULL, ?)
+                        VALUES (:r, :size, :uploaded, NULL, :path)
                         """,
-                        (
-                            room_id,
-                            os.path.getsize(room_image_path),
-                            os.path.getmtime(room_image_path),
-                            'tmp',
-                        ),
-                    )
+                        r=room_id,
+                        size=os.path.getsize(room_image_path),
+                        uploaded=os.path.getmtime(room_image_path),
+                        path='tmp',
+                    ).lastrowid
 
-                    file_id = cur.lastrowid
                     new_path = "uploads/{}/{}_(imported_room_image)".format(room_token, file_id)
                     if os.path.exists(new_path):
                         os.remove(new_path)
                     os.link(room_image_path, new_path)
-                    cur.execute("UPDATE files SET path = ? WHERE id = ?", (new_path, file_id))
-                    cur.execute("UPDATE rooms SET image = ? WHERE id = ?", (file_id, room_id))
+                    db.query(
+                        conn, "UPDATE files SET path = :p WHERE id = :f", p=new_path, f=file_id
+                    )
+                    db.query(
+                        conn, "UPDATE rooms SET image = :f WHERE id = :r", f=file_id, r=room_id
+                    )
                     logger.info("- migrated room image")
                 else:
                     logger.info("- no room image")
@@ -397,14 +428,16 @@ def migrate01x(conn):
 
                 imported_bans = 0
                 for (session_id,) in rconn.execute("SELECT public_key FROM block_list"):
-                    cur.execute(ins_user, (session_id,))
-                    cur.execute(
+                    ins_user(session_id)
+                    db.query(
+                        conn,
                         """
                         INSERT INTO user_permission_overrides (room, user, banned)
-                            VALUES (?, (SELECT id FROM users WHERE session_id = ?), TRUE)
+                            VALUES (:r, (SELECT id FROM users WHERE session_id = :session_id), TRUE)
                         ON CONFLICT (room, user) DO UPDATE SET banned = TRUE
                         """,
-                        (room_id, session_id),
+                        r=room_id,
+                        session_id=session_id,
                     )
                     imported_bans += 1
 
@@ -414,19 +447,19 @@ def migrate01x(conn):
 
                 imported_mods = 0
                 for (session_id,) in rconn.execute("SELECT public_key from moderators"):
-                    cur.execute(ins_user, (session_id,))
-                    cur.execute(
+                    ins_user(session_id)
+                    db.query(
+                        conn,
                         """
                         INSERT INTO user_permission_overrides
                             (room, user, read, write, upload, moderator, admin)
-                        VALUES (
-                            ?,
-                            (SELECT id FROM users WHERE session_id = ?),
+                        VALUES (:r, (SELECT id FROM users WHERE session_id = :session_id),
                             TRUE, TRUE, TRUE, TRUE, TRUE)
                         ON CONFLICT (room, user) DO UPDATE SET banned = FALSE,
                             read = TRUE, write = TRUE, upload = TRUE, moderator = TRUE, admin = TRUE
                         """,
-                        (room_id, session_id),
+                        r=room_id,
+                        session_id=session_id,
                     )
                     imported_mods += 1
 
@@ -450,22 +483,30 @@ def migrate01x(conn):
                     (import_cutoff,),
                 ):
 
-                    cur.execute(ins_user, (session_id,))
-                    cur.execute(
+                    ins_user(session_id)
+                    db.query(
+                        conn,
                         """
                         INSERT INTO room_users (room, user, last_active)
-                            VALUES (?, (SELECT id FROM users WHERE session_id = ?), ?)
+                            VALUES (:r, (SELECT id FROM users WHERE session_id = :session_id),
+                                :active)
                         ON CONFLICT (room, user) DO UPDATE
                             SET last_active = excluded.last_active
                             WHERE excluded.last_active > last_active
                         """,
-                        (room_id, session_id, last_active),
+                        r=room_id,
+                        session_id=session_id,
+                        active=last_active,
                     )
-                    cur.execute(
+                    db.query(
+                        conn,
                         """
-                        UPDATE users SET last_active = ?1 WHERE session_id = ?2 AND last_active < ?1
+                        UPDATE users
+                        SET last_active = :active
+                        WHERE session_id = :session_id AND last_active < :active
                         """,
-                        (last_active, session_id),
+                        active=last_active,
+                        session_id=session_id,
                     )
 
                     if last_active >= active_cutoff:
@@ -496,9 +537,9 @@ def migrate01x(conn):
                 total_rooms += 1
 
         if not used_room_hacks:
-            cur.execute("DROP TABLE room_import_hacks")
+            db.query(conn, "DROP TABLE room_import_hacks")
         if not used_file_hacks:
-            cur.execute("DROP TABLE file_id_hacks")
+            db.query(conn, "DROP TABLE file_id_hacks")
 
     logger.warn(
         "Import finished!  Imported {} messages/{} files in {} rooms".format(
