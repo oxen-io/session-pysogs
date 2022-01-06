@@ -1,9 +1,7 @@
-import logging
 import os
 import time
 
-from .web import app
-from . import db
+from .web import app, appdb, query
 from . import config
 
 # Cleanup interval, in seconds.
@@ -28,16 +26,15 @@ def cleanup():
 
 
 def prune_files():
-    with db.tx() as cur:
+    with appdb.begin_nested():
         # Would love to use a single DELETE ... RETURNING here, but that requires sqlite 3.35+.
         now = time.time()
-        cur.execute("SELECT path FROM files WHERE expiry < ?", (now,))
-        to_remove = [row[0] for row in cur]
+        to_remove = [row[0] for row in query("SELECT path FROM files WHERE expiry < :exp", exp=now)]
 
         if not to_remove:
             return 0
 
-        cur.execute("DELETE FROM files WHERE expiry <= ?", (now,))
+        query("DELETE FROM files WHERE expiry < :exp", exp=now)
 
     # Committed the transaction, so the files are gone: now go ahead and remove them from disk.
     unlink_count = 0
@@ -60,12 +57,10 @@ def prune_files():
 
 
 def prune_message_history():
-    with db.tx() as cur:
-        cur.execute(
-            "DELETE FROM message_history WHERE replaced < ?",
-            (time.time() - config.MESSAGE_HISTORY_PRUNE_THRESHOLD * 86400,),
-        )
-        count = cur.rowcount
+    count = query(
+        "DELETE FROM message_history WHERE replaced < :t",
+        t=time.time() - config.MESSAGE_HISTORY_PRUNE_THRESHOLD * 86400,
+    ).rowcount
 
     if count > 0:
         app.logger.info("Pruned {} message edit/deletion records".format(count))
@@ -73,12 +68,11 @@ def prune_message_history():
 
 
 def prune_room_activity():
-    with db.tx() as cur:
-        cur.execute(
-            "DELETE FROM room_users WHERE last_active < ?",
-            (time.time() - config.ROOM_ACTIVE_PRUNE_THRESHOLD * 86400,),
-        )
-        count = cur.rowcount
+    with appdb.begin_nested():
+        count = query(
+            "DELETE FROM room_users WHERE last_active < :t",
+            t=time.time() - config.ROOM_ACTIVE_PRUNE_THRESHOLD * 86400,
+        ).rowcount
 
     if count > 0:
         app.logger.info("Prune {} old room activity records".format(count))
@@ -86,26 +80,26 @@ def prune_room_activity():
 
 
 def apply_permission_updates():
-    with db.tx() as cur:
+    with appdb.begin_nested():
         now = time.time()
-        cur.execute(
+        num_applied = query(
             """
             INSERT INTO user_permission_overrides (room, user, read, write, upload, banned)
             SELECT room, user, read, write, upload, banned FROM user_permission_futures
-                WHERE at <= ?
+                WHERE at <= :now
             ON CONFLICT (room, user) DO UPDATE SET
                 read = COALESCE(excluded.read, read),
                 write = COALESCE(excluded.write, write),
                 upload = COALESCE(excluded.upload, upload),
                 banned = COALESCE(excluded.banned, banned)
             """,
-            (now,),
-        )
-        num_applied = cur.rowcount
+            now=now,
+        ).rowcount
         if not num_applied:
             return 0
 
-        cur.execute("DELETE FROM user_permission_futures WHERE at <= ?", (now,))
+        query("DELETE FROM user_permission_futures WHERE at <= :now", now=now)
 
-    logging.info("Applied {} scheduled user permission updates".format(num_applied))
+    if num_applied > 0:
+        app.logger.info("Applied {} scheduled user permission updates".format(num_applied))
     return num_applied

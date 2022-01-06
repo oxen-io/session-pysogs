@@ -1,10 +1,10 @@
 from . import config
 from . import crypto
+from .postfork import postfork
 import os
-import sqlite3
 import logging
-import threading
 import importlib.resources
+import sqlalchemy
 
 HAVE_FILE_ID_HACKS = False
 # roomid => (max, offset).  Max is the highest message id that was in the old table; offset is the
@@ -12,122 +12,27 @@ HAVE_FILE_ID_HACKS = False
 ROOM_IMPORT_HACKS = {}
 
 
-_conns = threading.local()
-
-
 def get_conn():
-    """
-    Returns a thread-local database connection, establishing the first time it is called within a
-    thread.  This typically does not need to be called, instead use `cur()` or `tx()`.
-    """
-    if not hasattr(_conns, 'conn'):
-        _conns.conn = sqlite_connect()
-    return _conns.conn
+    """Gets a connection from the database engine connection pool.  This is not intended to be used
+    by flask endpoints: they should use web.appdb instead (which calls this upon first use)."""
+    return engine.connect()
 
 
-def cur():
-    """
-    Returns a cursor on a thread-local database connection, establishing a new connection the first
-    time it is called in thread.  A transaction is *not* started; if the code using the cursor is
-    intending to change the database you probably want to use `tx()` instead.
-    """
-    return get_conn().cursor()
+def query(conn, query, **params):
+    """Executes a query containing :param style placeholders (regardless of the actual underlying
+    database placeholder style), binding them using the given params keyword arguments.
 
+    Note that, if the query contains a literal : it must be escaped as \\:
 
-def execute(query, *parameters):
-    """
-    Constructs a cursor, executes a query on it, and returns the cursor.  Note that this is *not* in
-    a transaction and so should only be used for selects.
-    """
-    c = cur()
-    c.execute(query, *parameters)
-    return c
+    For example:
 
+        rows = db.query(conn,
+            "SELECT * FROM table1 WHERE name = :name AND age >= :age",
+            name="Joe",
+            age=25)
 
-class LocalTxContextManager:
-    """
-    Context manager that begins a transaction (with BEGIN IMMEDIATE, by default) and yields a cursor
-    on entry, commits on normal exit, and rolls back on exit via exception.
-
-    Internally this supports nesting via named savepoints with unique names on nested construction
-    within a thread.
-
-    Intended use is with a context to wrap code in a transaction (using the `tx` alias):
-
-        with db.tx() as cur:
-            ...
-
-    Transactions are IMMEDIATE by default because SQLite's default DEFERRED transactions are a
-    recipe for concurrency failure (see SQLITE_BUSY_SNAPSHOT description in
-    https://www.sqlite.org/isolation.html).  If, however, you need transactional isolation for a
-    read-only transaction (i.e. because you need multiple SELECTs that depend on a consistent
-    snapshot of the data) then you can construct the transaction with the `read_only=True` kwarg to
-    use a DEFERRED transaction.  (It is technically not read-only, but if you try to use
-    modification on it you will probably end up crying at some future point).
-    """
-
-    def __init__(self, *, read_only=False):
-        self.conn = get_conn()
-        self.immediate = not read_only
-
-    def __enter__(self):
-        if not hasattr(_conns, 'sp_num'):
-            _conns.sp_num = 0
-
-        self.sp_num = _conns.sp_num + 1
-        if self.sp_num == 1:
-            self.conn.execute("BEGIN IMMEDIATE" if self.immediate else "BEGIN")
-        else:
-            self.conn.execute(f"SAVEPOINT sogs_sp_{self.sp_num}")
-
-        cur = self.conn.cursor()
-
-        # We do this down here so in case something above throws we won't leave it incremented.
-        _conns.sp_num += 1
-
-        return cur
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        _conns.sp_num -= 1
-        if exc_type is None:
-            # This can throw, which we want to propagate
-            if self.sp_num == 1:
-                self.conn.execute("COMMIT")
-            else:
-                self.conn.execute(f"RELEASE SAVEPOINT sogs_sp_{self.sp_num}")
-        else:
-            # We're exiting the context by exception, so try to rollback but if this also fails then
-            # we want the original exception to propagate, not this one.
-            try:
-                if self.sp_num == 1:
-                    self.conn.execute("ROLLBACK")
-                else:
-                    self.conn.execute(f"ROLLBACK TO SAVEPOINT sogs_sp_{self.sp_num}")
-            except Exception as e:
-                logging.warn(f"Failed to rollback database transaction: {e}")
-
-
-# Shorter alias for convenience
-tx = LocalTxContextManager
-
-
-def sqlite_connect(path=config.DB_PATH):
-    """
-    Establishes and does basic setup of a new SQLite connection.  If path is given, open that;
-    otherwise open the default database path.
-    """
-
-    if path is None:
-        path = config.DB_PATH
-
-    conn = sqlite3.connect(path, isolation_level=None)
-    conn.row_factory = sqlite3.Row
-
-    conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("PRAGMA journal_mode = WAL")
-    conn.execute("PRAGMA synchronous = NORMAL")
-
-    return conn
+    See sqlalchemy.text for details."""
+    return conn.execute(sqlalchemy.text(query), **params)
 
 
 def database_init():
@@ -137,49 +42,60 @@ def database_init():
     during initialization *before* forking happens during uwsgi startup.
     """
 
-    conn = sqlite_connect()
-    have_messages = conn.execute(
-        """
-        SELECT EXISTS(
-            SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'messages'
-        )
-        """
-    ).fetchone()[0]
+    global engine, metadata
 
-    if not have_messages:
+    conn = get_conn()
+
+    if 'messages' not in metadata.tables:
         logging.warn("No database detected; creating new database schema")
-        conn.executescript(importlib.resources.read_text('sogs', 'schema.sql'))
+        if engine.name == "sqlite":
+            conn.connection.executescript(importlib.resources.read_text('sogs', 'schema.sqlite'))
+        else:
+            err = f"Don't know how to create the database for {engine.name}"
+            logging.critical(err)
+            raise RuntimeError(err)
+
+    changes = False
 
     # Database migrations/updates/etc.
-    migrate_v01x(conn)
-    add_new_columns(conn)
-    update_message_views(conn)
-    create_message_details_deleter(conn)
-    check_for_hacks(conn)
+    for migrate in (
+        migrate_v01x,
+        add_new_columns,
+        update_message_views,
+        create_message_details_deleter,
+        check_for_hacks,
+    ):
+        if migrate(conn):
+            changes = True
+
+    if changes:
+        metadata.clear()
+        metadata.reflect(bind=engine, views=True)
 
     # Make sure the system admin users exists
     create_admin_user(conn)
 
-    conn.close()
-
 
 def migrate_v01x(conn):
-    n_rooms = conn.execute("SELECT COUNT(*) FROM rooms").fetchone()[0]
+    n_rooms = conn.execute("SELECT COUNT(*) FROM rooms").first()[0]
 
     # Migration from a v0.1.x database:
-    if n_rooms == 0 and os.path.exists("database.db"):
-        logging.warn("No rooms found, but database.db exists; attempting migration")
-        from . import migrate01x
+    if n_rooms > 0 or not os.path.exists("database.db"):
+        return False
 
-        try:
-            migrate01x.migrate01x(conn)
-        except Exception:
-            logging.critical(
-                "database.db exists but migration failed!  Please report this bug!\n\n"
-                "If no migration from 0.1.x is needed then rename or delete database.db to "
-                "start up with a fresh (new) database.\n\n"
-            )
-            raise
+    logging.warn("No rooms found, but database.db exists; attempting migration")
+    from . import migrate01x
+
+    try:
+        migrate01x.migrate01x(conn)
+    except Exception:
+        logging.critical(
+            "database.db exists but migration failed!  Please report this bug!\n\n"
+            "If no migration from 0.1.x is needed then rename or delete database.db to "
+            "start up with a fresh (new) database.\n\n"
+        )
+        raise
+    return True
 
 
 def add_new_columns(conn):
@@ -194,36 +110,32 @@ def add_new_columns(conn):
     }
 
     for table, cols in new_table_cols.items():
-        with conn:
-            existing = {c['name'] for c in conn.execute(f"PRAGMA table_info('{table}')")}
-            for name, definition in cols.items():
-                if name not in existing:
-                    conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
+        for name, definition in cols.items():
+            if name not in metadata.tables[table].c:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
 
 
 def update_message_views(conn):
-    cols = [c['name'] for c in conn.execute("PRAGMA table_info('message_metadata')")]
-    if any(x not in cols for x in ('whisper_to', 'filtered')):
-        with conn:
-            conn.execute("DROP VIEW IF EXISTS message_metadata")
-            conn.execute("DROP VIEW IF EXISTS message_details")
-            conn.execute(
-                """
+    if any(x not in metadata.tables['message_metadata'].c for x in ('whisper_to', 'filtered')):
+        conn.execute("DROP VIEW IF EXISTS message_metadata")
+        conn.execute("DROP VIEW IF EXISTS message_details")
+        conn.execute(
+            """
 CREATE VIEW message_details AS
 SELECT messages.*, uposter.session_id, uwhisper.session_id AS whisper_to
     FROM messages
         JOIN users uposter ON messages.user = uposter.id
         LEFT JOIN users uwhisper ON messages.whisper = uwhisper.id
 """
-            )
-            conn.execute(
-                """
+        )
+        conn.execute(
+            """
 CREATE VIEW message_metadata AS
 SELECT id, room, user, session_id, posted, edited, updated, filtered, whisper_to,
         length(data) AS data_unpadded, data_size, length(signature) as signature_length
     FROM message_details
 """
-            )
+        )
 
 
 def create_message_details_deleter(conn):
@@ -252,16 +164,12 @@ def check_for_hacks(conn):
     so max would be 5000 and offset would be 4320: old message id 3333 will have new message id
     3333+4320 = 7653.  We read all the offsets once at startup and stash them in ROOM_IMPORT_HACKS.
     """
-    if conn.execute(
-        """
-        SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'file_id_hacks')
-        """
-    ).fetchone()[0]:
+    if 'file_id_hacks' in metadata.tables:
         # If the table exists but is empty (i.e. because all the attachments expired) then we should
         # drop it.
-        n_fid_hacks = conn.execute("SELECT COUNT(*) FROM file_id_hacks").fetchone()[0]
+        n_fid_hacks = conn.execute("SELECT COUNT(*) FROM file_id_hacks").first()[0]
         if n_fid_hacks == 0:
-            conn.execute("DROP TABLE file_id_hacks")
+            metadata.tables['file_id_hacks'].drop(engine)
         else:
             global HAVE_FILE_ID_HACKS
             HAVE_FILE_ID_HACKS = True
@@ -282,15 +190,45 @@ def create_admin_user(conn):
     command-line, and give it the server's x25519 pubkey (with ff prepended, *not* 05) as a fake
     default session_id.
     """
-    conn.execute(
+    query(
+        conn,
         """
         INSERT INTO users (id, session_id, moderator, admin, visible_mod)
-            VALUES (0, ?1, TRUE, TRUE, FALSE)
+            VALUES (0, :sid, TRUE, TRUE, FALSE)
         ON CONFLICT (id) DO UPDATE
-            SET session_id = ?1, moderator = TRUE, admin = TRUE, visible_mod = FALSE
+            SET session_id = :sid, moderator = TRUE, admin = TRUE, visible_mod = FALSE
         """,
-        ("ff" + crypto.server_pubkey_hex,),
+        sid="ff" + crypto.server_pubkey_hex,
     )
 
 
+engine = sqlalchemy.create_engine(config.DB_URL)
+engine_initial_pid = os.getpid()
+metadata = sqlalchemy.MetaData()
+metadata.reflect(bind=engine, views=True)
+
+
+if engine.name == "sqlite":
+
+    @sqlalchemy.event.listens_for(engine, "connect")
+    def sqlite_fix_connect(dbapi_connection, connection_record):
+        if engine.name == "sqlite":
+            # disable pysqlite's emitting of the BEGIN statement entirely.
+            # also stops it from emitting COMMIT before any DDL.
+            dbapi_connection.isolation_level = None
+
+    @sqlalchemy.event.listens_for(engine, "begin")
+    def do_begin(conn):
+        # emit our own BEGIN
+        conn.exec_driver_sql("BEGIN IMMEDIATE")
+
+
 database_init()
+
+
+@postfork
+def reset_db_postfork():
+    """Clear any connections from the engine after forking because they aren't shareable."""
+    if os.getpid() == engine_initial_pid:
+        return
+    engine.dispose()
