@@ -5,9 +5,9 @@
 [db]
 
 ; The database connection string url for the sogs database where everything is stored.  For sqlite
-; (currently the only supported database) this is `sqlite:///` followed by the path.  E.g.
-; `sqlite:///sogs.db` for sogs.db in the current working directory, or `sqlite:////path/to/sogs.db`
-; for an absolute URL.
+; this is `sqlite:///` followed by the path.  E.g.  ; `sqlite:///sogs.db` for sogs.db in the current
+; working directory, or `sqlite:////path/to/sogs.db` for an absolute URL.
+; PostgreSQL is also supported; see the SQLAlchemy docs for the required connect string format.
 ;url = sqlite:///sogs.db
 
 

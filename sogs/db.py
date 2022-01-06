@@ -35,6 +35,25 @@ def query(conn, query, **params):
     return conn.execute(sqlalchemy.text(query), **params)
 
 
+use_returning_ = True
+
+
+def insert_and_get_pk(conn, insert, pk, **params):
+    """
+    Performs an insert and returns the value of the primary key by appending a RETURNING clause, if
+    supported, and otherwise falling back to using .lastrowid.
+
+    Takes the connection, query, primary key column name, and any parameters to bind.
+    """
+
+    if use_returning_:
+        insert += f" RETURNING {pk}"
+    result = query(conn, insert, **params)
+    if use_returning_:
+        return result.scalar_one()
+    return result.lastrowid
+
+
 def database_init():
     """
     Perform database initialization: constructs the schema, if necessary, and performs any required
@@ -50,10 +69,17 @@ def database_init():
         logging.warn("No database detected; creating new database schema")
         if engine.name == "sqlite":
             conn.connection.executescript(importlib.resources.read_text('sogs', 'schema.sqlite'))
+        elif engine.name == "postgresql":
+            cur = conn.connection.cursor()
+            cur.execute(importlib.resources.read_text('sogs', 'schema.pgsql'))
+            cur.close()
         else:
             err = f"Don't know how to create the database for {engine.name}"
             logging.critical(err)
             raise RuntimeError(err)
+
+        metadata.clear()
+        metadata.reflect(bind=engine, views=True)
 
     changes = False
 
@@ -109,38 +135,49 @@ def add_new_columns(conn):
         'user_permission_futures': {'banned': 'BOOLEAN'},
     }
 
+    added = False
+
     for table, cols in new_table_cols.items():
         for name, definition in cols.items():
             if name not in metadata.tables[table].c:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
+                added = True
+
+    return added
 
 
 def update_message_views(conn):
-    if any(x not in metadata.tables['message_metadata'].c for x in ('whisper_to', 'filtered')):
-        conn.execute("DROP VIEW IF EXISTS message_metadata")
-        conn.execute("DROP VIEW IF EXISTS message_details")
-        conn.execute(
-            """
+    if engine.name != "sqlite":
+        if any(x not in metadata.tables['message_metadata'].c for x in ('whisper_to', 'filtered')):
+            conn.execute("DROP VIEW IF EXISTS message_metadata")
+            conn.execute("DROP VIEW IF EXISTS message_details")
+            conn.execute(
+                """
 CREATE VIEW message_details AS
 SELECT messages.*, uposter.session_id, uwhisper.session_id AS whisper_to
     FROM messages
-        JOIN users uposter ON messages.user = uposter.id
+        JOIN users uposter ON messages."user" = uposter.id
         LEFT JOIN users uwhisper ON messages.whisper = uwhisper.id
 """
-        )
-        conn.execute(
-            """
+            )
+            conn.execute(
+                """
 CREATE VIEW message_metadata AS
-SELECT id, room, user, session_id, posted, edited, updated, filtered, whisper_to,
+SELECT id, room, "user", session_id, posted, edited, updated, filtered, whisper_to,
         length(data) AS data_unpadded, data_size, length(signature) as signature_length
     FROM message_details
 """
-        )
+            )
+
+            return True
+
+    return False
 
 
 def create_message_details_deleter(conn):
-    conn.execute(
-        """
+    if engine.name == "sqlite":
+        conn.execute(
+            """
 CREATE TRIGGER IF NOT EXISTS message_details_deleter INSTEAD OF DELETE ON message_details
 FOR EACH ROW WHEN OLD.data IS NOT NULL
 BEGIN
@@ -148,7 +185,9 @@ BEGIN
         WHERE id = OLD.id;
 END
 """
-    )
+        )
+
+    return False  # No need to refresh metadata even if we added the trigger above.
 
 
 def check_for_hacks(conn):
@@ -202,6 +241,17 @@ def create_admin_user(conn):
     )
 
 
+if config.DB_URL.startswith('postgresql'):
+    # room.token is a 'citext' (case-insensitive text), which sqlalchemy doesn't recognize out of
+    # the box.  Map it to a plain TEXT which is good enough for what we need (if we actually needed
+    # to generate this wouldn't suffice: we'd have to use something like the sqlalchemy-citext
+    # module).
+    from sqlalchemy.dialects.postgresql.base import ischema_names
+
+    if 'citext' not in ischema_names:
+        ischema_names['citext'] = ischema_names['text']
+
+
 engine = sqlalchemy.create_engine(config.DB_URL)
 engine_initial_pid = os.getpid()
 metadata = sqlalchemy.MetaData()
@@ -210,12 +260,15 @@ metadata.reflect(bind=engine, views=True)
 
 if engine.name == "sqlite":
 
+    import sqlite3
+
+    use_returning_ = sqlite3.sqlite_version_info >= (3, 35, 0)
+
     @sqlalchemy.event.listens_for(engine, "connect")
     def sqlite_fix_connect(dbapi_connection, connection_record):
-        if engine.name == "sqlite":
-            # disable pysqlite's emitting of the BEGIN statement entirely.
-            # also stops it from emitting COMMIT before any DDL.
-            dbapi_connection.isolation_level = None
+        # disable pysqlite's emitting of the BEGIN statement entirely.
+        # also stops it from emitting COMMIT before any DDL.
+        dbapi_connection.isolation_level = None
 
     @sqlalchemy.event.listens_for(engine, "begin")
     def do_begin(conn):

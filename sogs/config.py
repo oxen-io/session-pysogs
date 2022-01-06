@@ -72,7 +72,7 @@ def load_config():
     # value lambda extracts the value (if None/omitted use str value as-is)
     setting_map = {
         'db': {
-            'url': ('DB_URL', lambda x: x.startswith('sqlite:///'))
+            'url': ('DB_URL', lambda x: x.startswith('sqlite:///') or x.startswith('postgresql'))
         },
         'crypto': {'key_file': ('KEY_FILE',)},
         'net': {

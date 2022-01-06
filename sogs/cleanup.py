@@ -84,14 +84,14 @@ def apply_permission_updates():
         now = time.time()
         num_applied = query(
             """
-            INSERT INTO user_permission_overrides (room, user, read, write, upload, banned)
-            SELECT room, user, read, write, upload, banned FROM user_permission_futures
+            INSERT INTO user_permission_overrides (room, "user", read, write, upload, banned)
+            SELECT room, "user", read, write, upload, banned FROM user_permission_futures
                 WHERE at <= :now
-            ON CONFLICT (room, user) DO UPDATE SET
-                read = COALESCE(excluded.read, read),
-                write = COALESCE(excluded.write, write),
-                upload = COALESCE(excluded.upload, upload),
-                banned = COALESCE(excluded.banned, banned)
+            ON CONFLICT (room, "user") DO UPDATE SET
+                read = COALESCE(excluded.read, user_permission_overrides.read),
+                write = COALESCE(excluded.write, user_permission_overrides.write),
+                upload = COALESCE(excluded.upload, user_permission_overrides.upload),
+                banned = COALESCE(excluded.banned, user_permission_overrides.banned)
             """,
             now=now,
         ).rowcount
