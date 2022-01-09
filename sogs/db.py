@@ -66,7 +66,7 @@ def database_init():
     conn = get_conn()
 
     if 'messages' not in metadata.tables:
-        logging.warn("No database detected; creating new database schema")
+        logging.warning("No database detected; creating new database schema")
         if engine.name == "sqlite":
             conn.connection.executescript(importlib.resources.read_text('sogs', 'schema.sqlite'))
         elif engine.name == "postgresql":
@@ -109,7 +109,7 @@ def migrate_v01x(conn):
     if n_rooms > 0 or not os.path.exists("database.db"):
         return False
 
-    logging.warn("No rooms found, but database.db exists; attempting migration")
+    logging.warning("No rooms found, but database.db exists; attempting migration")
     from . import migrate01x
 
     try:

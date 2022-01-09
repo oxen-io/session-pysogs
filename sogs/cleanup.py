@@ -22,7 +22,7 @@ def cleanup():
                 )
             )
         except Exception as e:
-            app.logger.warn(f"Periodic database cleanup failed: {e}")
+            app.logger.warning(f"Periodic database cleanup failed: {e}")
 
 
 def prune_files():

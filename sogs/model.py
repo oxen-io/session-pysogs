@@ -396,7 +396,7 @@ class Room:
 
         whisper_mods = bool(whisper_mods)
         if (whisper_to or whisper_mods) and not self.check_moderator(user):
-            app.logger.warn(f"Cannot post a whisper to {self}: {user} is not a moderator")
+            app.logger.warning(f"Cannot post a whisper to {self}: {user} is not a moderator")
             raise BadPermission()
 
         if whisper_to and not isinstance(whisper_to, User):
@@ -543,7 +543,7 @@ class Room:
             fail = "only admins can delete all posts of another admin"
 
         if fail is not None:
-            app.logger.warn(
+            app.logger.warning(
                 f"Error deleting all posts by {poster} from {self} by {deleter}: {fail}"
             )
             raise BadPermission()
@@ -675,7 +675,7 @@ class Room:
         """
 
         if not self.check_admin(added_by):
-            app.logger.warn(
+            app.logger.warning(
                 f"Unable to set {user} as {'admin' if admin else 'moderator'} of {self}: "
                 f"{added_by} is not an admin"
             )
@@ -737,7 +737,7 @@ class Room:
             fail = "only admins can ban room mods/admins"
 
         if fail is not None:
-            app.logger.warn(f"Error banning {to_ban} from {self} by {mod}: {fail}")
+            app.logger.warning(f"Error banning {to_ban} from {self} by {mod}: {fail}")
             raise BadPermission()
 
         # TODO: log the banning action for auditing
@@ -777,7 +777,7 @@ class Room:
         """
 
         if not self.check_moderator(mod):
-            app.logger.warn(f"Error unbanning {to_unban} from {self} by {mod}: not a moderator")
+            app.logger.warning(f"Error unbanning {to_unban} from {self} by {mod}: not a moderator")
             raise BadPermission()
 
         result = query(
@@ -903,7 +903,7 @@ class Room:
                 return file_id
 
         except Exception as e:
-            app.logger.warn(f"Failed to write/update file {file_path}: {e}")
+            app.logger.warning(f"Failed to write/update file {file_path}: {e}")
             if file_path is not None:
                 try:
                     os.unlink(file_path)
@@ -1099,7 +1099,7 @@ class User:
         """
 
         if not added_by.global_admin:
-            app.logger.warn(
+            app.logger.warning(
                 f"Cannot set {self} as global {'admin' if admin else 'moderator'}: "
                 f"{added_by} is not a global admin"
             )
@@ -1124,7 +1124,7 @@ class User:
         """Removes this user's global moderator/admin status, if set."""
 
         if not removed_by.global_admin:
-            app.logger.warn(
+            app.logger.warning(
                 f"Cannot remove {self} as global mod/admin: {removed_by} is not an admin"
             )
             raise BadPermission()

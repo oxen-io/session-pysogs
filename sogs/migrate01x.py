@@ -29,7 +29,7 @@ def migrate01x(conn):
         with db.sqlite_connect("database.db") as main_db:
             rooms = [(r[0], r[1]) for r in main_db.execute("SELECT id, name FROM main")]
 
-        logger.warn("{} rooms to import".format(len(rooms)))
+        logger.warning(f"{len(rooms)} rooms to import")
 
         db.query(
             conn,
@@ -70,8 +70,8 @@ def migrate01x(conn):
         for room_token, room_name in rooms:
             room_db_path = "rooms/{}.db".format(room_token)
             if not os.path.exists(room_db_path):
-                logger.warn(
-                    "Skipping room {}: database {} does not exist".format(room_token, room_db_path)
+                logger.warning(
+                    f"Skipping room {room_token}: database {room_db_path} does not exist"
                 )
                 continue
 
@@ -327,17 +327,15 @@ def migrate01x(conn):
                     try:
                         size = os.path.getsize(path)
                     except Exception as e:
-                        logger.warn(
-                            "Error accessing file {} ({}); skipping import of this upload".format(
-                                path, e
-                            )
+                        logger.warning(
+                            f"Error accessing file {path} ({e}); skipping import of this upload"
                         )
                         continue
 
                     if timestamp > 10000000000:
-                        logger.warn(
-                            "- file {} has nonsensical timestamp {}; "
-                            "importing it with current time".format(path, timestamp)
+                        logger.warning(
+                            f"- file {path} has nonsensical timestamp {timestamp}; "
+                            "importing it with current time"
                         )
                         timestamp = time.time()
 
@@ -520,7 +518,7 @@ def migrate01x(conn):
                             )
                         )
 
-                logger.warn(
+                logger.warning(
                     "Imported room {}: "
                     "{} messages, {} files, {} moderators, {} bans, {} users ({} active)".format(
                         room_token,
@@ -542,7 +540,7 @@ def migrate01x(conn):
         if not used_file_hacks:
             db.query(conn, "DROP TABLE file_id_hacks")
 
-    logger.warn(
+    logger.warning(
         "Import finished!  Imported {} messages/{} files in {} rooms".format(
             total_msgs, total_files, total_rooms
         )
@@ -551,4 +549,4 @@ def migrate01x(conn):
     try:
         os.rename("database.db", "old-database.db")
     except Exception as e:
-        logger.warn("Failed to rename database.db -> old-database.db: {}".format(e))
+        logger.warning(f"Failed to rename database.db -> old-database.db: {e}")

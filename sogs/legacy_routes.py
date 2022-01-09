@@ -63,7 +63,7 @@ def legacy_check_user_room(
     if pubkey is None:
         pubkey = get_pubkey_from_token(request.headers.get("Authorization"))
     if not pubkey or len(pubkey) != (utils.SESSION_ID_SIZE * 2) or not pubkey.startswith('05'):
-        app.logger.warn("cannot get pubkey for checking room permissions")
+        app.logger.warning("cannot get pubkey for checking room permissions")
         abort(http.BAD_REQUEST)
 
     if room is None:
