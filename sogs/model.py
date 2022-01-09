@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Optional, Union
 import flask
+import sqlalchemy.exc
 
 from . import config
 from . import db
@@ -9,7 +10,8 @@ from . import utils
 from . import crypto
 from . import http
 from .omq import send_mule
-from .web import app, appdb, query
+from .web import app
+from .db import query
 
 import os
 import re
@@ -54,6 +56,20 @@ class NoSuchUser(NotFound):
     def __init__(self, session_id):
         self.session_id = session_id
         super().__init__(f"No such user: {session_id}")
+
+
+class AlreadyExists(RuntimeError):
+    """
+    Thrown when attempting to create a record (e.g. a Room) that already exists.
+
+    e.type is the type object (e.g. sogs.model.Room) that could not be constructed, if applicable.
+    e.value is the unique value that already exists (e.g. the room token), if applicable.
+    """
+
+    def __init__(self, msg, type=None, value=None):
+        super().__init__(msg)
+        self.type = type
+        self.value = value
 
 
 class BadPermission(RuntimeError):
@@ -163,6 +179,42 @@ class Room:
     def __str__(self):
         """Returns `Room[token]` when converted to a str"""
         return f"Room[{self.token}]"
+
+    @staticmethod
+    def create(token: str, name: str, description: Optional[str] = None):
+        """
+        Constructs a new room given the token, name, and (optional) description.  Returns a full Row
+        object built from the constructed row.
+
+        (This static method does not authenticate).
+        """
+
+        try:
+            room_id = db.insert_and_get_pk(
+                "INSERT INTO rooms(token, name, description) VALUES(:t, :n, :d)",
+                "id",
+                t=token,
+                n=name,
+                d=description,
+            )
+        except sqlalchemy.exc.IntegrityError:
+            raise AlreadyExists(f"Room with token '{token}' already exists", Room, token)
+        return Room(id=room_id)
+
+    def delete(self):
+        """
+        Deletes the given room, including all posts, files, etc. within it.  After the call, the
+        values of the room object itself (.id, .token, etc.) remain set to their previous values,
+        but are stale and no longer reflect an actual database room.  No other methods should be
+        called on the room instance (as most assume the state is valid).
+
+        This is permanent and dangerous!
+
+        This method does not authenticate.
+        """
+        result = query("DELETE FROM rooms WHERE token = :t", t=self.token)
+        if result.rowcount != 1:
+            raise NoSuchRoom(self.token)
 
     @property
     def image(self):
@@ -413,7 +465,7 @@ class Room:
                     # FIXME: can we send back some error code that makes Session not retry?
                     raise PostRejected("filtration rejected message")
 
-        with appdb.begin_nested():
+        with db.transaction():
             if not self.check_admin(user):
 
                 # TODO: These really should be room properties, not random global constants (these
@@ -439,7 +491,6 @@ class Room:
             unpadded_data = utils.remove_session_message_padding(data)
 
             msg_id = db.insert_and_get_pk(
-                appdb,
                 """
                 INSERT INTO messages
                     (room, "user", data, data_size, signature, filtered, whisper, whisper_mods)
@@ -489,7 +540,7 @@ class Room:
 
         deleted = []
         i = 0
-        with appdb.begin_nested():
+        with db.transaction():
             # Process in slices of 50 (in case we're given more than 50) because that's a lot of
             # parameters to bind and we want to avoid hitting bind limits.
             while i < len(message_ids):
@@ -514,7 +565,9 @@ class Room:
                         # user's own:
                         res = query(
                             """
-                            SELECT EXISTS( SELECT * FROM messages WHERE "user" != :u AND id IN :ids )
+                            SELECT EXISTS(
+                                SELECT * FROM messages WHERE "user" != :u AND id IN :ids
+                            )
                             """,
                             u=deleter.id,
                             ids=ids,
@@ -548,7 +601,7 @@ class Room:
             )
             raise BadPermission()
 
-        with appdb.begin_nested():
+        with db.transaction():
             deleted = [
                 r[0]
                 for r in query(
@@ -742,7 +795,7 @@ class Room:
 
         # TODO: log the banning action for auditing
 
-        with appdb.begin_nested():
+        with db.transaction():
             query(
                 """
                 INSERT INTO user_permission_overrides (room, "user", banned, moderator, admin)
@@ -864,13 +917,12 @@ class Room:
             # Begin a transaction; if this context exits with exception we want to roll back the
             # database addition; we catch *outside* the context so that we catch on commit, as well,
             # so that we also clean up the stored file on disk if the transaction fails to commit.
-            with appdb.begin_nested():
+            with db.transaction():
                 expiry = None if lifetime is None else time.time() + lifetime
 
                 # Insert the file row first with path='tmp' then come back and update it to the
                 # proper path, which we want to base on the resulting file id.
                 file_id = db.insert_and_get_pk(
-                    appdb,
                     """
                     INSERT INTO files (room, uploader, size, expiry, filename, path)
                     VALUES (:r, :u, :size, :expiry, :filename, 'tmp')
@@ -1024,7 +1076,7 @@ class User:
             row = query("SELECT * FROM users WHERE session_id = :s", s=session_id).first()
 
             if not row and autovivify:
-                with appdb.begin_nested():
+                with db.transaction():
                     query("INSERT INTO users (session_id) VALUES (:s)", s=session_id)
                     row = query("SELECT * FROM users WHERE session_id = :s", s=session_id).first()
                 # No need to re-touch this user since we just created them:
@@ -1044,7 +1096,7 @@ class User:
         )
 
         if touch:
-            with appdb.begin_nested():
+            with db.transaction():
                 self._touch()
 
     def __str__(self):
@@ -1077,7 +1129,7 @@ class User:
         to True.
         """
         if not self._touched or force:
-            with appdb.begin_nested():
+            with db.transaction():
                 self._touch()
 
     def update_room_activity(self, room):
@@ -1105,7 +1157,7 @@ class User:
             )
             raise BadPermission()
 
-        with appdb.begin_nested():
+        with db.transaction():
             query(
                 """
                 UPDATE users
@@ -1129,7 +1181,7 @@ class User:
             )
             raise BadPermission()
 
-        with appdb.begin_nested():
+        with db.transaction():
             query("UPDATE users SET moderator = FALSE, admin = FALSE WHERE id = :u", u=self.id)
         self.global_admin = False
         self.global_moderator = False

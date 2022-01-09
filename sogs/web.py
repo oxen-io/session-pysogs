@@ -42,16 +42,6 @@ def teardown_db_conn(exception):
 appdb = LocalProxy(get_db_conn)
 
 
-def query(*args, **kwargs):
-    """
-    Wrapper around db.query() that injects the application context database connection as the first
-    argument.  i.e. query("SELECT :x", x=1) is a shortcut for db.query(appdb, "SELECT :x", x=1).
-    """
-    from . import db
-
-    return db.query(appdb, *args, **kwargs)
-
-
 from . import routes
 from . import onion_request
 from . import legacy_routes

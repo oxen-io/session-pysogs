@@ -2,10 +2,8 @@ from argparse import ArgumentParser as AP, RawDescriptionHelpFormatter
 import atexit
 import re
 import sys
-import sqlalchemy
 
 from . import web
-from .web import query
 from . import db
 from . import config
 from . import model
@@ -151,17 +149,14 @@ if args.add_room:
         sys.exit(1)
 
     try:
-        query(
-            "INSERT INTO rooms(token, name, description) VALUES(:t, :n, :d)",
-            t=args.add_room,
-            n=args.name or args.add_room,
-            d=args.description,
+        room = model.Room.create(
+            token=args.add_room, name=args.name or args.add_room, description=args.description
         )
-    except sqlalchemy.exc.IntegrityError:
+    except model.AlreadyExists:
         print(f"Error: room '{args.add_room}' already exists!", file=sys.stderr)
         sys.exit(1)
     print(f"Created room {args.add_room}:")
-    print_room(model.Room(token=args.add_room))
+    print_room(room)
 
 elif args.delete_room:
     try:
@@ -176,8 +171,7 @@ elif args.delete_room:
     else:
         res = input("Are you sure you want to delete this room? [yN] ")
     if res.startswith("y") or res.startswith("Y"):
-        result = query("DELETE FROM rooms WHERE token = :t", t=args.delete_room)
-        count = result.rowcount
+        room.delete()
         print("Room deleted.")
     else:
         print("Aborted.")

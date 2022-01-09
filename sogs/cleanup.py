@@ -1,7 +1,8 @@
 import os
 import time
 
-from .web import app, appdb, query
+from .web import app, appdb
+from .db import query
 from . import config
 
 # Cleanup interval, in seconds.

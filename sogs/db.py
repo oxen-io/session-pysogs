@@ -18,7 +18,7 @@ def get_conn():
     return engine.connect()
 
 
-def query(conn, query, **params):
+def query(query, *, dbconn=None, **params):
     """Executes a query containing :param style placeholders (regardless of the actual underlying
     database placeholder style), binding them using the given params keyword arguments.
 
@@ -26,29 +26,53 @@ def query(conn, query, **params):
 
     For example:
 
-        rows = db.query(conn,
+        rows = db.query(
             "SELECT * FROM table1 WHERE name = :name AND age >= :age",
             name="Joe",
             age=25)
 
-    See sqlalchemy.text for details."""
-    return conn.execute(sqlalchemy.text(query), **params)
+    See sqlalchemy.text for details.
+
+    Can execute on a specific connection by passing it as dbconn; if omitted, uses web.appdb.  (Note
+    that dbconn *cannot* be used as a placeholder bind name).
+    """
+
+    if dbconn is None:
+        from . import web
+
+        dbconn = web.appdb
+
+    return dbconn.execute(sqlalchemy.text(query), **params)
+
+
+# Begins a (potentially nested) transaction.  Takes an optional connection; if omitted uses
+# web.appdb.
+def transaction(dbconn=None):
+    if dbconn is None:
+        from . import web
+
+        dbconn = web.appdb
+    return dbconn.begin_nested()
 
 
 use_returning_ = True
 
 
-def insert_and_get_pk(conn, insert, pk, **params):
+def insert_and_get_pk(insert, pk, *, dbconn=None, **params):
     """
     Performs an insert and returns the value of the primary key by appending a RETURNING clause, if
     supported, and otherwise falling back to using .lastrowid.
 
-    Takes the connection, query, primary key column name, and any parameters to bind.
+    Takes the query, primary key column name, and any parameters to bind
+
+    Can optionally take the database connection by passing as a dbconn parameter (note that you may
+    not use "dbconn" as a bind parameter).  If omitted uses web.appdb.
     """
 
     if use_returning_:
         insert += f" RETURNING {pk}"
-    result = query(conn, insert, **params)
+
+    result = query(insert, dbconn=dbconn, **params)
     if use_returning_:
         return result.scalar_one()
     return result.lastrowid
@@ -62,6 +86,9 @@ def database_init():
     """
 
     global engine, metadata
+
+    metadata.clear()
+    metadata.reflect(bind=engine, views=True)
 
     conn = get_conn()
 
@@ -223,14 +250,13 @@ def check_for_hacks(conn):
         pass
 
 
-def create_admin_user(conn):
+def create_admin_user(dbconn):
     """
     We create a dummy user (with id 0) for system tasks such as changing moderators from
     command-line, and give it the server's x25519 pubkey (with ff prepended, *not* 05) as a fake
     default session_id.
     """
     query(
-        conn,
         """
         INSERT INTO users (id, session_id, moderator, admin, visible_mod)
             VALUES (0, :sid, TRUE, TRUE, FALSE)
@@ -238,6 +264,7 @@ def create_admin_user(conn):
             SET session_id = :sid, moderator = TRUE, admin = TRUE, visible_mod = FALSE
         """,
         sid="ff" + crypto.server_pubkey_hex,
+        dbconn=dbconn,
     )
 
 
@@ -252,11 +279,11 @@ if config.DB_URL.startswith('postgresql'):
         ischema_names['citext'] = ischema_names['text']
 
 
-engine = sqlalchemy.create_engine(config.DB_URL)
+# Disable *sqlalchemy*-level autocommit, which works so badly that it got completely removed in 2.0.
+# (We put the actual sqlite into driver-level autocommit mode below).
+engine = sqlalchemy.create_engine(config.DB_URL).execution_options(autocommit=False)
 engine_initial_pid = os.getpid()
 metadata = sqlalchemy.MetaData()
-metadata.reflect(bind=engine, views=True)
-
 
 if engine.name == "sqlite":
 
