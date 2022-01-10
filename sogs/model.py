@@ -139,8 +139,26 @@ class Room:
         Constructs a room from a pre-retrieved row *or* via lookup of a room token or id.  When
         looking up this raises a NoSuchRoom if no room with that token/id exists.
         """
-        if sum(x is not None for x in (row, id, token)) != 1:
+        self._refresh(id=id, token=token, row=row)
+
+    def _refresh(self, *, id=None, token=None, row=None, perms=False):
+        """
+        Internal method to (re-)fetch details from the database, most importantly the updates and
+        info_updates after a room metadata update.
+
+        Must be given exactly one of id/token/row for an initial load; for a refresh all can be None
+        (to use self.id).
+
+        If perms is given as true then we also clear the permission cache (and will have to re-fetch
+        any permissions when requested); by default we leave it.
+        """
+
+        n_args = sum(x is not None for x in (row, id, token))
+        if n_args == 0 and hasattr(self, 'id'):
+            id = self.id
+        elif n_args != 1:
             raise ValueError("Room() error: exactly one of row/id/token must be specified")
+
         if token is not None:
             row = query("SELECT * FROM rooms WHERE token = :t", t=token).first()
         elif id is not None:
@@ -150,9 +168,9 @@ class Room:
 
         (
             self.id,
-            self.token,
-            self.name,
-            self.description,
+            self._token,
+            self._name,
+            self._description,
             self._fetch_image_id,
             self.created,
             self.updates,
@@ -170,11 +188,21 @@ class Room:
                 'info_updates',
             )
         )
-        self.default_read, self.default_write, self.default_upload = (
+        self._default_read, self._default_write, self._default_upload = (
             bool(row[c]) for c in ('read', 'write', 'upload')
         )
-        self._image = None  # Retrieved on demand
-        self._perm_cache = {}
+
+        if (
+            hasattr(self, '_image')
+            and self._image is not None
+            and self._image.id == self._fetch_image_id
+        ):
+            self._fetch_image_id = None  # We're refreshing and the image didn't change
+        else:
+            self._image = None  # Retrieved on demand
+
+        if perms or not hasattr(self, '_perm_cache'):
+            self._perm_cache = {}
 
     def __str__(self):
         """Returns `Room[token]` when converted to a str"""
@@ -217,6 +245,81 @@ class Room:
             raise NoSuchRoom(self.token)
 
     @property
+    def info(self):
+        """
+        A dict containing the basic room info needed for serializing room details.
+
+        Note that for bt encoding the `created` value is a float and will need to be changed (e.g.
+        to microseconds) to be bt-encoding compatible.
+        """
+        info = {
+            'id': self.id,
+            'token': self.token,
+            'name': self.name,
+            'description': self.description,
+            'created': self.created,
+            'updates': self.updates,
+            'info_updates': self.info_updates,
+        }
+        if self.image_id is not None:
+            info['image_id'] = self.image_id
+
+        return info
+
+    @property
+    def token(self):
+        """Accesses the room token."""
+        return self._token
+
+    @token.setter
+    def token(self, tok: str):
+        """Updates the room token.  Currently breaks any existing client because they have no way to
+        get the renamed URL."""
+
+        # Changing the token is effectively moving the room to a new URL, which doesn't actually
+        # affect the updates/info_updates because you'll now have to get the new URL somehow anyway,
+        # in which case you don't care about the update value changing.  (Currently this is provided
+        # for completeness; in order for renamable tokens we'd probably need to add some sort of
+        # token tombstone pointing to the renamed room, otherwise updating token is highly
+        # destructive).
+
+        with db.transaction():
+            query("UPDATE rooms SET token = :t WHERE id = :r", r=self.id, t=tok)
+            self._refresh()
+
+    @property
+    def name(self):
+        """Accesses the room's human-readable name."""
+        return self._name
+
+    @name.setter
+    def name(self, name: str):
+        """Sets the room's human-readable name."""
+        with db.transaction():
+            query("UPDATE rooms SET name = :n WHERE id = :r", r=self.id, n=name)
+            self._refresh()
+
+    @property
+    def description(self):
+        """Accesses the room's human-readable description."""
+        return self._description
+
+    @description.setter
+    def description(self, desc):
+        """Sets the room's human-readable description."""
+        with db.transaction():
+            query("UPDATE rooms SET description = :d WHERE id = :r", r=self.id, d=desc)
+            self._refresh()
+
+    @property
+    def image_id(self):
+        """
+        Returns the image of of the room's image, or None if it has no image.  Unlike `.image.id`,
+        this does not fetch the image row details from the database.
+        """
+        return self._fetch_image_id if self._image is None else self._image.id
+
+    @property
     def image(self):
         """
         Accesses the room image File for this room; this is fetched from the database the first time
@@ -230,10 +333,70 @@ class Room:
             self._fetch_image_id = None
         return self._image
 
+    @image.setter
+    def image(self, file: Union[File, int]):
+        """
+        Sets a room image to a file (can be either the file id, or File instance).  If the file
+        currently has an expiry it will be updated to non-expiring.
+
+        If the room currently has an image it will be set to expire after the default expiry.
+        (Rather than expiring immediately because the image could also be an attachment to some
+        post).
+        """
+
+        with db.transaction():
+            if not isinstance(file, File):
+                file = File(id=file)
+
+            file.set_expiry(forever=True)
+
+            if self.image:
+                self.image.set_expiry()
+
+            query("UPDATE rooms SET image = :f WHERE id = :r", r=self.id, f=file.id)
+
+            self._fetch_image_id, self._image = None, file
+
+            self._refresh()
+
     @property
-    def info(self):
-        """a dict containing all info needed for serializing a room over zmq"""
-        return {'id': self.id, 'token': self.token}
+    def default_read(self):
+        """Returns True if this room is publicly readable (e.g. by a new user)"""
+        return self._default_read
+
+    @property
+    def default_write(self):
+        """Returns True if this room is publicly writable (e.g. by a new user)"""
+        return self._default_write
+
+    @property
+    def default_upload(self):
+        """Returns True if this room allows public uploads (e.g. by a new user)"""
+        return self._default_upload
+
+    @default_read.setter
+    def default_read(self, read: bool):
+        """Sets the default read permission of the room"""
+
+        with db.transaction():
+            query("UPDATE rooms SET read = :read WHERE id = :r", r=self.id, read=read)
+            self._refresh(perms=True)
+
+    @default_write.setter
+    def default_write(self, write: bool):
+        """Sets the default write permission of the room"""
+
+        with db.transaction():
+            query("UPDATE rooms SET write = :write WHERE id = :r", r=self.id, write=write)
+            self._refresh(perms=True)
+
+    @default_upload.setter
+    def default_upload(self, upload: bool):
+        """Sets the default upload permission of the room"""
+
+        with db.transaction():
+            query("UPDATE rooms SET upload = :upload WHERE id = :r", r=self.id, upload=upload)
+            self._refresh(perms=True)
 
     def active_users(self, cutoff=config.ROOM_DEFAULT_ACTIVE_THRESHOLD * 86400):
         """
@@ -250,7 +413,7 @@ class Room:
 
     def check_permission(
         self,
-        user: Optional[User],
+        user: Optional[User] = None,
         *,
         admin=False,
         moderator=False,
@@ -260,7 +423,7 @@ class Room:
     ):
         """
         Checks whether `user` has the required permissions for this room and isn't banned.  Returns
-        True if the user satisfies the permissions, false otherwise.  If no user is provided then
+        True if the user satisfies the permissions, False otherwise.  If no user is provided then
         permissions are checked against the room's defaults.
 
         Looked up permissions are cached within the Room instance so that looking up the same user
@@ -322,13 +485,13 @@ class Room:
     def check_unbanned(self, user: User):
         return self.check_permission(user)
 
-    def check_read(self, user: Optional[User]):
+    def check_read(self, user: Optional[User] = None):
         return self.check_permission(user, read=True)
 
-    def check_write(self, user: Optional[User]):
+    def check_write(self, user: Optional[User] = None):
         return self.check_permission(user, write=True)
 
-    def check_upload(self, user: Optional[User]):
+    def check_upload(self, user: Optional[User] = None):
         """Checks for both upload *and* write permission"""
         return self.check_permission(user, write=True, upload=True)
 
@@ -683,6 +846,9 @@ class Room:
             if session_id is not None and session_id == curr_session_id:
                 we_are_hidden = not visible
                 we_are_admin = admin
+            elif session_id[0:2] == "ff" and session_id[2:] == crypto.server_pubkey_hex:
+                # Skip the system user which isn't really a moderator/admin account
+                continue
 
             (mods if visible else hidden_mods).append(session_id)
 
@@ -691,6 +857,7 @@ class Room:
         elif we_are_hidden:
             mods.append(curr_session_id)
 
+        mods.sort()
         return mods
 
     def get_all_moderators(self):
@@ -749,6 +916,9 @@ class Room:
             visible=visible,
         )
 
+        if user.id in self._perm_cache:
+            del self._perm_cache[user.id]
+
         app.logger.info(f"{added_by} set {user} as {'admin' if admin else 'moderator'} of {self}")
 
     def remove_moderator(self, user: User, *, removed_by: User):
@@ -767,6 +937,9 @@ class Room:
             u=user.id,
         )
 
+        if user.id in self._perm_cache:
+            del self._perm_cache[user.id]
+
         app.logger.info(f"{removed_by} removed {user} as mod/admin of {self}")
 
     def ban_user(self, to_ban: User, *, mod: User, timeout: Optional[float] = None):
@@ -777,6 +950,10 @@ class Room:
         Raises BadPermission is the given `mod` is lacking the required permission to institute the
         ban (i.e. not-a-moderator, or not-an-admin if trying to ban a room moderator/admin, or
         trying to ban a global mod/admin from a room).
+
+        Note that 0 (or negative) is accepted for timeout, which *does* ban the user, but the ban
+        will be reverted within a few seconds (at the next database cleanup iteration); this is
+        primarily provided for testing.
         """
 
         fail = None
@@ -818,6 +995,9 @@ class Room:
                     at=time.time() + timeout,
                 )
 
+        if to_ban.id in self._perm_cache:
+            del self._perm_cache[to_ban.id]
+
         app.logger.debug(f"Banned {to_ban} from {self} (banned by {mod})")
 
     def unban_user(self, to_unban: User, *, mod: User):
@@ -843,6 +1023,10 @@ class Room:
         )
         if result.rowcount > 0:
             app.logger.debug(f"{mod} unbanned {to_unban} from {self}")
+
+            if to_unban.id in self._perm_cache:
+                del self._perm_cache[to_unban.id]
+
             return True
 
         app.logger.debug(f"{mod} unbanned {to_unban} from {self} (but user was already unbanned)")
@@ -860,6 +1044,55 @@ class Room:
                 "SELECT session_id FROM user_permissions WHERE room = :r AND banned", r=self.id
             )
         ]
+
+    def set_permissions(self, user: User, *, mod: User, **perms):
+        """
+        Grants or removes read, write, and/or upload permissions to the given user in this room.
+        `mod` must have moderator access in the room.
+
+        Permitted keyword args are: read, write, upload.  Each can be set to True, False, or None to
+        apply an explicit grant, explicit revocation, or return to room defaults, respectively.
+        (That is, None removes the override, if currently present, so that the user permission will
+        use the room default; the others set this user's permission to allowed/disallowed).
+
+        If a permission key is omitted then it will not be changed at all if it already exists, and
+        will be NULL if a new permission row is being created.
+        """
+
+        perm_types = ('read', 'write', 'upload')
+
+        if any(k not in perm_types for k in perms.keys()):
+            raise ValueError(f"Room.set_permissions: only {', '.join(perm_types)} may be specified")
+
+        if not perms:
+            raise ValueError(
+                "Room.set_permissions: at least one of {', '.join(perm_types)} must be specified"
+            )
+
+        if not self.check_moderator(mod):
+            app.logger.warning(f"Error set perms {perms} on {user} by {mod}: not a moderator")
+            raise BadPermission()
+
+        with db.transaction():
+            set_perms = perms.keys()
+            query(
+                f"""
+                INSERT INTO user_permission_overrides (room, "user", {', '.join(set_perms)})
+                VALUES (:r, :u, :{', :'.join(set_perms)})
+                ON CONFLICT (room, "user") DO UPDATE SET
+                    {', '.join(f"{p} = :{p}" for p in set_perms)}
+                """,
+                r=self.id,
+                u=user.id,
+                read=perms.get('read'),
+                write=perms.get('write'),
+                upload=perms.get('upload'),
+            )
+
+        if user.id in self._perm_cache:
+            del self._perm_cache[user.id]
+
+        app.logger.debug(f"{mod} applied {self} permission(s) {perms} to {user}")
 
     def get_file(self, file_id: int):
         """Retrieves a file uploaded to this room by id.  Returns None if not found."""
@@ -963,15 +1196,6 @@ class Room:
                     pass
             raise
 
-    def set_room_image(self, file: Union[File, int]):
-        """Sets a room image to a file (can be either the file id, or File instance)"""
-
-        query(
-            "UPDATE rooms SET image = :file WHERE id = :r",
-            r=self.id,
-            file=file.id if isinstance(file, File) else file,
-        )
-
 
 class File:
     """
@@ -1004,7 +1228,7 @@ class File:
         (
             self.id,
             self._fetch_room_id,
-            self.uploader,
+            self._fetch_uploader_id,
             self.size,
             self.uploaded,
             self.expiry,
@@ -1014,6 +1238,7 @@ class File:
             row[c]
             for c in ('id', 'room', 'uploader', 'size', 'uploaded', 'expiry', 'filename', 'path')
         )
+        self._uploader = None
         self._room = None
 
     @property
@@ -1031,6 +1256,37 @@ class File:
             self._fetch_room_id = None
         return self._room
 
+    @property
+    def room_id(self):
+        """
+        Accesses the id of the room to which this file was uploaded.  Equivalent to .room.id, except
+        that we don't fetch/cache the Room row.
+        """
+        return self._fetch_room_id if self._room is None else self._fetch_room_id
+
+    @property
+    def uploader(self):
+        """
+        Accesses the User who uploaded this file.  Retrieves from the database the first time this
+        is accessed.
+        """
+
+        if self._fetch_uploader_id is not None:
+            try:
+                self._uploader = User(id=self._fetch_uploader_id)
+            except NoSuchUser:
+                pass
+            self._fetch_uploader_id = None
+        return self._uploader
+
+    @property
+    def uploader_id(self):
+        """
+        Accesses the id of the user who uploaded this file.  Equivalent to .uploader.id, except
+        that we don't fetch/cache the User row.
+        """
+        return self._fetch_uploader_id if self._uploader is None else self._uploader.id
+
     def read(self):
         """Reads the file from disk, as bytes."""
         with open(self.path, 'rb') as f:
@@ -1039,6 +1295,20 @@ class File:
     def read_base64(self):
         """Reads the file from disk and encodes as base64."""
         return utils.encode_base64(self.read())
+
+    def set_expiry(self, duration=None, forever=False):
+        """
+        Updates the file expiry to `duration` seconds from now, or to unlimited if `forever` is
+        True.  If duration is None (and not using forever) then the default expiry will be used.
+        """
+        expiry = (
+            None
+            if forever
+            else time.time()
+            + (duration if duration is not None else config.UPLOAD_DEFAULT_EXPIRY_DAYS)
+        )
+        query("UPDATE files SET expiry = :when WHERE id = :f", when=expiry, f=self.id)
+        self.expiry = expiry
 
 
 class User:
