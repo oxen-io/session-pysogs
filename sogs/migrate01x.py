@@ -68,14 +68,14 @@ def migrate01x(conn):
         total_rooms, total_msgs, total_files = 0, 0, 0
 
         for room_token, room_name in rooms:
-            room_db_path = "rooms/{}.db".format(room_token)
+            room_db_path = f"rooms/{room_token}.db"
             if not os.path.exists(room_db_path):
                 logger.warning(
                     f"Skipping room {room_token}: database {room_db_path} does not exist"
                 )
                 continue
 
-            logger.info("Importing room {} -- {}...".format(room_token, room_name))
+            logger.info(f"Importing room {room_token} -- {room_name}...")
 
             room_id = db.insert_and_get_pk(
                 conn,
@@ -183,9 +183,8 @@ def migrate01x(conn):
                         signature = utils.decode_base64(signature)
                         if len(signature) != 64:
                             raise RuntimeError(
-                                "Unexpected data: {} message id={} has invalid signature".format(
-                                    room_db_path, id
-                                )
+                                f"Unexpected data: {room_db_path} message id={id} "
+                                "has invalid signature"
                             )
 
                         db.query(
@@ -253,12 +252,10 @@ def migrate01x(conn):
                     )
                     imported_msgs += 1
                     if imported_msgs % 5000 == 0:
-                        logger.info("- ... imported {}/{} messages".format(imported_msgs, n_msgs))
+                        logger.info(f"- ... imported {imported_msgs}/{n_msgs} messages")
 
                 logger.info(
-                    "- migrated {} messages, {} duplicate deletions ignored".format(
-                        imported_msgs, dupe_dels
-                    )
+                    f"- migrated {imported_msgs} messages, {dupe_dels} duplicate deletions ignored"
                 )
 
                 # Old SOGS has a bug where it inserts duplicate deletion tombstones (see above), but
@@ -323,7 +320,7 @@ def migrate01x(conn):
                     # file_id is an integer value but stored in a TEXT field, of course.
                     file_id = int(file_id)
 
-                    path = "files/{}_files/{}".format(room_token, file_id)
+                    path = f"files/{room_token}_files/{file_id}"
                     try:
                         size = os.path.getsize(path)
                     except Exception as e:
@@ -366,12 +363,12 @@ def migrate01x(conn):
                     imported_files += 1
 
                     if imported_files % 1000 == 0:
-                        logger.info("- ... imported {}/{} files".format(imported_files, n_files))
+                        logger.info(f"- ... imported {imported_files}/{n_files} files")
 
                 if imported_files > 0:
                     used_file_hacks = True
 
-                logger.info("- migrated {} files".format(imported_files))
+                logger.info(f"- migrated {imported_files} files")
 
                 # There's also a potential room image, which is just stored on disk and not
                 # referenced in the database at all because why bother with proper structure when
@@ -408,7 +405,7 @@ def migrate01x(conn):
                         path='tmp',
                     )
 
-                    new_path = "uploads/{}/{}_(imported_room_image)".format(room_token, file_id)
+                    new_path = f"uploads/{room_token}/{file_id}_(imported_room_image)"
                     if os.path.exists(new_path):
                         os.remove(new_path)
                     os.link(room_image_path, new_path)
