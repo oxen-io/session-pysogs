@@ -1,12 +1,12 @@
 from flask import abort, request, jsonify
 from werkzeug.exceptions import HTTPException
-from .web import app
-from . import crypto, config, db, http, utils
-from .omq import send_mule
-from .utils import jsonify_with_base64
-from .model.room import Room, get_readable_rooms, get_deletions_deprecated
-from .model.user import User
-from .model.exc import NoSuchRoom
+from ..web import app
+from .. import crypto, config, db, http, utils
+from ..omq import send_mule
+from ..utils import jsonify_with_base64
+from ..model.room import Room, get_readable_rooms, get_deletions_deprecated
+from ..model.user import User
+from ..model.exc import NoSuchRoom
 
 # Legacy endpoints, to eventually be deleted.  These are invoked automatically if the client invokes
 # an endpoint (via onion request) that doesn't start with a `/` -- we prepend `/legacy/` and submit

@@ -1,40 +1,18 @@
 from flask import abort, request, render_template, Response
-from .web import app
-from . import config, crypto, http, utils
-from .model.room import Room, get_readable_rooms
-from .model.exc import NoSuchRoom
+from ..web import app
+from .. import config, crypto, http, utils
+from ..model.room import Room, get_readable_rooms
+from ..model.exc import NoSuchRoom
 
-from werkzeug.routing import BaseConverter, ValidationError
+from . import converters
+from . import legacy
+from . import onion_request
 
 from io import BytesIO
 
 import qrencode
 
 from PIL.Image import NEAREST
-
-
-class RoomTokenConverter(BaseConverter):
-    regex = r"[\w-]{1,64}"
-
-    def to_python(self, value):
-        try:
-            return Room(token=value)
-        except NoSuchRoom:
-            raise ValidationError()
-
-    def to_value(self, value):
-        return value.token
-
-
-class SessionIDConverter(BaseConverter):
-    regex = r"05[0-9a-fA-F]{64}"
-
-    def to_python(self, value):
-        return value
-
-
-app.url_map.converters['Room'] = RoomTokenConverter
-app.url_map.converters['SessionID'] = SessionIDConverter
 
 
 @app.get("/")
