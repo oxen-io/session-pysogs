@@ -88,7 +88,7 @@ local debian_pipeline(name,
 
   debian_pipeline('Debian sid (amd64)', docker_base + 'debian-sid'),
   debian_pipeline('Debian stable (i386)', docker_base + 'debian-stable/i386'),
-  debian_pipeline('Debian stable (amd64)', docker_base + 'debian-buster'),
+  debian_pipeline('Debian stable (amd64)', docker_base + 'debian-stable'),
   debian_pipeline('Ubuntu latest (amd64)', docker_base + 'ubuntu-rolling'),
   debian_pipeline('Ubuntu LTS (amd64)', docker_base + 'ubuntu-lts'),
 
