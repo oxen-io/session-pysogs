@@ -74,7 +74,7 @@ def insert_and_get_pk(insert, pk, *, dbconn=None, **params):
 
     result = query(insert, dbconn=dbconn, **params)
     if have_returning:
-        return result.scalar_one()
+        return result.first()[0]
     return result.lastrowid
 
 
