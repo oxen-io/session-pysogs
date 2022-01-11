@@ -2,19 +2,6 @@ import pytest
 
 from sogs import config
 
-db_counter_ = 0
-
-
-def sqlite_temp_db():
-    global db_counter_
-    db_counter_ += 1
-    dburl = f'sqlite:///file:sogs_testdb{db_counter_}?mode=memory&cache=shared&uri=true'
-    import sogs.web
-
-    sogs.web.app.logger.warning(f"using sqlite {dburl}")
-    return dburl
-
-
 config.DB_URL = 'defer-init'
 
 from sogs import model, web  # noqa: E402
@@ -24,6 +11,9 @@ def pytest_addoption(parser):
     parser.addoption(
         "--sql-tracing", action="store_true", default=False, help="Log all SQL queries"
     )
+
+
+db_counter_ = 0
 
 
 @pytest.fixture
@@ -38,7 +28,20 @@ def db(request):
 
     from sogs import db as db_
 
-    db_._init_engine(sqlite_temp_db(), echo=trace)
+    global db_counter_
+    db_counter_ += 1
+    sqlite_uri = f'file:sogs_testdb{db_counter_}?mode=memory&cache=shared'
+    import sogs.web
+
+    sogs.web.app.logger.warning(f"using sqlite {sqlite_uri}")
+
+    def sqlite_connect():
+        import sqlite3
+
+        sogs.web.app.logger.warning(f"connecting to {sqlite_uri}")
+        return sqlite3.connect(sqlite_uri, uri=True)
+
+    db_._init_engine("sqlite://", creator=sqlite_connect, echo=trace)
 
     web.appdb = db_.get_conn()
 
