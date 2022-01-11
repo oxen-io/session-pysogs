@@ -3,11 +3,10 @@ import atexit
 import re
 import sys
 
-from . import web
-from . import db
-from . import config
-from . import model
-from . import crypto
+from . import config, crypto, db, web
+from .model.room import Room, get_rooms
+from .model.user import User, SystemUser, get_all_global_moderators
+from .model.exc import AlreadyExists, NoSuchRoom
 
 ap = AP(
     epilog="""
@@ -101,7 +100,7 @@ def close_conn():
     web.appdb.close()
 
 
-def print_room(room: model.Room):
+def print_room(room: Room):
     msgs, msgs_size = room.messages_size()
     files, files_size = room.attachments_size()
 
@@ -149,10 +148,10 @@ if args.add_room:
         sys.exit(1)
 
     try:
-        room = model.Room.create(
+        room = Room.create(
             token=args.add_room, name=args.name or args.add_room, description=args.description
         )
-    except model.AlreadyExists:
+    except AlreadyExists:
         print(f"Error: room '{args.add_room}' already exists!", file=sys.stderr)
         sys.exit(1)
     print(f"Created room {args.add_room}:")
@@ -160,8 +159,8 @@ if args.add_room:
 
 elif args.delete_room:
     try:
-        room = model.Room(token=args.delete_room)
-    except model.NoSuchRoom:
+        room = Room(token=args.delete_room)
+    except NoSuchRoom:
         print(f"Error: no such room '{args.delete_room}'", file=sys.stderr)
         sys.exit(1)
 
@@ -191,11 +190,11 @@ elif args.add_moderators:
         )
         sys.exit(1)
 
-    sysadmin = model.SystemUser()
+    sysadmin = SystemUser()
 
     if args.rooms == ['+']:
         for sid in args.add_moderators:
-            u = model.User(session_id=sid)
+            u = User(session_id=sid)
             u.set_moderator(admin=args.admin, visible=args.visible, added_by=sysadmin)
             print(
                 "Added {} as {} global {}".format(
@@ -206,15 +205,15 @@ elif args.add_moderators:
             )
     else:
         if args.rooms == ['*']:
-            rooms = model.get_rooms()
+            rooms = get_rooms()
         else:
             try:
-                rooms = [model.Room(token=r) for r in args.rooms]
-            except model.NoSuchRoom as nsr:
+                rooms = [Room(token=r) for r in args.rooms]
+            except NoSuchRoom as nsr:
                 print(f"No such room: '{nsr.token}'", file=sys.stderr)
 
         for sid in args.add_moderators:
-            u = model.User(session_id=sid)
+            u = User(session_id=sid)
             for room in rooms:
                 room.set_moderator(u, admin=args.admin, visible=not args.hidden, added_by=sysadmin)
                 print(
@@ -241,11 +240,11 @@ elif args.delete_moderators:
         )
         sys.exit(1)
 
-    sysadmin = model.SystemUser()
+    sysadmin = SystemUser()
 
     if args.rooms == ['+']:
         for sid in args.delete_moderators:
-            u = model.User(session_id=sid)
+            u = User(session_id=sid)
             was_admin = u.global_admin
             if not u.global_admin and not u.global_moderator:
                 print(f"{u.session_id} was not a global moderator")
@@ -254,20 +253,20 @@ elif args.delete_moderators:
                 print(f"Removed {sid} as global {'admin' if was_admin else 'moderator'}")
     else:
         if args.rooms == ['*']:
-            rooms = model.get_rooms()
+            rooms = get_rooms()
         else:
             try:
-                rooms = [model.Room(token=r) for r in args.rooms]
-            except model.NoSuchRoom as nsr:
+                rooms = [Room(token=r) for r in args.rooms]
+            except NoSuchRoom as nsr:
                 print(f"No such room: '{nsr.token}'", file=sys.stderr)
 
         for sid in args.delete_moderators:
-            u = model.User(session_id=sid)
+            u = User(session_id=sid)
             for room in rooms:
                 room.remove_moderator(u, removed_by=sysadmin)
                 print(f"Removed {u.session_id} as moderator/admin of {room.name} ({room.token})")
 elif args.list_rooms:
-    rooms = model.get_rooms()
+    rooms = get_rooms()
     if rooms:
         for room in rooms:
             print_room(room)
@@ -275,7 +274,7 @@ elif args.list_rooms:
         print("No rooms.")
 
 elif args.list_global_mods:
-    m, a, hm, ha = model.get_all_global_moderators()
+    m, a, hm, ha = get_all_global_moderators()
     admins = len(a) + len(ha)
     mods = len(m) + len(hm)
 

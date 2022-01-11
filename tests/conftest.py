@@ -4,7 +4,9 @@ from sogs import config
 
 config.DB_URL = 'defer-init'
 
-from sogs import model, web  # noqa: E402
+from sogs import web  # noqa: E402
+from sogs.model.room import Room  # noqa: E402
+from sogs.model.user import SystemUser  # noqa: E402
 
 
 def pytest_addoption(parser):
@@ -31,14 +33,13 @@ def db(request):
     global db_counter_
     db_counter_ += 1
     sqlite_uri = f'file:sogs_testdb{db_counter_}?mode=memory&cache=shared'
-    import sogs.web
 
-    sogs.web.app.logger.warning(f"using sqlite {sqlite_uri}")
+    web.app.logger.warning(f"using sqlite {sqlite_uri}")
 
     def sqlite_connect():
         import sqlite3
 
-        sogs.web.app.logger.warning(f"connecting to {sqlite_uri}")
+        web.app.logger.warning(f"connecting to {sqlite_uri}")
         return sqlite3.connect(sqlite_uri, uri=True)
 
     db_._init_engine("sqlite://", creator=sqlite_connect, echo=trace)
@@ -58,7 +59,7 @@ def room(db):
     fixture for a fresh database).
     """
 
-    return model.Room.create('test-room', name='Test room', description='Test suite testing room')
+    return Room.create('test-room', name='Test room', description='Test suite testing room')
 
 
 @pytest.fixture
@@ -86,7 +87,7 @@ def mod(room):
     import user
 
     u = user.User()
-    room.set_moderator(u, added_by=model.SystemUser())
+    room.set_moderator(u, added_by=SystemUser())
     return u
 
 
@@ -96,7 +97,7 @@ def admin(room):
     import user
 
     u = user.User()
-    room.set_moderator(u, added_by=model.SystemUser(), admin=True)
+    room.set_moderator(u, added_by=SystemUser(), admin=True)
     return u
 
 
@@ -106,7 +107,7 @@ def global_admin(db):
     import user
 
     u = user.User()
-    u.set_moderator(added_by=model.SystemUser(), admin=True)
+    u.set_moderator(added_by=SystemUser(), admin=True)
     return u
 
 
@@ -116,7 +117,7 @@ def global_mod(db):
     import user
 
     u = user.User()
-    u.set_moderator(added_by=model.SystemUser())
+    u.set_moderator(added_by=SystemUser())
     return u
 
 

@@ -43,6 +43,4 @@ appdb = LocalProxy(get_db_conn)
 
 
 from . import routes
-from . import onion_request
-from . import legacy_routes
 from . import cleanup

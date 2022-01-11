@@ -1,14 +1,12 @@
 from flask import abort, request, jsonify
 from werkzeug.exceptions import HTTPException
-from .web import app
-from . import crypto
-from . import model
-from . import db
-from . import utils
-from . import config
-from . import http
-from .omq import send_mule
-from .utils import jsonify_with_base64
+from ..web import app
+from .. import crypto, config, db, http, utils
+from ..omq import send_mule
+from ..utils import jsonify_with_base64
+from ..model.room import Room, get_readable_rooms, get_deletions_deprecated
+from ..model.user import User
+from ..model.exc import NoSuchRoom
 
 # Legacy endpoints, to eventually be deleted.  These are invoked automatically if the client invokes
 # an endpoint (via onion request) that doesn't start with a `/` -- we prepend `/legacy/` and submit
@@ -73,11 +71,11 @@ def legacy_check_user_room(
             abort(http.BAD_REQUEST)
 
         try:
-            room = model.Room(token=room_token)
-        except model.NoSuchRoom:
+            room = Room(token=room_token)
+        except NoSuchRoom:
             abort(http.NOT_FOUND)
 
-    user = model.User(session_id=pubkey, autovivify=True, touch=update_activity)
+    user = User(session_id=pubkey, autovivify=True, touch=update_activity)
 
     if not no_perms:
         if not room.check_permission(user, **perms):
@@ -97,7 +95,7 @@ def get_rooms():
         {
             'status_code': 200,
             # Legacy Session only wants token (returned as 'id') and name:
-            'rooms': [{'id': r.token, 'name': r.name} for r in model.get_readable_rooms()],
+            'rooms': [{'id': r.token, 'name': r.name} for r in get_readable_rooms()],
         }
     )
 
@@ -234,7 +232,7 @@ def handle_one_compact_poll(req):
         for m in room.get_messages_for(user, after=after, recent=not after)
     ]
 
-    deletions = model.get_deletions_deprecated(room, req.get('from_deletion_server_id'))
+    deletions = get_deletions_deprecated(room, req.get('from_deletion_server_id'))
 
     mods = room.get_mods(user)
 
@@ -319,7 +317,7 @@ def handle_legacy_single_delete(msgid):
 @app.post("/legacy/block_list")
 def handle_legacy_ban():
     user, room = legacy_check_user_room(moderator=True)
-    ban = model.User(session_id=request.json['public_key'], autovivify=True)
+    ban = User(session_id=request.json['public_key'], autovivify=True)
 
     room.ban_user(to_ban=ban, mod=user)
 
@@ -329,7 +327,7 @@ def handle_legacy_ban():
 @app.post("/legacy/ban_and_delete_all")
 def handle_legacy_banhammer():
     mod, room = legacy_check_user_room(moderator=True)
-    ban = model.User(session_id=request.json['public_key'], autovivify=True)
+    ban = User(session_id=request.json['public_key'], autovivify=True)
 
     with db.tx():
         room.ban_user(to_ban=ban, mod=mod)
@@ -341,7 +339,7 @@ def handle_legacy_banhammer():
 @app.delete("/legacy/block_list/<SessionID:session_id>")
 def handle_legacy_unban(session_id):
     user, room = legacy_check_user_room(moderator=True)
-    to_unban = model.User(session_id=session_id, autovivify=False)
+    to_unban = User(session_id=session_id, autovivify=False)
     if room.unban_user(to_unban, mod=user):
         return jsonify({"status_code": 200})
 
@@ -383,7 +381,7 @@ def handle_legacy_add_admin():
     if len(session_id) != 66 or not session_id.startswith("05"):
         abort(http.BAD_REQUEST)
 
-    mod = model.User(session_id=session_id, autovivify=True)
+    mod = User(session_id=session_id, autovivify=True)
     room.set_moderator(mod, admin=True, visible=True, added_by=user)
 
     return jsonify({"status_code": 200})
@@ -396,7 +394,7 @@ def handle_legacy_add_admin():
 def handle_legacy_remove_admin(session_id):
     user, room = legacy_check_user_room(admin=True)
 
-    mod = model.User(session_id=session_id, autovivify=False)
+    mod = User(session_id=session_id, autovivify=False)
     room.remove_moderator(mod, removed_by=user)
 
     return jsonify({"status_code": 200})
