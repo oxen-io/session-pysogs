@@ -6,6 +6,7 @@ from . import session_pb2 as protobuf
 import base64
 from flask import request, abort, Response
 import json
+from typing import Union
 
 
 def message_body(data: bytes):
@@ -54,7 +55,7 @@ def decode_hex_or_b64(data: bytes, size: int):
 
 
 def _json_b64_impl(val):
-    if isinstance(val, bytes):
+    if isinstance(val, bytes) or isinstance(val, memoryview):
         return encode_base64(val)
     if isinstance(val, list):
         return [_json_b64_impl(v) for v in val]
@@ -65,8 +66,8 @@ def _json_b64_impl(val):
 
 def json_with_base64(val):
     """
-    Returns val encoded in json, but with any `bytes` values encoded as base64 strings.  Note that
-    this base64-conversion only supports following lists and dicts.
+    Returns val encoded in json, but with any `bytes` or `memoryview` values encoded as base64
+    strings.  Note that this base64-conversion only supports following lists and dicts.
     """
     return json.dumps(_json_b64_impl(val))
 
@@ -154,10 +155,12 @@ def remove_session_message_padding(data: bytes):
     return data
 
 
-def add_session_message_padding(data: bytes, length):
+def add_session_message_padding(data: Union[bytes, memoryview], length):
     """Adds the custom padding that Session delivered the message with (and over which the signature
     is written).  Returns the padded value."""
 
     if length > len(data):
+        if isinstance(data, memoryview):
+            data = bytes(data)
         data += b'\x80' + b'\x00' * (length - len(data) - 1)
     return data

@@ -241,7 +241,7 @@ class Room:
                 row = query(
                     """
                     SELECT banned, read, write, upload, moderator, admin FROM user_permissions
-                    WHERE room = :r AND user = :u
+                    WHERE room = :r AND "user" = :u
                     """,
                     r=self.id,
                     u=user.id,
@@ -425,7 +425,7 @@ class Room:
                 recent_count = query(
                     """
                     SELECT COUNT(*) FROM messages
-                    WHERE room = :r AND user = :u AND posted >= :since
+                    WHERE room = :r AND "user" = :u AND posted >= :since
                     """,
                     r=self.id,
                     u=user.id,
@@ -438,13 +438,15 @@ class Room:
             data_size = len(data)
             unpadded_data = utils.remove_session_message_padding(data)
 
-            result = query(
+            msg_id = db.insert_and_get_pk(
+                appdb,
                 """
                 INSERT INTO messages
-                    (room, user, data, data_size, signature, filtered, whisper, whisper_mods)
+                    (room, "user", data, data_size, signature, filtered, whisper, whisper_mods)
                     VALUES
                     (:r, :u, :data, :data_size, :signature, :filtered, :whisper, :whisper_mods)
                 """,
+                "id",
                 r=self.id,
                 u=user.id,
                 data=unpadded_data,
@@ -454,7 +456,6 @@ class Room:
                 whisper=whisper_to.id if whisper_to else None,
                 whisper_mods=whisper_mods,
             )
-            msg_id = result.lastrowid
             assert msg_id is not None
             row = query("SELECT posted, updated FROM messages WHERE id = :m", m=msg_id).first()
             msg = {
@@ -513,7 +514,7 @@ class Room:
                         # user's own:
                         res = query(
                             """
-                            SELECT EXISTS( SELECT * FROM messages WHERE user != :u AND id IN :ids )
+                            SELECT EXISTS( SELECT * FROM messages WHERE "user" != :u AND id IN :ids )
                             """,
                             u=deleter.id,
                             ids=ids,
@@ -551,14 +552,16 @@ class Room:
             deleted = [
                 r[0]
                 for r in query(
-                    "SELECT id FROM messages WHERE room = :r AND user = :u AND data IS NOT NULL",
+                    'SELECT id FROM messages WHERE room = :r AND "user" = :u AND data IS NOT NULL',
                     room=self.id,
                     u=poster.id,
                 )
             ]
 
             query(
-                "DELETE FROM message_details WHERE room = :r AND user = :u", r=self.id, u=poster.id
+                'DELETE FROM message_details WHERE room = :r AND "user" = :u',
+                r=self.id,
+                u=poster.id,
             )
 
             # Set up files for deletion, but don't wipe out the room image in case the target was
@@ -594,11 +597,9 @@ class Room:
 
     def attachments_size(self):
         """Returns the number and aggregate size of attachments currently stored in this room"""
-        return [
-            query(
-                "SELECT COUNT(*), COALESCE(SUM(size), 0) FROM files WHERE room = :r", r=self.id
-            ).first()[0:2]
-        ]
+        return query(
+            "SELECT COUNT(*), COALESCE(SUM(size), 0) FROM files WHERE room = :r", r=self.id
+        ).first()[0:2]
 
     def get_mods(self, user=None):
         """
@@ -656,7 +657,7 @@ class Room:
         for session_id, visible, admin in query(
             """
             SELECT session_id, o.visible_mod, o.admin
-            FROM user_permission_overrides o JOIN users ON o.user = users.id
+            FROM user_permission_overrides o JOIN users ON o."user" = users.id
             WHERE room = :r AND o.moderator
             """,
             r=self.id,
@@ -682,9 +683,9 @@ class Room:
 
         query(
             """
-            INSERT INTO user_permission_overrides (room, user, moderator, admin, visible_mod)
+            INSERT INTO user_permission_overrides (room, "user", moderator, admin, visible_mod)
             VALUES (:r, :u, TRUE, :admin, :visible)
-            ON CONFLICT (room, user) DO UPDATE SET
+            ON CONFLICT (room, "user") DO UPDATE SET
                 moderator = excluded.moderator,
                 admin = excluded.admin,
                 visible_mod = excluded.visible_mod
@@ -707,7 +708,7 @@ class Room:
             """
             UPDATE user_permission_overrides
             SET moderator = FALSE, admin = FALSE, visible_mod = TRUE
-            WHERE room = :r AND user = :u
+            WHERE room = :r AND "user" = :u
             """,
             r=self.id,
             u=user.id,
@@ -744,7 +745,7 @@ class Room:
         with appdb.begin_nested():
             query(
                 """
-                INSERT INTO user_permission_overrides (room, user, banned, moderator, admin)
+                INSERT INTO user_permission_overrides (room, "user", banned, moderator, admin)
                     VALUES (:r, :ban, TRUE, FALSE, FALSE)
                 ON CONFLICT (room, user) DO
                     UPDATE SET banned = TRUE, moderator = FALSE, admin = FALSE
@@ -756,7 +757,7 @@ class Room:
             if timeout:
                 query(
                     """
-                    INSERT INTO user_permission_futures (room, user, at, banned)
+                    INSERT INTO user_permission_futures (room, "user", at, banned)
                         VALUES (:r, :banned, :at, FALSE)
                     """,
                     r=self.id,
@@ -782,7 +783,7 @@ class Room:
         result = query(
             """
             UPDATE user_permission_overrides SET banned = FALSE
-            WHERE room = :r AND user = :unban AND banned
+            WHERE room = :r AND "user" = :unban AND banned
             """,
             r=self.id,
             unban=to_unban.id,
@@ -868,19 +869,19 @@ class Room:
 
                 # Insert the file row first with path='tmp' then come back and update it to the
                 # proper path, which we want to base on the resulting file id.
-                result = query(
+                file_id = db.insert_and_get_pk(
+                    appdb,
                     """
                     INSERT INTO files (room, uploader, size, expiry, filename, path)
                     VALUES (:r, :u, :size, :expiry, :filename, 'tmp')
                     """,
+                    "id",
                     r=self.id,
                     u=uploader.id,
                     size=len(content),
                     expiry=expiry,
                     filename=filename,
                 )
-
-                file_id = result.lastrowid
 
                 if filename is None:
                     filename = '(unnamed)'
@@ -1061,10 +1062,11 @@ class User:
     def _touch(self):
         query(
             """
-            UPDATE users SET last_active = ((julianday('now') - 2440587.5)*86400.0)
+            UPDATE users SET last_active = :now
             WHERE id = :u
             """,
             u=self.id,
+            now=time.time(),
         )
         self._touched = True
 
@@ -1081,12 +1083,13 @@ class User:
     def update_room_activity(self, room):
         query(
             """
-            INSERT INTO room_users (user, room) VALUES (:u, :r)
-            ON CONFLICT(user, room) DO UPDATE
-            SET last_active = ((julianday('now') - 2440587.5)*86400.0)
+            INSERT INTO room_users ("user", room) VALUES (:u, :r)
+            ON CONFLICT("user", room) DO UPDATE
+            SET last_active = :now
             """,
             u=self.id,
             r=room.id,
+            now=time.time(),
         )
 
     def set_moderator(self, *, added_by: User, admin=False, visible=False):

@@ -1,8 +1,11 @@
 from argparse import ArgumentParser as AP, RawDescriptionHelpFormatter
+import atexit
 import re
 import sys
 import sqlalchemy
 
+from . import web
+from .web import query
 from . import db
 from . import config
 from . import model
@@ -92,6 +95,14 @@ ap.add_argument(
 args = ap.parse_args()
 
 
+web.appdb = db.get_conn()
+
+
+@atexit.register
+def close_conn():
+    web.appdb.close()
+
+
 def print_room(room: model.Room):
     msgs, msgs_size = room.messages_size()
     files, files_size = room.attachments_size()
@@ -139,20 +150,18 @@ if args.add_room:
         )
         sys.exit(1)
 
-    with db.get_conn() as conn:
-        try:
-            db.query(
-                conn,
-                "INSERT INTO rooms(token, name, description) VALUES(:t, :n, :d)",
-                t=args.add_room,
-                n=args.name or args.add_room,
-                d=args.description,
-            )
-        except sqlalchemy.exc.IntegrityError:
-            print(f"Error: room '{args.add_room}' already exists!", file=sys.stderr)
-            sys.exit(1)
-        print(f"Created room {args.add_room}:")
-        print_room(model.Room(token=args.add_room))
+    try:
+        query(
+            "INSERT INTO rooms(token, name, description) VALUES(:t, :n, :d)",
+            t=args.add_room,
+            n=args.name or args.add_room,
+            d=args.description,
+        )
+    except sqlalchemy.exc.IntegrityError:
+        print(f"Error: room '{args.add_room}' already exists!", file=sys.stderr)
+        sys.exit(1)
+    print(f"Created room {args.add_room}:")
+    print_room(model.Room(token=args.add_room))
 
 elif args.delete_room:
     try:
@@ -167,9 +176,8 @@ elif args.delete_room:
     else:
         res = input("Are you sure you want to delete this room? [yN] ")
     if res.startswith("y") or res.startswith("Y"):
-        with db.get_conn() as conn:
-            result = db.query(conn, "DELETE FROM rooms WHERE token = ?", [args.delete_room])
-            count = result.rowcount
+        result = query("DELETE FROM rooms WHERE token = :t", t=args.delete_room)
+        count = result.rowcount
         print("Room deleted.")
     else:
         print("Aborted.")

@@ -77,13 +77,13 @@ def migrate01x(conn):
 
             logger.info("Importing room {} -- {}...".format(room_token, room_name))
 
-            room_id = db.query(
+            room_id = db.insert_and_get_pk(
                 conn,
                 "INSERT INTO rooms (token, name) VALUES (:token, :name)",
+                "id",
                 token=room_token,
                 name=room_name,
-            ).lastrowid
-            assert room_id
+            )
 
             with db.sqlite_connect(room_db_path) as rconn:
 
@@ -341,18 +341,19 @@ def migrate01x(conn):
                         )
                         timestamp = time.time()
 
-                    new_id = db.query(
+                    new_id = db.insert_and_get_pk(
                         conn,
                         """
                         INSERT INTO files (room, size, uploaded, expiry, path)
                         VALUES (:r, :size, :uploaded, :expiry, :path)
                         """,
+                        "id",
                         r=room_id,
                         size=size,
                         uploaded=timestamp,
                         expiry=timestamp + 86400 * config.UPLOAD_DEFAULT_EXPIRY_DAYS,
                         path=path,
-                    ).lastrowid
+                    )
 
                     db.query(
                         conn,
@@ -397,7 +398,7 @@ def migrate01x(conn):
                     files_dir = "uploads/" + room_token
                     os.makedirs(files_dir, exist_ok=True)
 
-                    file_id = db.query(
+                    file_id = db.insert_and_get_pk(
                         conn,
                         """
                         INSERT INTO files (room, size, uploaded, expiry, path)
@@ -407,7 +408,7 @@ def migrate01x(conn):
                         size=os.path.getsize(room_image_path),
                         uploaded=os.path.getmtime(room_image_path),
                         path='tmp',
-                    ).lastrowid
+                    )
 
                     new_path = "uploads/{}/{}_(imported_room_image)".format(room_token, file_id)
                     if os.path.exists(new_path):
