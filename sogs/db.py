@@ -18,7 +18,7 @@ def get_conn():
     return engine.connect()
 
 
-def query(conn, query, **params):
+def query(query, *, dbconn=None, **params):
     """Executes a query containing :param style placeholders (regardless of the actual underlying
     database placeholder style), binding them using the given params keyword arguments.
 
@@ -26,31 +26,55 @@ def query(conn, query, **params):
 
     For example:
 
-        rows = db.query(conn,
+        rows = db.query(
             "SELECT * FROM table1 WHERE name = :name AND age >= :age",
             name="Joe",
             age=25)
 
-    See sqlalchemy.text for details."""
-    return conn.execute(sqlalchemy.text(query), **params)
+    See sqlalchemy.text for details.
+
+    Can execute on a specific connection by passing it as dbconn; if omitted, uses web.appdb.  (Note
+    that dbconn *cannot* be used as a placeholder bind name).
+    """
+
+    if dbconn is None:
+        from . import web
+
+        dbconn = web.appdb
+
+    return dbconn.execute(sqlalchemy.text(query), **params)
 
 
-use_returning_ = True
+# Begins a (potentially nested) transaction.  Takes an optional connection; if omitted uses
+# web.appdb.
+def transaction(dbconn=None):
+    if dbconn is None:
+        from . import web
+
+        dbconn = web.appdb
+    return dbconn.begin_nested()
 
 
-def insert_and_get_pk(conn, insert, pk, **params):
+have_returning = True
+
+
+def insert_and_get_pk(insert, pk, *, dbconn=None, **params):
     """
     Performs an insert and returns the value of the primary key by appending a RETURNING clause, if
     supported, and otherwise falling back to using .lastrowid.
 
-    Takes the connection, query, primary key column name, and any parameters to bind.
+    Takes the query, primary key column name, and any parameters to bind
+
+    Can optionally take the database connection by passing as a dbconn parameter (note that you may
+    not use "dbconn" as a bind parameter).  If omitted uses web.appdb.
     """
 
-    if use_returning_:
+    if have_returning:
         insert += f" RETURNING {pk}"
-    result = query(conn, insert, **params)
-    if use_returning_:
-        return result.scalar_one()
+
+    result = query(insert, dbconn=dbconn, **params)
+    if have_returning:
+        return result.first()[0]
     return result.lastrowid
 
 
@@ -63,10 +87,13 @@ def database_init():
 
     global engine, metadata
 
+    metadata.clear()
+    metadata.reflect(bind=engine, views=True)
+
     conn = get_conn()
 
     if 'messages' not in metadata.tables:
-        logging.warn("No database detected; creating new database schema")
+        logging.warning("No database detected; creating new database schema")
         if engine.name == "sqlite":
             conn.connection.executescript(importlib.resources.read_text('sogs', 'schema.sqlite'))
         elif engine.name == "postgresql":
@@ -109,7 +136,7 @@ def migrate_v01x(conn):
     if n_rooms > 0 or not os.path.exists("database.db"):
         return False
 
-    logging.warn("No rooms found, but database.db exists; attempting migration")
+    logging.warning("No rooms found, but database.db exists; attempting migration")
     from . import migrate01x
 
     try:
@@ -223,14 +250,13 @@ def check_for_hacks(conn):
         pass
 
 
-def create_admin_user(conn):
+def create_admin_user(dbconn):
     """
     We create a dummy user (with id 0) for system tasks such as changing moderators from
     command-line, and give it the server's x25519 pubkey (with ff prepended, *not* 05) as a fake
     default session_id.
     """
     query(
-        conn,
         """
         INSERT INTO users (id, session_id, moderator, admin, visible_mod)
             VALUES (0, :sid, TRUE, TRUE, FALSE)
@@ -238,6 +264,7 @@ def create_admin_user(conn):
             SET session_id = :sid, moderator = TRUE, admin = TRUE, visible_mod = FALSE
         """,
         sid="ff" + crypto.server_pubkey_hex,
+        dbconn=dbconn,
     )
 
 
@@ -252,36 +279,58 @@ if config.DB_URL.startswith('postgresql'):
         ischema_names['citext'] = ischema_names['text']
 
 
-engine = sqlalchemy.create_engine(config.DB_URL)
-engine_initial_pid = os.getpid()
-metadata = sqlalchemy.MetaData()
-metadata.reflect(bind=engine, views=True)
+engine, engine_initial_pid, metadata = None, None, None
 
 
-if engine.name == "sqlite":
+def _init_engine(*args, **kwargs):
+    """
+    Initializes or reinitializes db.engine.  (Only the test suite should be calling this externally
+    to reinitialize).
+    """
+    global engine, engine_initial_pid, metadata, have_returning
 
-    import sqlite3
+    if engine is not None:
+        engine.dispose()
 
-    use_returning_ = sqlite3.sqlite_version_info >= (3, 35, 0)
+    if not len(args) and not len(kwargs):
+        if config.DB_URL == 'defer-init':
+            return
+        args = (config.DB_URL,)
 
-    @sqlalchemy.event.listens_for(engine, "connect")
-    def sqlite_fix_connect(dbapi_connection, connection_record):
-        # disable pysqlite's emitting of the BEGIN statement entirely.
-        # also stops it from emitting COMMIT before any DDL.
-        dbapi_connection.isolation_level = None
+    # Disable *sqlalchemy*-level autocommit, which works so badly that it got completely removed in
+    # 2.0.  (We put the actual sqlite into driver-level autocommit mode below).
+    engine = sqlalchemy.create_engine(*args, **kwargs).execution_options(autocommit=False)
+    engine_initial_pid = os.getpid()
+    metadata = sqlalchemy.MetaData()
 
-    @sqlalchemy.event.listens_for(engine, "begin")
-    def do_begin(conn):
-        # emit our own BEGIN
-        conn.exec_driver_sql("BEGIN IMMEDIATE")
+    if engine.name == "sqlite":
+        import sqlite3
+
+        have_returning = sqlite3.sqlite_version_info >= (3, 35, 0)
+
+        @sqlalchemy.event.listens_for(engine, "connect")
+        def sqlite_fix_connect(dbapi_connection, connection_record):
+            # disable pysqlite's emitting of the BEGIN statement entirely.
+            # also stops it from emitting COMMIT before any DDL.
+            dbapi_connection.isolation_level = None
+
+        @sqlalchemy.event.listens_for(engine, "begin")
+        def do_begin(conn):
+            # emit our own BEGIN
+            conn.execute("BEGIN IMMEDIATE")
+
+    else:
+        have_returning = True
+
+    database_init()
 
 
-database_init()
+_init_engine()
 
 
 @postfork
 def reset_db_postfork():
     """Clear any connections from the engine after forking because they aren't shareable."""
-    if os.getpid() == engine_initial_pid:
+    if engine is None or os.getpid() == engine_initial_pid:
         return
     engine.dispose()

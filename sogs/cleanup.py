@@ -1,8 +1,9 @@
 import os
 import time
 
-from .web import app, appdb, query
-from . import config
+from .web import app
+from .db import query
+from . import config, db
 
 # Cleanup interval, in seconds.
 INTERVAL = 10
@@ -21,20 +22,28 @@ def cleanup():
                     files, msg_hist, room_act, perm_upd
                 )
             )
+            return (files, msg_hist, room_act, perm_upd)
         except Exception as e:
-            app.logger.warn(f"Periodic database cleanup failed: {e}")
+            app.logger.warning(f"Periodic database cleanup failed: {e}")
+            return None
 
 
 def prune_files():
-    with appdb.begin_nested():
-        # Would love to use a single DELETE ... RETURNING here, but that requires sqlite 3.35+.
-        now = time.time()
-        to_remove = [row[0] for row in query("SELECT path FROM files WHERE expiry < :exp", exp=now)]
+    now = time.time()
+    if db.have_returning:
+        to_remove = [
+            row[0] for row in query("DELETE FROM files WHERE expiry < :exp RETURNING path", exp=now)
+        ]
+    else:
+        with db.transaction():
+            to_remove = [
+                row[0] for row in query("SELECT path FROM files WHERE expiry < :exp", exp=now)
+            ]
 
-        if not to_remove:
-            return 0
+            if not to_remove:
+                return 0
 
-        query("DELETE FROM files WHERE expiry < :exp", exp=now)
+            query("DELETE FROM files WHERE expiry < :exp", exp=now)
 
     # Committed the transaction, so the files are gone: now go ahead and remove them from disk.
     unlink_count = 0
@@ -68,11 +77,10 @@ def prune_message_history():
 
 
 def prune_room_activity():
-    with appdb.begin_nested():
-        count = query(
-            "DELETE FROM room_users WHERE last_active < :t",
-            t=time.time() - config.ROOM_ACTIVE_PRUNE_THRESHOLD * 86400,
-        ).rowcount
+    count = query(
+        "DELETE FROM room_users WHERE last_active < :t",
+        t=time.time() - config.ROOM_ACTIVE_PRUNE_THRESHOLD * 86400,
+    ).rowcount
 
     if count > 0:
         app.logger.info("Prune {} old room activity records".format(count))
@@ -80,7 +88,7 @@ def prune_room_activity():
 
 
 def apply_permission_updates():
-    with appdb.begin_nested():
+    with db.transaction():
         now = time.time()
         num_applied = query(
             """

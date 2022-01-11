@@ -63,7 +63,7 @@ def legacy_check_user_room(
     if pubkey is None:
         pubkey = get_pubkey_from_token(request.headers.get("Authorization"))
     if not pubkey or len(pubkey) != (utils.SESSION_ID_SIZE * 2) or not pubkey.startswith('05'):
-        app.logger.warn("cannot get pubkey for checking room permissions")
+        app.logger.warning("cannot get pubkey for checking room permissions")
         abort(http.BAD_REQUEST)
 
     if room is None:
@@ -279,7 +279,7 @@ def handle_legacy_store_file():
 def handle_legacy_upload_room_image(room):
     user, room = legacy_check_user_room(write=True, upload=True, moderator=True)
     file_id = process_legacy_file_upload_for_room(user, room, lifetime=None)
-    room.set_room_image(file_id)
+    room.image = file_id
     return jsonify({'status_code': 200, 'result': file_id})
 
 

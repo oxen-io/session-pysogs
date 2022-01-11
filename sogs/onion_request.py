@@ -96,21 +96,21 @@ def handle_onionreq_plaintext(body):
                     )
                 )
                 return data
-            app.logger.warn(
+            app.logger.warning(
                 "Onion sub-request for {} {} returned status {}".format(
                     method, endpoint, response.status_code
                 )
             )
             return json.dumps({'status_code': response.status_code}).encode()
         except Exception:
-            app.logger.warn(
+            app.logger.warning(
                 "Onion sub-request for {} {} failed: {}".format(
                     method, endpoint, traceback.format_exc()
                 )
             )
             return json.dumps({'status_code': http.BAD_GATEWAY}).encode()
     except Exception as e:
-        app.logger.warn("Invalid onion request: {}".format(e))
+        app.logger.warning("Invalid onion request: {}".format(e))
         return json.dumps({'status_code': http.BAD_REQUEST}).encode()
 
 
@@ -125,7 +125,7 @@ def handle_onion_request():
     try:
         junk = crypto.parse_junk(request.data)
     except RuntimeError as e:
-        app.logger.warn("Failed to decrypt onion request: {}".format(e))
+        app.logger.warning("Failed to decrypt onion request: {}".format(e))
         abort(http.ERROR_INTERNAL_SERVER_ERROR)
 
     response = handle_onionreq_plaintext(junk.payload)
