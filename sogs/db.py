@@ -55,7 +55,7 @@ def transaction(dbconn=None):
     return dbconn.begin_nested()
 
 
-use_returning_ = True
+have_returning = True
 
 
 def insert_and_get_pk(insert, pk, *, dbconn=None, **params):
@@ -69,11 +69,11 @@ def insert_and_get_pk(insert, pk, *, dbconn=None, **params):
     not use "dbconn" as a bind parameter).  If omitted uses web.appdb.
     """
 
-    if use_returning_:
+    if have_returning:
         insert += f" RETURNING {pk}"
 
     result = query(insert, dbconn=dbconn, **params)
-    if use_returning_:
+    if have_returning:
         return result.scalar_one()
     return result.lastrowid
 
@@ -289,7 +289,7 @@ if engine.name == "sqlite":
 
     import sqlite3
 
-    use_returning_ = sqlite3.sqlite_version_info >= (3, 35, 0)
+    have_returning = sqlite3.sqlite_version_info >= (3, 35, 0)
 
     @sqlalchemy.event.listens_for(engine, "connect")
     def sqlite_fix_connect(dbapi_connection, connection_record):

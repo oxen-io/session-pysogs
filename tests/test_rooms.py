@@ -349,7 +349,7 @@ def test_bans(room, user, user2, mod, admin, global_mod, global_admin):
 
     from sogs.cleanup import cleanup
 
-    cleanup()
+    assert cleanup() == (0, 0, 0, 1)
 
     room._refresh(perms=True)
 
@@ -495,7 +495,7 @@ def test_upload_expiry(room, user):
 
     from sogs.cleanup import cleanup
 
-    cleanup()
+    assert cleanup() == (1, 0, 0, 0)
 
     with pytest.raises(model.NoSuchFile):
         File(id=file.id)
