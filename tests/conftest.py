@@ -1,7 +1,5 @@
 import pytest
 
-import sqlalchemy
-
 from sogs import config
 
 db_counter_ = 0
@@ -9,15 +7,15 @@ db_counter_ = 0
 
 def sqlite_temp_db():
     global db_counter_
-    dburl = f'sqlite:///file:sogs_testdb{db_counter_}?mode=memory&cache=shared&uri=true'
     db_counter_ += 1
+    dburl = f'sqlite:///file:sogs_testdb{db_counter_}?mode=memory&cache=shared&uri=true'
     import sogs.web
 
     sogs.web.app.logger.warning(f"using sqlite {dburl}")
     return dburl
 
 
-config.DB_URL = sqlite_temp_db()
+config.DB_URL = 'defer-init'
 
 from sogs import model, web  # noqa: E402
 
@@ -40,11 +38,7 @@ def db(request):
 
     from sogs import db as db_
 
-    db_.engine.dispose()
-    db_.engine = sqlalchemy.create_engine(sqlite_temp_db(), echo=trace).execution_options(
-        autocommit=False
-    )
-    db_.database_init()
+    db_._init_engine(sqlite_temp_db(), echo=trace)
 
     web.appdb = db_.get_conn()
 

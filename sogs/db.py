@@ -279,36 +279,58 @@ if config.DB_URL.startswith('postgresql'):
         ischema_names['citext'] = ischema_names['text']
 
 
-# Disable *sqlalchemy*-level autocommit, which works so badly that it got completely removed in 2.0.
-# (We put the actual sqlite into driver-level autocommit mode below).
-engine = sqlalchemy.create_engine(config.DB_URL).execution_options(autocommit=False)
-engine_initial_pid = os.getpid()
-metadata = sqlalchemy.MetaData()
-
-if engine.name == "sqlite":
-
-    import sqlite3
-
-    have_returning = sqlite3.sqlite_version_info >= (3, 35, 0)
-
-    @sqlalchemy.event.listens_for(engine, "connect")
-    def sqlite_fix_connect(dbapi_connection, connection_record):
-        # disable pysqlite's emitting of the BEGIN statement entirely.
-        # also stops it from emitting COMMIT before any DDL.
-        dbapi_connection.isolation_level = None
-
-    @sqlalchemy.event.listens_for(engine, "begin")
-    def do_begin(conn):
-        # emit our own BEGIN
-        conn.exec_driver_sql("BEGIN IMMEDIATE")
+engine, engine_initial_pid, metadata = None, None, None
 
 
-database_init()
+def _init_engine(*args, **kwargs):
+    """
+    Initializes or reinitializes db.engine.  (Only the test suite should be calling this externally
+    to reinitialize).
+    """
+    global engine, engine_initial_pid, metadata, have_returning
+
+    if engine is not None:
+        engine.dispose()
+
+    if not len(args) and not len(kwargs):
+        if config.DB_URL == 'defer-init':
+            return
+        args = (config.DB_URL,)
+
+    # Disable *sqlalchemy*-level autocommit, which works so badly that it got completely removed in
+    # 2.0.  (We put the actual sqlite into driver-level autocommit mode below).
+    engine = sqlalchemy.create_engine(*args, **kwargs).execution_options(autocommit=False)
+    engine_initial_pid = os.getpid()
+    metadata = sqlalchemy.MetaData()
+
+    if engine.name == "sqlite":
+        import sqlite3
+
+        have_returning = sqlite3.sqlite_version_info >= (3, 35, 0)
+
+        @sqlalchemy.event.listens_for(engine, "connect")
+        def sqlite_fix_connect(dbapi_connection, connection_record):
+            # disable pysqlite's emitting of the BEGIN statement entirely.
+            # also stops it from emitting COMMIT before any DDL.
+            dbapi_connection.isolation_level = None
+
+        @sqlalchemy.event.listens_for(engine, "begin")
+        def do_begin(conn):
+            # emit our own BEGIN
+            conn.execute("BEGIN IMMEDIATE")
+
+    else:
+        have_returning = True
+
+    database_init()
+
+
+_init_engine()
 
 
 @postfork
 def reset_db_postfork():
     """Clear any connections from the engine after forking because they aren't shareable."""
-    if os.getpid() == engine_initial_pid:
+    if engine is None or os.getpid() == engine_initial_pid:
         return
     engine.dispose()
