@@ -1,7 +1,8 @@
 import pytest
 import time
-from sogs import model
-from sogs.model import Room, File
+import sogs.model.exc as exc
+from sogs.model.room import Room, get_rooms
+from sogs.model.file import File
 
 
 def test_create(room):
@@ -9,7 +10,7 @@ def test_create(room):
     r2 = Room.create('test-room-2', name='Test room 2', description='Test suite testing room')
     r3 = Room.create('Test_Room-3', name='Test room 3', description='Test suite testing room3')
 
-    rooms = model.get_rooms()
+    rooms = get_rooms()
 
     assert len(rooms) == 3
 
@@ -27,7 +28,7 @@ def test_create(room):
     assert rooms[2].name == 'Test room 3'
     assert rooms[2].description == 'Test suite testing room3'
 
-    with pytest.raises(model.AlreadyExists):
+    with pytest.raises(exc.AlreadyExists):
         Room.create('test-room-2', name='x', description=None)
 
 
@@ -47,19 +48,19 @@ def test_token_insensitive(room):
     assert r_c.id == r.id and r_c.token == r.token
     assert r_d.id == r.id and r_d.token == r.token
 
-    with pytest.raises(model.NoSuchRoom):
+    with pytest.raises(exc.NoSuchRoom):
         Room(token='Test-Ro-om')
 
 
 def test_delete(room):
     r2 = Room.create('test-room-2', name='Test room 2', description='Test suite testing room')
 
-    assert len(model.get_rooms()) == 2
+    assert len(get_rooms()) == 2
 
     r2.delete()
 
-    rooms = model.get_rooms()
-    assert len(model.get_rooms()) == 1
+    rooms = get_rooms()
+    assert len(rooms) == 1
     assert rooms[0].token == 'test-room'
 
 
@@ -91,7 +92,7 @@ def test_updates(room):
 
     room.token = 'new-token'
     assert room.token == 'new-token'
-    # update counts not altered; see the attribute in model.py for why
+    # update counts not altered; see the attribute in model/room.py for why
     assert room.updates == 2
     assert room.info_updates == 2
 
@@ -319,7 +320,7 @@ def test_permissions(room, user, user2, mod, admin, global_mod, global_admin):
     assert not room.check_upload()
     assert not room.check_upload(user)
 
-    with pytest.raises(model.BadPermission):
+    with pytest.raises(exc.BadPermission):
         room.set_permissions(user2, mod=user, read=None, write=None, upload=None)
 
 
@@ -359,7 +360,7 @@ def test_bans(room, user, user2, mod, admin, global_mod, global_admin):
 
     assert not room.unban_user(user, mod=mod)
 
-    with pytest.raises(model.BadPermission):
+    with pytest.raises(exc.BadPermission):
         room.ban_user(user, mod=user2)
 
     room.ban_user(user, mod=admin)
@@ -396,13 +397,13 @@ def test_mods(room, user, user2, mod, admin, global_mod, global_admin):
     assert room.check_admin(global_admin)
     assert room.check_moderator(global_mod)
 
-    with pytest.raises(model.BadPermission):
+    with pytest.raises(exc.BadPermission):
         user.set_moderator(added_by=user, admin=True)
-    with pytest.raises(model.BadPermission):
+    with pytest.raises(exc.BadPermission):
         user.set_moderator(added_by=user, admin=False)
 
     # global mods don't have admin access:
-    with pytest.raises(model.BadPermission):
+    with pytest.raises(exc.BadPermission):
         room.remove_moderator(user, removed_by=global_mod)
 
     # global admin steps in to save the day, hurray!
@@ -497,7 +498,7 @@ def test_upload_expiry(room, user):
 
     assert cleanup() == (1, 0, 0, 0)
 
-    with pytest.raises(model.NoSuchFile):
+    with pytest.raises(exc.NoSuchFile):
         File(id=file.id)
 
     assert not os.path.exists(file.path)

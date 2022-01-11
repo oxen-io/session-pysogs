@@ -1,8 +1,8 @@
-import sogs.model
+import sogs.model.user
 from nacl.public import PrivateKey
 
 
-class User(sogs.model.User):
+class User(sogs.model.user.User):
     def __init__(self):
         self.privkey = PrivateKey.generate()
 
