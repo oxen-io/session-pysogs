@@ -5,7 +5,7 @@ from io import BytesIO
 from ..web import app
 from .. import crypto, http, utils
 
-import traceback
+from .subrequest import make_subrequest
 
 
 def handle_onionreq_plaintext(body):
@@ -32,9 +32,8 @@ def handle_onionreq_plaintext(body):
                     'content-type',
                     'application/octet-stream' if 'body_binary' in req else 'application/json',
                 )
-                cl = len(subreq_body)
             else:
-                subreq_body = b''
+                subreq_body = None
                 # Android bug workaround: Android Session (at least up to v1.11.12) sends a body on
                 # GET requests with a 4-character string "null" when it should send no body.
                 if 'body' in req and len(req['body']) == 4 and req['body'] == 'null':
@@ -46,11 +45,6 @@ def handle_onionreq_plaintext(body):
                             method, endpoint
                         )
                     )
-                ct, cl = '', ''
-
-            for h in ('content-type', 'content-length'):
-                if h in subreq_headers:
-                    del subreq_headers[h]
 
         elif body.startswith(b'd'):
             raise RuntimeError("Bencoded onion requests not implemented yet")
@@ -60,53 +54,25 @@ def handle_onionreq_plaintext(body):
                 "Invalid onion request body: expected JSON object or a bt-encoded dict"
             )
 
-        if '?' in endpoint:
-            endpoint, query_string = endpoint.split('?', 1)
-        else:
-            query_string = ''
-
         # Legacy onion request targets don't start with /; we may them to `/target/whatever` (mainly
         # to help organize them here).
         if not endpoint.startswith('/'):
             endpoint = '/legacy/' + endpoint
             if auth_code:
                 subreq_headers["Authorization"] = auth_code
-        # Set up the wsgi environ variables for the subrequest (see PEP 0333)
-        subreq_env = {
-            **request.environ,
-            "REQUEST_METHOD": method,
-            "PATH_INFO": endpoint,
-            "QUERY_STRING": query_string,
-            "CONTENT_TYPE": ct,
-            "CONTENT_LENGTH": cl,
-            **{'HTTP_{}'.format(h.upper().replace('-', '_')): v for h, v in subreq_headers.items()},
-            'wsgi.input': BytesIO(subreq_body),
-        }
 
-        try:
-            with app.request_context(subreq_env):
-                response = app.full_dispatch_request()
-            if response.status_code == http.OK:
-                data = response.get_data()
-                app.logger.debug(
-                    "Onion sub-request for {} returned success, {} bytes".format(
-                        endpoint, len(data)
-                    )
-                )
-                return data
-            app.logger.warning(
-                "Onion sub-request for {} {} returned status {}".format(
-                    method, endpoint, response.status_code
-                )
+        response = make_subrequest(
+            method, endpoint, headers=subreq_headers, body=subreq_body, content_type=ct
+        )
+
+        if response.status_code == http.OK:
+            data = response.get_data()
+            app.logger.debug(
+                f"Onion sub-request for {endpoint} returned success, {len(data)} bytes"
             )
-            return json.dumps({'status_code': response.status_code}).encode()
-        except Exception:
-            app.logger.warning(
-                "Onion sub-request for {} {} failed: {}".format(
-                    method, endpoint, traceback.format_exc()
-                )
-            )
-            return json.dumps({'status_code': http.BAD_GATEWAY}).encode()
+            return data
+        return json.dumps({'status_code': response.status_code}).encode()
+
     except Exception as e:
         app.logger.warning("Invalid onion request: {}".format(e))
         return json.dumps({'status_code': http.BAD_REQUEST}).encode()
