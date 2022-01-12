@@ -44,7 +44,7 @@ def parse_batch_req(r):
     - for POST/PUT requests there must be exactly one of:
         - a json value under the 'json' key
         - a base64-encoded body under the 'b64' key
-        - a raw byte value under the 'bytes' key (not recommended for json)
+        - a raw bytes value under the 'bytes' key (not recommended for json)
     - headers may be provided, and must be a dict of k/v string pairs if provided.
 
     If non-conforming data is encountered then a BAD_REQUEST request abort is raised.
@@ -102,6 +102,8 @@ def parse_batch_req(r):
                 app.logger.warning("Bad batch request: b64 value is not valid base64")
         elif 'bytes' in r:
             body = r['bytes']
+            if not isinstance(body, bytes):
+                body = body.encode()
         else:
             json = r['json']
 
@@ -148,8 +150,8 @@ def batch(_sequential=False):
             response.append(
                 {"code": subres.status_code, "content-type": subres.content_type, "body": body}
             )
-        except Exception:
-            app.logger.warning("Batch subrequest failed")  # More detail is already warned
+        except Exception as e:
+            app.logger.warning(f"Batch subrequest failed: {e}")
             response.append(
                 {"code": http.INTERNAL_SERVER_ERROR, 'content-type': 'text/plain', 'body': ''}
             )
@@ -171,4 +173,4 @@ def sequence():
     In such a case, the final, non-2xx response is still included as the final response value.
     """
 
-    batch(_sequential=True)
+    return batch(_sequential=True)

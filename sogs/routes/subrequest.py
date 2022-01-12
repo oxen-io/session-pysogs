@@ -48,7 +48,8 @@ def make_subrequest(
 
     if body is None:
         if json is not None:
-            body = json.dumps(json, separators=(',', ':')).encode()
+            from json import dumps
+            body = dumps(json, separators=(',', ':')).encode()
         else:
             body = b''
 
@@ -70,6 +71,7 @@ def make_subrequest(
         "CONTENT_LENGTH": content_length,
         **http_headers,
         'wsgi.input': body_input,
+        'flask._preserve_context': False,
     }
 
     try:
@@ -78,7 +80,7 @@ def make_subrequest(
             response = app.full_dispatch_request()
         if response.status_code != http.OK:
             app.logger.warning(
-                "Sub-request for {method} {path} returned status {response.status_code}"
+                f"Sub-request for {method} {path} returned status {response.status_code}"
             )
         return response
     except Exception:
