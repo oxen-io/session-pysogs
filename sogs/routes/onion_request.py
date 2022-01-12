@@ -86,7 +86,7 @@ def handle_onionreq_plaintext(body):
         try:
             with app.request_context(subreq_env):
                 response = app.full_dispatch_request()
-            if response.status_code == 200:
+            if response.status_code == http.OK:
                 data = response.get_data()
                 app.logger.debug(
                     "Onion sub-request for {} returned success, {} bytes".format(
@@ -124,7 +124,7 @@ def handle_onion_request():
         junk = crypto.parse_junk(request.data)
     except RuntimeError as e:
         app.logger.warning("Failed to decrypt onion request: {}".format(e))
-        abort(http.ERROR_INTERNAL_SERVER_ERROR)
+        abort(http.INTERNAL_SERVER_ERROR)
 
     response = handle_onionreq_plaintext(junk.payload)
     return utils.encode_base64(junk.transformReply(response))
