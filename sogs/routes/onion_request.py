@@ -1,6 +1,5 @@
 from flask import request, abort
 import json
-from io import BytesIO
 
 from ..web import app
 from .. import crypto, http, utils

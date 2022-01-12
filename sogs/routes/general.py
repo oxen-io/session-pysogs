@@ -68,7 +68,7 @@ def parse_batch_req(r):
 
     if 'headers' in r:
         if not isinstance(r['headers'], dict):
-            app.logger.warning(f"Bad batch request: 'headers' must be a dict")
+            app.logger.warning("Bad batch request: 'headers' must be a dict")
             abort(http.BAD_REQUEST)
         if any(not isinstance(k, str) or not isinstance(v, str) for k, v in r['headers'].items()):
             app.logger.warning("Bad batch request: 'headers' must contain only str/str pairs")
@@ -120,7 +120,8 @@ def batch(_sequential=False):
     be attempted.  There is no guarantee on the order in which requests will be carried out.  (For
     sequential, related requests invoke via /sequence instead).
 
-    Returns a list of responses in the same order as the provided requests; each response consists of a dict of
+    Returns a list of responses in the same order as the provided requests; each response consists
+    of a dict containing:
     - code -- the numeric http response code (e.g. 200 for success)
     - content-type -- the content type of the request
     - body -- the body of the request; will be plain json if `content-type` is `application/json`,
