@@ -1,6 +1,5 @@
 import traceback
 import oxenmq
-from oxenc import bt_deserialize
 import time
 from datetime import timedelta
 import functools
@@ -9,6 +8,7 @@ from .web import app
 from . import cleanup
 from . import config
 from . import omq as o
+from .events import notify
 
 # This is the uwsgi "mule" that handles things not related to serving HTTP requests:
 # - it holds the oxenmq instance (with its own interface into sogs)
@@ -52,6 +52,10 @@ def setup_omq():
     for addr in listen:
         omq.listen(addr, curve=True, allow_connection=allow_conn)
         app.logger.info(f"OxenMQ listening on {addr}")
+    if not listen:
+        app.logger.warn(
+            "OxenMQ did not listen on any curve addresses, the bot API is not accessable anywhere."
+        )
 
     # Internal socket for workers to talk to us:
     omq.listen(config.OMQ_INTERNAL, curve=False, allow_connection=admin_conn)
@@ -64,6 +68,10 @@ def setup_omq():
     worker.add_command("message_posted", message_posted)
     worker.add_command("messages_deleted", messages_deleted)
     worker.add_command("message_edited", message_edited)
+    worker.add_command("user_joined", user_joined)
+    worker.add_command("user_banned", user_banned)
+    worker.add_command("user_unbanned", user_unbanned)
+    worker.add_command("file_uploaded", file_uploaded)
 
     app.logger.debug("Mule starting omq")
     omq.start()
@@ -88,14 +96,32 @@ def log_exceptions(f):
 
 @log_exceptions
 def message_posted(m: oxenmq.Message):
-    id = bt_deserialize(m.data()[0])
-    app.logger.warning(f"FIXME: mule -- message posted stub, id={id}")
+    notify.message(*m.data())
 
 
 @log_exceptions
 def messages_deleted(m: oxenmq.Message):
-    ids = bt_deserialize(m.data()[0])
-    app.logger.warning(f"FIXME: mule -- message delete stub, deleted messages: {ids}")
+    notify.deleted(*m.data())
+
+
+@log_exceptions
+def user_banned(m: oxenmq.Message):
+    notify.banned(*m.data())
+
+
+@log_exceptions
+def user_unbanned(m: oxenmq.Message):
+    notify.unbannd(*m.data())
+
+
+@log_exceptions
+def user_joined(m: oxenmq.Message):
+    notify.joined(*m.data())
+
+
+@log_exceptions
+def file_uploaded(m: oxenmq.Message):
+    notify.uploaded(*m.data())
 
 
 @log_exceptions
