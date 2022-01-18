@@ -1,8 +1,3 @@
-import pytest
-import time
-import sogs.model.exc as exc
-from sogs.model.room import Room, get_rooms
-from sogs.model.file import File
 from sogs.model import capabilities as core_caps
 from sogs import utils
 from sogs.web import app
@@ -117,7 +112,7 @@ def batch_test_endpoint1():
 
 @app.get("/test_batch_2")
 def batch_test_endpoint2():
-    from flask import request, jsonify
+    from flask import jsonify
 
     return jsonify({"z": 3}), 403
 

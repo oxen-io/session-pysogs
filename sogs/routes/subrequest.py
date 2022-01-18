@@ -49,6 +49,7 @@ def make_subrequest(
     if body is None:
         if json is not None:
             from json import dumps
+
             body = dumps(json, separators=(',', ':')).encode()
         else:
             body = b''
