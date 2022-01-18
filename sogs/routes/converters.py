@@ -1,4 +1,6 @@
 from ..web import app
+from ..model.room import Room
+from ..model.exc import NoSuchRoom
 
 from werkzeug.routing import BaseConverter, ValidationError
 

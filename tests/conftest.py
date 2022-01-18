@@ -15,6 +15,14 @@ def pytest_addoption(parser):
     )
 
 
+@pytest.fixture
+def client():
+    """Yields an flask test client for the app that can be used to make test requests"""
+
+    with web.app.test_client() as client:
+        yield client
+
+
 db_counter_ = 0
 
 

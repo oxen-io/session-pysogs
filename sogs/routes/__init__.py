@@ -1,12 +1,9 @@
 from flask import abort, request, render_template, Response
 from ..web import app
 from .. import config, crypto, http, utils
-from ..model.room import Room, get_readable_rooms
-from ..model.exc import NoSuchRoom
+from ..model.room import get_readable_rooms
 
-from . import converters
-from . import legacy
-from . import onion_request
+from . import converters, general, legacy, onion_request  # noqa: F401
 
 from io import BytesIO
 

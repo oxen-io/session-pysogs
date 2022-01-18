@@ -10,7 +10,7 @@ import os
 import re
 import sqlalchemy.exc
 import time
-from typing import Optional, Union
+from typing import Optional, Union, List
 
 
 class Room:
@@ -589,7 +589,7 @@ class Room:
         send_mule("message_posted", msg['id'])
         return msg
 
-    def delete_posts(self, message_ids: list[int], deleter: User):
+    def delete_posts(self, message_ids: List[int], deleter: User):
         """
         Deletes the messages with the given ids.  The given user performing the delete must be a
         moderator of the room.

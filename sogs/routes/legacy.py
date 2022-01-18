@@ -93,7 +93,7 @@ def get_rooms():
 
     return jsonify(
         {
-            'status_code': 200,
+            'status_code': http.OK,
             # Legacy Session only wants token (returned as 'id') and name:
             'rooms': [{'id': r.token, 'name': r.name} for r in get_readable_rooms()],
         }
@@ -106,7 +106,7 @@ def get_room_info(room):
     # This really should be authenticated but legacy Session just doesn't pass along auth info.
     # legacy_check_user_room(room=room, update_activity=False, read=True)
     room_info = {'id': room.token, 'name': room.name}
-    return jsonify({'room': room_info, 'status_code': 200})
+    return jsonify({'room': room_info, 'status_code': http.OK})
 
 
 @app.get("/legacy/rooms/<Room:room>/image")
@@ -118,20 +118,20 @@ def legacy_serve_room_image(room):
     if not room.image:
         abort(http.NOT_FOUND)
 
-    return jsonify({"status_code": 200, "result": room.image.read_base64()})
+    return jsonify({"status_code": http.OK, "result": room.image.read_base64()})
 
 
 @app.get("/legacy/member_count")
 def legacy_member_count():
     user, room = legacy_check_user_room(read=True)
 
-    return jsonify({"status_code": 200, "member_count": room.active_users()})
+    return jsonify({"status_code": http.OK, "member_count": room.active_users()})
 
 
 @app.post("/legacy/claim_auth_token")
 def legacy_claim_auth():
     """this does nothing but needs to exist for backwards compat"""
-    return jsonify({'status_code': 200})
+    return jsonify({'status_code': http.OK})
 
 
 @app.get("/legacy/auth_token_challenge")
@@ -147,7 +147,7 @@ def legacy_auth_token_challenge():
     pk = utils.decode_hex_or_b64(user.session_id[2:], 32)
     return jsonify_with_base64(
         {
-            'status_code': 200,
+            'status_code': http.OK,
             'challenge': {
                 'ciphertext': crypto.server_encrypt(pk, token),
                 'ephemeral_public_key': crypto.server_pubkey_base64,
@@ -177,7 +177,10 @@ def handle_post_legacy_message():
     sig = utils.decode_base64(req.get('signature'))
 
     return jsonify_with_base64(
-        {'status_code': 200, 'message': legacy_transform_message(room.add_post(user, data, sig))}
+        {
+            'status_code': http.OK,
+            'message': legacy_transform_message(room.add_post(user, data, sig)),
+        }
     )
 
 
@@ -190,7 +193,7 @@ def handle_legacy_get_messages():
 
     return jsonify_with_base64(
         {
-            'status_code': 200,
+            'status_code': http.OK,
             'messages': [
                 legacy_transform_message(m)
                 for m in room.get_messages_for(user, limit=limit, after=from_id, recent=not from_id)
@@ -218,7 +221,7 @@ def handle_comapct_poll():
             }
         result.append(r)
 
-    return jsonify_with_base64({'status_code': 200, 'results': result})
+    return jsonify_with_base64({'status_code': http.OK, 'results': result})
 
 
 def handle_one_compact_poll(req):
@@ -237,7 +240,7 @@ def handle_one_compact_poll(req):
     mods = room.get_mods(user)
 
     return {
-        'status_code': 200,
+        'status_code': http.OK,
         'room_id': room.token,
         'messages': messages,
         'deletions': deletions,
@@ -260,7 +263,7 @@ def process_legacy_file_upload_for_room(
     file_content = utils.decode_base64(file_b64)
 
     if len(file_content) > config.UPLOAD_FILE_MAX_SIZE:
-        abort(http.ERROR_PAYLOAD_TOO_LARGE)
+        abort(http.PAYLOAD_TOO_LARGE)
 
     filename = None  # legacy Session doesn't provide a filename, just a random blob
     return room.upload_file(file_content, user, filename=filename, lifetime=lifetime)
@@ -270,7 +273,7 @@ def process_legacy_file_upload_for_room(
 def handle_legacy_store_file():
     user, room = legacy_check_user_room(write=True, upload=True)
     file_id = process_legacy_file_upload_for_room(user, room)
-    return jsonify({'status_code': 200, 'result': file_id})
+    return jsonify({'status_code': http.OK, 'result': file_id})
 
 
 @app.post("/legacy/rooms/<Room:room>/image")
@@ -278,7 +281,7 @@ def handle_legacy_upload_room_image(room):
     user, room = legacy_check_user_room(write=True, upload=True, moderator=True)
     file_id = process_legacy_file_upload_for_room(user, room, lifetime=None)
     room.image = file_id
-    return jsonify({'status_code': 200, 'result': file_id})
+    return jsonify({'status_code': http.OK, 'result': file_id})
 
 
 @app.get("/legacy/files/<int:file_id>")
@@ -291,7 +294,7 @@ def handle_legacy_get_file(file_id):
 
     with open(file.path, 'rb') as f:
         file_content = f.read()
-    return jsonify_with_base64({'status_code': 200, 'result': file_content})
+    return jsonify_with_base64({'status_code': http.OK, 'result': file_content})
 
 
 @app.post("/legacy/delete_messages")
@@ -306,7 +309,7 @@ def handle_legacy_delete_messages(ids=None):
     if ids:
         send_mule("messages_deleted", ids)
 
-    return jsonify({'status_code': 200})
+    return jsonify({'status_code': http.OK})
 
 
 @app.delete("/legacy/messages/<int:msgid>")
@@ -321,7 +324,7 @@ def handle_legacy_ban():
 
     room.ban_user(to_ban=ban, mod=user)
 
-    return jsonify({"status_code": 200})
+    return jsonify({"status_code": http.OK})
 
 
 @app.post("/legacy/ban_and_delete_all")
@@ -333,7 +336,7 @@ def handle_legacy_banhammer():
         room.ban_user(to_ban=ban, mod=mod)
         room.delete_all_posts(ban, deleter=mod)
 
-    return jsonify({"status_code": 200})
+    return jsonify({"status_code": http.OK})
 
 
 @app.delete("/legacy/block_list/<SessionID:session_id>")
@@ -341,7 +344,7 @@ def handle_legacy_unban(session_id):
     user, room = legacy_check_user_room(moderator=True)
     to_unban = User(session_id=session_id, autovivify=False)
     if room.unban_user(to_unban, mod=user):
-        return jsonify({"status_code": 200})
+        return jsonify({"status_code": http.OK})
 
     abort(http.NOT_FOUND)
 
@@ -360,7 +363,7 @@ def handle_legacy_banlist():
     else:
         bans = []
 
-    return jsonify({"status_code": 200, "banned_members": bans})
+    return jsonify({"status_code": http.OK, "banned_members": bans})
 
 
 @app.get("/legacy/moderators")
@@ -368,7 +371,7 @@ def handle_legacy_get_mods():
     user, room = legacy_check_user_room(read=True)
 
     mods = room.get_mods(user)
-    return jsonify({"status_code": 200, "moderators": mods})
+    return jsonify({"status_code": http.OK, "moderators": mods})
 
 
 # Posting here adds an admin and requires admin access.  Legacy Session doesn't understand the
@@ -384,7 +387,7 @@ def handle_legacy_add_admin():
     mod = User(session_id=session_id, autovivify=True)
     room.set_moderator(mod, admin=True, visible=True, added_by=user)
 
-    return jsonify({"status_code": 200})
+    return jsonify({"status_code": http.OK})
 
 
 # DELETE here removes an admin or moderator and requires admin access.  (Legacy Session doesn't
@@ -397,4 +400,4 @@ def handle_legacy_remove_admin(session_id):
     mod = User(session_id=session_id, autovivify=False)
     room.remove_moderator(mod, removed_by=user)
 
-    return jsonify({"status_code": 200})
+    return jsonify({"status_code": http.OK})

@@ -960,7 +960,15 @@ paths:
     post:
       tags: [Batch]
       summary: "Utility endpoint to allow submitting multiple independent requests at once."
-      description: "This is used, for example, to poll multiple rooms on the same server for updates in a single query rather than needing to make multiple requests for each room.\n\nNo guarantee is made as to the order in which sub-requests are processed; use the `/sequence` instead if you need that."
+      description: >
+        This is used, for example, to poll multiple rooms on the same server for updates in a single
+        query rather than needing to make multiple requests for each room.
+        
+        No guarantee is made as to the order in which sub-requests are processed; use the
+        `/sequence` instead if you need that.
+        
+        For contained subrequests that specify a body (i.e. POST or PUT requests) exactly one of
+        `json`, `b64`, or `bytes` must be provided with the request body.
       requestBody:
         description: "List of sub-requests to issue for this batch request."
         required: true
@@ -974,19 +982,26 @@ paths:
                 properties:
                   method:
                     type: string
-                    description: "The request method, usually GET for batched requests, though other methods are also permitted."
+                    description: "The request method, typically GET for batched requests, though other methods are also permitted."
                   path:
                     type: string
                     description: "The request path, e.g. `/room/123/messages/since/45678`"
+                  headers:
+                    type: object
+                    description: "Dict of HTTP headers for the subrequest.  Optional."
                   json:
-                    description: "Optional nested json structure containing a json body for the POST/PUT requests.  Exclusive of `bytes`, and may not be provided for methods that do not accept a body (such as GET)."
+                    description: "Nested json structure containing a json body for a POST/PUT request.  Exclusive of `b64` and `bytes`."
                     oneOf:
                     - type: object
                     - type: array
-                  bytes:
-                    description: "Optional body, encoded in base64, for the POST/PUT request.  Exclusive of `json` and may not be provided for methods that do not accept a body (such as GET)."
+                  b64:
+                    description: "Byte data for the body for a POST/PUT request.  Exclusive of `json` and `bytes`"
                     type: string
                     format: byte
+                  bytes:
+                    description: "Optional binary body, as raw octets.  Exclusive of `b64` and `json`.  Not recommended when using json unless the data happens to be mostly safe ascii"
+                    trype: string
+                    format: binary
       responses:
         200:
           description: "Batch jobs completed. Note that 200 only means the batch was processed; for individual sub-requests see the relevant sub-response code.  The returned array returns responses in exactly the same order as the request's list of sub-requests (regardless of the actual order jobs were processed)."
