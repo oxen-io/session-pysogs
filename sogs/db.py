@@ -113,6 +113,7 @@ def database_init():
     # Database migrations/updates/etc.
     for migrate in (
         migrate_v01x,
+        add_new_tables,
         add_new_columns,
         update_message_views,
         create_message_details_deleter,
@@ -169,6 +170,41 @@ def add_new_columns(conn):
             if name not in metadata.tables[table].c:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
                 added = True
+
+    return added
+
+
+def add_new_tables(conn):
+    added = False
+    if 'user_request_nonces' not in metadata.tables:
+        if engine.name == 'sqlite':
+            conn.execute(
+                """
+CREATE TABLE user_request_nonces (
+    user INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    nonce BLOB NOT NULL UNIQUE,
+    expiry FLOAT NOT NULL DEFAULT ((julianday('now') - 2440587.5 + 1.0)*86400.0) /* now + 24h */
+)
+"""
+            )
+            conn.execute("CREATE INDEX user_request_nonces_expiry ON user_request_nonces(expiry)")
+        else:
+            conn.execute(
+                """
+CREATE TABLE user_request_nonces (
+    "user" BIGINT NOT NULL REFERENCES users ON DELETE CASCADE,
+    nonce BLOB NOT NULL,
+    expiry FLOAT NOT NULL DEFAULT (extract(epoch from now() + '24 hours'))
+)
+"""
+            )
+            conn.execute(
+                "CREATE UNIQUE INDEX user_request_nonces_nonce"
+                " ON user_request_nonces USING HASH (nonce)"
+            )
+            conn.execute("CREATE INDEX user_request_nonces_expiry ON user_request_nonces(expiry)")
+
+        added = True
 
     return added
 

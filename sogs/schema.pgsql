@@ -384,4 +384,15 @@ CREATE TABLE user_permission_futures (
 );
 CREATE INDEX user_permissions_future_at ON user_permission_futures(at);
 
+
+-- Nonce tracking to prohibit request signature nonce reuse (thus prevent replay attacks)
+CREATE TABLE user_request_nonces (
+    "user" BIGINT NOT NULL REFERENCES users ON DELETE CASCADE,
+    nonce BYTEA NOT NULL,
+    expiry FLOAT NOT NULL DEFAULT (extract(epoch from now() + '24 hours'))
+);
+CREATE UNIQUE INDEX user_request_nonces_nonce ON user_request_nonces USING HASH (nonce);
+CREATE INDEX user_request_nonces_expiry ON user_request_nonces(expiry);
+
+
 COMMIT;
