@@ -1089,8 +1089,8 @@ paths:
                   body:
                     description: >
                       Request body of the onion request.  This is typically used for text-based
-                      values (such as JSON requests).  Exclusive of `body_b64` and `body_json`.  Not
-                      accepted for `GET` requests.
+                      values (such as JSON requests).  Exclusive of `body_binary`.  Not accepted for
+                      `GET` requests.
                     type: string
                   body_binary:
                     description: >
@@ -1101,7 +1101,7 @@ paths:
                       allowing you to POST to endpoints that require binary data (such as file
                       uploads).  Note that when using the Content-Type header defaults to
                       `application/octet-stream`.
-
+                      
                       Note that when including a signature in the `X-SOGS-Signature` header, the
                       signature must use the decoded byte value of the body, *not* the encoded
                       base64 value.

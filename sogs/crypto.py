@@ -24,6 +24,7 @@ with open(config.KEY_FILE, 'rb') as f:
 
 server_pubkey = _privkey.public_key
 
+server_pubkey_bytes = server_pubkey.encode()
 server_pubkey_hex = server_pubkey.encode(HexEncoder).decode('ascii')
 server_pubkey_base64 = server_pubkey.encode(Base64Encoder).decode('ascii')
 
