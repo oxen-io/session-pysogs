@@ -47,7 +47,7 @@ def decode_hex_or_b64(data: bytes, size: int):
     # Allow unpadded data; python's base64 has no ability to load an unpadded value, though, so pad
     # it ourselves:
     if b64_unpadded <= len(data) <= b64_size:
-        decoded = base64.b64decode(data)
+        decoded = decode_base64(data)
         if len(decoded) == size:  # Might not equal our target size because of padding
             return decoded
 
