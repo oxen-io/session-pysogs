@@ -84,6 +84,9 @@ def auth_test_whoami():
     else:
         res["user"] = {"uid": g.user.id, "session_id": g.user.session_id}
 
+    if 'X-Foo' in request.headers:
+        res["foo"] = request.headers['X-Foo']
+
     if request.method == "POST":
         app.logger.warning(f"data is: {request.data}")
         res["body"] = json.loads(request.data) if request.data else None
@@ -320,7 +323,7 @@ def test_auth_batch(client, db):
 
     hi = b'["hi", "world"]'
     reqs = [
-        {"method": "GET", "path": "/auth_test/whoami"},
+        {"method": "GET", "path": "/auth_test/whoami", "headers": {"X-Foo": "bar"}},
         {"method": "GET", "path": "/auth_test/whoami"},
         {"method": "GET", "path": "/auth_test/whoami"},
         {"method": "GET", "path": "/auth_test/auth_required"},
@@ -336,7 +339,7 @@ def test_auth_batch(client, db):
         {
             'code': 200,
             'content-type': 'application/json',
-            'body': {'user': {'uid': 1, 'session_id': '05' + A.encode().hex()}},
+            'body': {'user': {'uid': 1, 'session_id': '05' + A.encode().hex()}, 'foo': 'bar'},
         },
         {
             'code': 200,
@@ -385,3 +388,25 @@ def test_auth_batch(client, db):
 
     assert r.status_code == 200
     assert r.json == expected
+
+    # Auth headers on the *inner* batch requests should be ignored:
+    a2 = PrivateKey.generate()
+    A2 = a2.public_key
+    inner_h1 = x_sogs(a2, A2, B, 'GET', '/auth_test/whoami')
+    inner_h1['X-Foo'] = 'bar'
+    inner_h2 = x_sogs(a2, A2, B, 'POST', '/auth_test/auth_required', hi)
+    reqs = [
+        {"method": "GET", "path": "/auth_test/whoami", "headers": inner_h1},
+        {"method": "GET", "path": "/auth_test/whoami"},
+        {
+            "method": "POST",
+            "path": "/auth_test/auth_required",
+            "headers": inner_h2,
+            "b64": sogs.utils.encode_base64(hi),
+        },
+    ]
+    body = json.dumps(reqs).encode()
+    headers = x_sogs(a, A, B, 'POST', '/batch', body)
+    r = client.post("/batch", headers=headers, data=body, content_type='application/json')
+    assert r.status_code == 200
+    assert r.json == [expected[i] for i in (0, 1, 4)]
