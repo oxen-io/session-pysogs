@@ -96,8 +96,11 @@ from functools import wraps
 # prefix (e.g. `GET /legacy/rooms`).
 
 
-def abort_with_reason(code, msg):
-    app.logger.warning(msg)
+def abort_with_reason(code, msg, warn=True):
+    if warn:
+        app.logger.warning(msg)
+    else:
+        app.logger.debug(msg)
     abort(Response(msg, status=code, mimetype='text/plain'))
 
 
@@ -135,6 +138,7 @@ def handle_http_auth():
       verification failure
     - 425 Too Early -- if the timestamp is too far from the server time (more than 24h off), or the
       client is attempting to reuse a nonce.
+    - 403 Forbidden -- if the user validated successfully but is globally banned from the server.
     In either case we write an error description as plain text body of the error response.
     """
 
@@ -235,6 +239,9 @@ def handle_http_auth():
         abort_with_reason(
             http.UNAUTHORIZED, "Invalid authentication: X-SOGS-Hash authentication failed"
         )
+
+    if user.banned:
+        abort_with_reason(http.FORBIDDEN, 'Banned', warn=False)
 
     user.touch()
     g.user = user

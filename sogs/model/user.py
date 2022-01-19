@@ -18,8 +18,8 @@ class User:
         created - unix timestamp when the user was created
         last_active - unix timestamp when the user was last active
         banned - True if the user is (globally) banned
-        admin - True if the user is a global admin
-        moderator - True if the user is a global moderator
+        global_admin - True if the user is a global admin
+        global_moderator - True if the user is a global moderator
         visible_mod - True if the user's admin/moderator status should be visible in rooms
     """
 
@@ -63,8 +63,7 @@ class User:
         )
 
         if touch:
-            with db.transaction():
-                self._touch()
+            self._touch()
 
     def __str__(self):
         """Returns string representation of a user: U[050123…cdef], the id prefixed with @ or % if
@@ -96,8 +95,7 @@ class User:
         to True.
         """
         if not self._touched or force:
-            with db.transaction():
-                self._touch()
+            self._touch()
 
     def update_room_activity(self, room):
         query(
@@ -124,17 +122,16 @@ class User:
             )
             raise BadPermission()
 
-        with db.transaction():
-            query(
-                """
-                UPDATE users
-                SET moderator = TRUE, admin = :admin, visible_mod = :visible
-                WHERE id = :u
-                """,
-                admin=admin,
-                visible=visible,
-                u=self.id,
-            )
+        query(
+            """
+            UPDATE users
+            SET moderator = TRUE, admin = :admin, visible_mod = :visible
+            WHERE id = :u
+            """,
+            admin=admin,
+            visible=visible,
+            u=self.id,
+        )
         self.global_admin = admin
         self.global_moderator = True
         self.visible_mod = visible
@@ -148,10 +145,37 @@ class User:
             )
             raise BadPermission()
 
-        with db.transaction():
-            query("UPDATE users SET moderator = FALSE, admin = FALSE WHERE id = :u", u=self.id)
+        query("UPDATE users SET moderator = FALSE, admin = FALSE WHERE id = :u", u=self.id)
         self.global_admin = False
         self.global_moderator = False
+
+    def ban(self, *, banned_by: User):
+        """Globally bans this user from the server; can only be applied by a global moderator or
+        global admin, and cannot be applied to another global moderator or admin (to prevent
+        accidental mod/admin banning; to ban them, first explicitly remove them as moderator/admin
+        and then ban)."""
+
+        if not banned_by.global_moderator:
+            app.logger.warning(f"Cannot ban {self}: {banned_by} is not a global mod/admin")
+            raise BadPermission()
+
+        if self.global_moderator:
+            app.logger.warning(f"Cannot ban {self}: user is a global moderator/admin")
+            raise BadPermission()
+
+        query("UPDATE users SET banned = TRUE WHERE id = :u", u=self.id)
+        app.logger.debug(f"{banned_by} globally banned {self}")
+        self.banned = True
+
+    def unban(self, *, unbanned_by: User):
+        """Undoes a global ban.  `unbanned_by` must be a global mod/admin."""
+        if not unbanned_by.global_moderator:
+            app.logger.warning(f"Cannot unban {self}: {unbanned_by} is not a global mod/admin")
+            raise BadPermission()
+
+        query("UPDATE users SET banned = FALSE WHERE id = :u", u=self.id)
+        app.logger.debug(f"{unbanned_by} removed global ban on {self}")
+        self.banned = False
 
     @property
     def system_user(self):

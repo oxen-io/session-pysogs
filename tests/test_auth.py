@@ -190,6 +190,40 @@ def test_auth_required(client, db):
     }
 
 
+def test_auth_banned(client, global_admin, user, db):
+    a = user.privkey
+    A = a.public_key
+    B = server_pubkey
+
+    r = client.get("/auth_test/whoami")
+    assert r.status_code == 200
+    assert r.json == {'user': None}
+    r = client.get("/auth_test/whoami", headers=x_sogs(a, A, B, 'GET', '/auth_test/whoami'))
+    assert r.status_code == 200
+    assert r.json == {"user": {"uid": 2, "session_id": user.session_id}}
+
+    user.ban(banned_by=global_admin)
+
+    r = client.get("/auth_test/whoami")
+    assert r.status_code == 200
+    assert r.json == {'user': None}
+    r = client.get("/auth_test/whoami", headers=x_sogs(a, A, B, 'GET', '/auth_test/whoami'))
+    assert r.status_code == 403
+    assert r.data == b'Banned'
+    r = client.get(
+        '/auth_test/auth_required', headers=x_sogs(a, A, B, 'GET', '/auth_test/auth_required')
+    )
+    assert r.status_code == 403
+    assert r.data == b'Banned'
+    r = client.post(
+        '/auth_test/auth_required',
+        data=b'[1,2,3]',
+        headers=x_sogs(a, A, B, 'POST', '/auth_test/auth_required', b'[1,2,3]'),
+    )
+    assert r.status_code == 403
+    assert r.data == b'Banned'
+
+
 def test_auth_malformed(client, db):
     a = PrivateKey.generate()
     A = a.public_key
