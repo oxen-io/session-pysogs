@@ -31,7 +31,8 @@ import sqlalchemy.exc
 #
 #       METHOD || PATH || TIMESTAMP || BODY
 #
-# using a Blake2B 64-byte keyed hash, where the hash is calculated as:
+# using a Blake2B 42-byte keyed hash (to be obviously different from things like 32-byte pubkeys and
+# 64-byte signatures, and because 42 encodes cleanly into base64), where the hash is calculated as:
 #
 #     a (≡ user x25519 privkey, *not* including 05 Session prefix)
 #     A (≡ user x25519 pubkey)
@@ -40,15 +41,15 @@ import sqlalchemy.exc
 #     q = a*B
 #     shared_key = Blake2B(
 #         q || A || B,
-#         digest_size=64,
+#         digest_size=42,
 #         salt=nonce,
-#         person=b'sogs.shared_key')
+#         person=b'sogs.shared_keys')
 #     hash = Blake2B(
 #         data=M || P || T || B,
-#         digest_size=64,
+#         digest_size=42,
 #         key=shared_key,
 #         salt=nonce,
-#         person=b'sogs.request')
+#         person=b'sogs.auth_header')
 #
 # For example, for a GET request to '/capabilities?required=sogs' to a server with pubkey
 # fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210 the request headers could be:
@@ -58,8 +59,7 @@ import sqlalchemy.exc
 # X-SOGS-Timestamp: 1642079887
 # X-SOGS-Hash: ...
 #
-# Where ... is the 88-character base64 encoding (86 + 2 padding bytes) of the 64-byte value obtained
-# by hashing:
+# Where ... is the 56-character base64 encoding of the 42-byte value obtained by hashing:
 #
 # b'GET/capabilities?required=sogs1642079887'
 #   ^^^###########################^^^^^^^^^^
@@ -88,6 +88,9 @@ import sqlalchemy.exc
 #
 # (Note that the hash here is identical whether submitted via direct POST request or wrapped in an
 # onion request; an onion request is described for exposition).
+#
+# For batch requests the X-SOGS-* headers are applied once, on the outermost batch request, *not* on
+# the individual subrequests; the authorization applies to all subrequests.
 #
 # NB: legacy sogs endpoints (that is: endpoint paths without a leading /) will not work with this
 # authentication mechanism; in order to call them you must invoke them with a leading `/legacy/`
@@ -165,11 +168,11 @@ def handle_http_auth():
         )
 
     try:
-        hash_in = utils.decode_hex_or_b64(hash_in, 64)
+        hash_in = utils.decode_hex_or_b64(hash_in, 42)
     except Exception:
         abort_with_reason(
             http.BAD_REQUEST,
-            "Invalid authentication: X-SOGS-Signature is not base64(86) or hex(128)",
+            "Invalid authentication: X-SOGS-Hash is not base64[56] or hex[84]",
         )
 
     try:
@@ -194,24 +197,24 @@ def handle_http_auth():
     except sqlalchemy.exc.IntegrityError:
         abort_with_reason(http.TOO_EARLY, "Invalid authentication: X-SOGS-Nonce cannot be reused")
 
-    # Signature validation
+    # Hash validation
 
     # shared_key is hash of a*B || A || B = b*A || A || B where b/B is the server keypair and A is
     # the session id pubkey.
     shared_key = nacl.hash.blake2b(
         crypto_scalarmult(crypto._privkey.encode(), A) + A + crypto.server_pubkey_bytes,
-        digest_size=64,
+        digest_size=42,
         salt=nonce,
-        person=b'sogs.shared_key',
+        person=b'sogs.shared_keys',
         encoder=RawEncoder,
     )
 
     hasher = nacl.hashlib.blake2b(
         request.method.encode() + request.path.encode(),
-        digest_size=64,
+        digest_size=42,
         key=shared_key,
         salt=nonce,
-        person=b'sogs.request',
+        person=b'sogs.auth_header',
     )
 
     # Work around flask deficiency: we can't use request.full_path above because it *adds* a `?`

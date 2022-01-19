@@ -48,17 +48,17 @@ def x_sogs_raw(
     # implementation from the sogs code.
     shared_key = blake2b(
         crypto_scalarmult(a_bytes, B_bytes) + A_bytes + B_bytes,
-        digest_size=64,
+        digest_size=42,
         salt=n,
-        person=b'sogs.shared_key',
+        person=b'sogs.shared_keys',
     ).digest()
 
     hasher = blake2b(
         method.encode() + full_path.encode() + h['X-SOGS-Timestamp'].encode(),
-        digest_size=64,
+        digest_size=42,
         key=shared_key,
         salt=n,
-        person=b'sogs.request',
+        person=b'sogs.auth_header',
     )
     if body is not None and len(body):
         hasher.update(body)
@@ -122,13 +122,11 @@ def test_auth_basic(client, db):
     assert r.status_code == 200
     assert r.json == {"user": None}
 
-    # Omit b64 padding chars from nonce and hash:
+    # Omit b64 padding chars from nonce:
     hh = x_sogs(a, A, B, 'GET', '/auth_test/whoami')
-    for x in ('Nonce', 'Hash'):
-        hdr = 'X-SOGS-' + x
-        assert hh[hdr].endswith('=')
-        hh[hdr] = hh[hdr].rstrip('=')
-        assert not hh[hdr].endswith('=')
+    assert hh['X-SOGS-Nonce'].endswith('=')
+    hh['X-SOGS-Nonce'] = hh['X-SOGS-Nonce'].rstrip('=')
+    assert not hh['X-SOGS-Nonce'].endswith('=')
     r = client.get("/auth_test/whoami", headers=hh)
     assert r.status_code == 200
     assert r.json == {"user": {"uid": 1, "session_id": '05' + A.encode().hex()}}
@@ -206,6 +204,13 @@ def test_auth_malformed(client, db):
     r = client.get("/auth_test/whoami", headers=headers)
     assert r.status_code == 401
     assert r.data == b'Invalid authentication: X-SOGS-Hash authentication failed'
+
+    # Wrong hash size:
+    headers = x_sogs(a, A, B, 'GET', '/auth_test/whoami')
+    headers['X-SOGS-Hash'] = headers['X-SOGS-Hash'][:-4]
+    r = client.get("/auth_test/whoami", headers=headers)
+    assert r.status_code == 400
+    assert r.data == b'Invalid authentication: X-SOGS-Hash is not base64[56] or hex[84]'
 
     # Missing a header
     headers = x_sogs(a, A, B, 'GET', '/auth_test/whoami')
