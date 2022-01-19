@@ -1,5 +1,6 @@
 from sogs.web import app
 from sogs.crypto import server_pubkey
+from sogs.routes.auth import user_required
 import sogs.utils
 
 from hashlib import blake2b
@@ -95,10 +96,8 @@ def auth_test_whoami():
 
 
 @app.get("/auth_test/auth_required")
+@user_required
 def auth_test_auth_required():
-    from sogs.routes.auth import require_user
-
-    require_user()
     return auth_test_whoami()
 
 

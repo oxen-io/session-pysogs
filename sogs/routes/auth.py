@@ -9,6 +9,7 @@ import string
 import time
 from nacl.bindings import crypto_scalarmult
 import sqlalchemy.exc
+from functools import wraps
 
 # Authentication handling for incoming requests.
 
@@ -105,6 +106,18 @@ def require_user():
     Unauthorized if the request had no user."""
     if g.user is None:
         abort_with_reason(http.UNAUTHORIZED, 'X-SOGS-* request authentication required')
+
+
+def user_required(f):
+    """Decorator for an endpoint that requires a user; this calls `require_user()` at the beginning
+    of the request to abort the request as Unauthorized if valid authentication was not provided."""
+
+    @wraps(f)
+    def required_user_wrapper(*args, **kwargs):
+        require_user()
+        return f(*args, **kwargs)
+
+    return required_user_wrapper
 
 
 @app.before_request
