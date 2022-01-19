@@ -2,14 +2,12 @@ from ..web import app
 from ..db import query
 from .. import crypto, http, utils
 from ..model.user import User
+from ..hashing import blake2b
 
 from flask import request, abort, Response, g
 import string
 import time
 from nacl.bindings import crypto_scalarmult
-from nacl.encoding import RawEncoder
-import nacl.hash
-import nacl.hashlib
 import sqlalchemy.exc
 
 # Authentication handling for incoming requests.
@@ -171,8 +169,7 @@ def handle_http_auth():
         hash_in = utils.decode_hex_or_b64(hash_in, 42)
     except Exception:
         abort_with_reason(
-            http.BAD_REQUEST,
-            "Invalid authentication: X-SOGS-Hash is not base64[56] or hex[84]",
+            http.BAD_REQUEST, "Invalid authentication: X-SOGS-Hash is not base64[56] or hex[84]"
         )
 
     try:
@@ -201,36 +198,27 @@ def handle_http_auth():
 
     # shared_key is hash of a*B || A || B = b*A || A || B where b/B is the server keypair and A is
     # the session id pubkey.
-    shared_key = nacl.hash.blake2b(
+    shared_key = blake2b(
         crypto_scalarmult(crypto._privkey.encode(), A) + A + crypto.server_pubkey_bytes,
         digest_size=42,
         salt=nonce,
         person=b'sogs.shared_keys',
-        encoder=RawEncoder,
     )
 
-    hasher = nacl.hashlib.blake2b(
-        request.method.encode() + request.path.encode(),
-        digest_size=42,
-        key=shared_key,
-        salt=nonce,
-        person=b'sogs.auth_header',
-    )
-
+    parts = [request.method.encode() + request.path.encode()]
     # Work around flask deficiency: we can't use request.full_path above because it *adds* a `?`
     # even if there wasn't one in the original request.  So work around it by only appending if
     # there is a query string and, officially, don't accept `?` followed by an empty query string in
     # the auth request data (if you have no query string then don't append the ?).
     if len(request.query_string):
-        hasher.update(b'?')
-        hasher.update(request.query_string)
-    hasher.update(ts_str.encode())
-
+        parts.append(b'?' + request.query_string)
+    parts.append(ts_str.encode())
     if len(request.data):
-        hasher.update(request.data)
-    expected = hasher.digest()
+        parts.append(request.data)
 
-    if expected != hash_in:
+    if hash_in != blake2b(
+        parts, digest_size=42, key=shared_key, salt=nonce, person=b'sogs.auth_header'
+    ):
         abort_with_reason(
             http.UNAUTHORIZED, "Invalid authentication: X-SOGS-Hash authentication failed"
         )
