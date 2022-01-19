@@ -410,3 +410,113 @@ def test_auth_batch(client, db):
     r = client.post("/batch", headers=headers, data=body, content_type='application/json')
     assert r.status_code == 200
     assert r.json == [expected[i] for i in (0, 1, 4)]
+
+
+def test_auth_legacy(client, db, admin, user, room):
+
+    # Make a legacy auth token to make sure it works as expected first, but also to make sure it
+    # gets ignored when we use X-SOGS-*.
+    raw_token = sogs.utils.make_legacy_token(admin.session_id)
+    token = sogs.utils.encode_base64(raw_token)
+
+    a = admin.privkey
+    A = a.public_key
+    B = server_pubkey
+
+    a2 = PrivateKey.generate()
+
+    # Test that invalid token with legacy auth is recognized:
+    bad_token = sogs.utils.encode_base64(bytes((raw_token[0] ^ 1,)) + raw_token[1:])
+    r = client.post(
+        "/legacy/block_list",
+        headers={"Room": room.token, "Authorization": bad_token},
+        json={"public_key": user.session_id},
+    )
+    assert r.status_code == 401
+
+    # Add a couple of bans:
+    r = client.post(
+        "/legacy/block_list",
+        headers={"Room": room.token, "Authorization": token},
+        json={"public_key": user.session_id},
+    )
+    assert r.status_code == 200
+    assert r.json == {"status_code": 200}
+
+    S2 = '05' + a2.public_key.encode().hex()
+    r = client.post(
+        "/legacy/block_list",
+        headers={"Room": room.token, "Authorization": token},
+        json={"public_key": S2},
+    )
+    assert r.status_code == 200
+    assert r.json == {"status_code": 200}
+
+    # Verify that both bans are present
+    r = client.get("/legacy/block_list", headers={"Room": room.token, "Authorization": token})
+    assert r.status_code == 200
+    assert r.json == {"status_code": 200, "banned_members": sorted([user.session_id, S2])}
+
+    # Retrieve bans as one of the banned users: should only see himself
+    utoken = sogs.utils.encode_base64(sogs.utils.make_legacy_token(user.session_id))
+    r = client.get("/legacy/block_list", headers={"Room": room.token, "Authorization": utoken})
+    assert r.status_code == 200
+    assert r.json == {"status_code": 200, "banned_members": [user.session_id]}
+
+    # Same, but now use X-SOGS-*
+    h = x_sogs(user.privkey, user.privkey.public_key, B, 'GET', '/legacy/block_list')
+    h['Room'] = room.token
+    r = client.get("/legacy/block_list", headers=h)
+    assert r.status_code == 200
+    assert r.json == {"status_code": 200, "banned_members": [user.session_id]}
+
+    # Now use X-SOGS-* for the second user, but pass an Authentication header for the first user
+    # (which should be ignored with X-SOGS-* headers present).
+    h = x_sogs(a2, a2.public_key, B, 'GET', '/legacy/block_list')
+    h['Room'] = room.token
+    r = client.get("/legacy/block_list", headers=h)
+    assert r.status_code == 200
+    assert r.json == {"status_code": 200, "banned_members": [S2]}
+
+    # Remove the bans as admin, with X-SOGS
+    rh = {"Room": room.token}
+    body = json.dumps(
+        [
+            {'method': 'GET', 'path': '/legacy/block_list', "headers": rh},
+            {'method': 'DELETE', 'path': '/legacy/block_list/' + user.session_id, "headers": rh},
+            {'method': 'GET', 'path': '/legacy/block_list', "headers": rh},
+            {
+                'method': 'DELETE',
+                'path': '/legacy/block_list/' + S2,
+                # non-admin inner auth token, but should get ignored:
+                "headers": {**rh, 'Authorization': utoken},
+            },
+            {'method': 'GET', 'path': '/legacy/block_list', "headers": rh},
+        ]
+    ).encode()
+    r = client.post(
+        "/sequence",
+        data=body,
+        content_type='application/json',
+        headers=x_sogs(a, A, B, 'POST', '/sequence', body),
+    )
+    assert r.status_code == 200
+    assert r.json == [
+        {
+            'code': 200,
+            'content-type': 'application/json',
+            'body': {'status_code': 200, 'banned_members': sorted([user.session_id, S2])},
+        },
+        {'code': 200, 'content-type': 'application/json', 'body': {'status_code': 200}},
+        {
+            'code': 200,
+            'content-type': 'application/json',
+            'body': {'status_code': 200, 'banned_members': [S2]},
+        },
+        {'code': 200, 'content-type': 'application/json', 'body': {'status_code': 200}},
+        {
+            'code': 200,
+            'content-type': 'application/json',
+            'body': {'status_code': 200, 'banned_members': []},
+        },
+    ]

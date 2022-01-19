@@ -1,4 +1,4 @@
-from flask import abort, request, jsonify
+from flask import abort, request, jsonify, g
 from werkzeug.exceptions import HTTPException
 from ..web import app
 from .. import crypto, config, db, http, utils
@@ -34,7 +34,7 @@ def legacy_check_user_room(
     if the user is not allowed, otherwise returns a pair: the user and room info.
 
     pubkey - the session_id of the user.  If None we verify and extract it from the current
-    request's Authorization header.
+    request's X-SOGS-* headers (if present) or Authorization header.
 
     room_token - the token of the room.  If None we verify and extract it from the current request's
     Room header.
@@ -59,7 +59,10 @@ def legacy_check_user_room(
         raise ValueError("Internal error: no permissions passed to legacy_check_user_room")
 
     if pubkey is None:
-        pubkey = get_pubkey_from_token(request.headers.get("Authorization"))
+        if 'user' in g and g.user:
+            pubkey = g.user.session_id
+        else:
+            pubkey = get_pubkey_from_token(request.headers.get("Authorization"))
     if not pubkey or len(pubkey) != (utils.SESSION_ID_SIZE * 2) or not pubkey.startswith('05'):
         app.logger.warning("cannot get pubkey for checking room permissions")
         abort(http.BAD_REQUEST)
