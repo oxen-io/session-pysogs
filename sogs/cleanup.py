@@ -17,12 +17,12 @@ def cleanup():
             msg_hist = prune_message_history()
             room_act = prune_room_activity()
             perm_upd = apply_permission_updates()
+            exp_nonces = expire_nonce_history()
             app.logger.debug(
-                "Pruned {} files, {} msg hist, {} room activity, {} perm updates".format(
-                    files, msg_hist, room_act, perm_upd
-                )
+                f"Pruned {files} files, {msg_hist} msg hist, {room_act} room activity, "
+                f"{exp_nonces} nonces; applied {perm_upd} perm updates."
             )
-            return (files, msg_hist, room_act, perm_upd)
+            return (files, msg_hist, room_act, perm_upd, exp_nonces)
         except Exception as e:
             app.logger.warning(f"Periodic database cleanup failed: {e}")
             return None
@@ -85,6 +85,10 @@ def prune_room_activity():
     if count > 0:
         app.logger.info("Prune {} old room activity records".format(count))
     return count
+
+
+def expire_nonce_history():
+    return query("DELETE FROM user_request_nonces WHERE expiry < :exp", exp=time.time()).rowcount
 
 
 def apply_permission_updates():

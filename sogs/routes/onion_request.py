@@ -61,7 +61,12 @@ def handle_onionreq_plaintext(body):
                 subreq_headers["Authorization"] = auth_code
 
         response = make_subrequest(
-            method, endpoint, headers=subreq_headers, body=subreq_body, content_type=ct
+            method,
+            endpoint,
+            headers=subreq_headers,
+            body=subreq_body,
+            content_type=ct,
+            user_reauth=True,  # Because onion requests have auth headers on the *inside*
         )
 
         if response.status_code == http.OK:

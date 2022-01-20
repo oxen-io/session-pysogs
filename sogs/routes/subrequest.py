@@ -1,7 +1,7 @@
 from ..web import app
 from .. import http
 
-from flask import request
+from flask import request, g
 from io import BytesIO
 import traceback
 from typing import Optional, Union
@@ -15,6 +15,7 @@ def make_subrequest(
     content_type: Optional[str] = None,
     body: Optional[bytes] = None,
     json: Optional[Union[dict, list]] = None,
+    user_reauth: bool = False,
 ):
     """
     Makes a subrequest from the given parameters, returns the response object.
@@ -28,6 +29,9 @@ def make_subrequest(
     default to 'application/octet-stream'.
     json - a json value to dump as the body of the request.  If specified then content_type will
     default to 'applicaton/json'.
+    user_reauth - if True then we allow user re-authentication on the subrequest based on its
+    X-SOGS-* headers; if False (the default) then the user auth on the outer request is preserved
+    (even if it was None) and inner request auth headers will be ignored.
     """
 
     http_headers = {'HTTP_{}'.format(h.upper().replace('-', '_')): v for h, v in headers.items()}
@@ -76,7 +80,8 @@ def make_subrequest(
     }
 
     try:
-        app.logger.debug(f"Initiating sub=request for {method} {path}")
+        app.logger.debug(f"Initiating sub-request for {method} {path}")
+        g.user_reauth = user_reauth
         with app.request_context(subreq_env):
             response = app.full_dispatch_request()
         if response.status_code != http.OK:

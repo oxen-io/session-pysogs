@@ -938,12 +938,12 @@ class Room:
         it should only be accessed by moderators/admins.
         """
 
-        return [
+        return sorted(
             r[0]
             for r in query(
                 "SELECT session_id FROM user_permissions WHERE room = :r AND banned", r=self.id
             )
-        ]
+        )
 
     def set_permissions(self, user: User, *, mod: User, **perms):
         """
