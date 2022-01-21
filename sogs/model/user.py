@@ -182,6 +182,13 @@ class User:
         """True iff this is the special SOGS system user created for internal database tasks"""
         return self.session_id[0:2] == "ff" and self.session_id[2:] == crypto.server_pubkey_hex
 
+    @property
+    def derived_key(self):
+        """ get the derived key for this user """
+        if self.session_id[0:2] == '15':
+            return self.session_id
+        return crypto.compute_derived_id(self.session_id)
+
 
 class SystemUser(User):
     """
