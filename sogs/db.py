@@ -196,14 +196,10 @@ CREATE TABLE user_request_nonces (
                 """
 CREATE TABLE user_request_nonces (
     "user" BIGINT NOT NULL REFERENCES users ON DELETE CASCADE,
-    nonce BLOB NOT NULL,
+    nonce BYTEA NOT NULL UNIQUE,
     expiry FLOAT NOT NULL DEFAULT (extract(epoch from now() + '24 hours'))
 )
 """
-            )
-            conn.execute(
-                "CREATE UNIQUE INDEX user_request_nonces_nonce"
-                " ON user_request_nonces USING HASH (nonce)"
             )
             conn.execute("CREATE INDEX user_request_nonces_expiry ON user_request_nonces(expiry)")
 
@@ -426,9 +422,9 @@ RETURNS TRIGGER LANGUAGE PLPGSQL AS $$BEGIN
     DELETE FROM pinned_messages WHERE message = OLD.id;
     RETURN NULL;
 END;$$;
-CREATE TRIGGER messages_insert_history AFTER UPDATE OF data ON messages
-FOR EACH ROW WHEN (NEW.data IS DISTINCT FROM OLD.data)
-EXECUTE PROCEDURE trigger_messages_insert_history();
+CREATE TRIGGER messages_after_delete AFTER UPDATE OF data ON messages
+FOR EACH ROW WHEN (NEW.data IS NULL AND OLD.data IS NOT NULL)
+EXECUTE PROCEDURE trigger_messages_after_delete();
 
 CREATE TRIGGER room_metadata_pinned_add AFTER INSERT OR UPDATE ON pinned_messages
 FOR EACH ROW

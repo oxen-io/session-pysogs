@@ -105,9 +105,9 @@ RETURNS TRIGGER LANGUAGE PLPGSQL AS $$BEGIN
     DELETE FROM pinned_messages WHERE message = OLD.id;
     RETURN NULL;
 END;$$;
-CREATE TRIGGER messages_insert_history AFTER UPDATE OF data ON messages
-FOR EACH ROW WHEN (NEW.data IS DISTINCT FROM OLD.data)
-EXECUTE PROCEDURE trigger_messages_insert_history();
+CREATE TRIGGER messages_after_delete AFTER UPDATE OF data ON messages
+FOR EACH ROW WHEN (NEW.data IS NULL AND OLD.data IS NOT NULL)
+EXECUTE PROCEDURE trigger_messages_after_delete();
 
 
 CREATE TABLE files (
@@ -377,10 +377,9 @@ CREATE INDEX user_permissions_future_at ON user_permission_futures(at);
 -- Nonce tracking to prohibit request signature nonce reuse (thus prevent replay attacks)
 CREATE TABLE user_request_nonces (
     "user" BIGINT NOT NULL REFERENCES users ON DELETE CASCADE,
-    nonce BYTEA NOT NULL,
+    nonce BYTEA NOT NULL UNIQUE,
     expiry FLOAT NOT NULL DEFAULT (extract(epoch from now() + '24 hours'))
 );
-CREATE UNIQUE INDEX user_request_nonces_nonce ON user_request_nonces USING HASH (nonce);
 CREATE INDEX user_request_nonces_expiry ON user_request_nonces(expiry);
 
 
