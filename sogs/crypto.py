@@ -66,8 +66,8 @@ def compute_derived_key_bytes(pk_bytes):
     return crypto_scalarmult(server_pubkey_hash_bytes, pk_bytes)
 
 
-def compute_derived_id(session_id, prefix=b'15'):
+def compute_derived_id(session_id, prefix='15'):
     """ compute derived session """
     return prefix + binascii.hexlify(
         compute_derived_key_bytes(decode_hex_or_b64(session_id[2:], 32))
-    )
+    ).decode('ascii')
