@@ -120,8 +120,9 @@ def database_init():
         check_for_hacks,
         seqno_etc_updates,
     ):
-        if migrate(conn):
-            changes = True
+        with transaction(conn):
+            if migrate(conn):
+                changes = True
 
     if changes:
         metadata.clear()
@@ -308,20 +309,19 @@ def seqno_etc_updates(conn):
     if 'seqno' in metadata.tables['messages'].c:
         return False
 
-    with transaction(dbconn=conn):
-        logging.warning("Applying message_sequence renames")
-        conn.execute("ALTER TABLE rooms RENAME COLUMN updates TO message_sequence")
-        conn.execute("ALTER TABLE messages RENAME COLUMN updated TO seqno")
+    logging.warning("Applying message_sequence renames")
+    conn.execute("ALTER TABLE rooms RENAME COLUMN updates TO message_sequence")
+    conn.execute("ALTER TABLE messages RENAME COLUMN updated TO seqno")
 
-        # We can't insert the required pinned_messages because we don't have the pinned_by user, but
-        # that isn't a big deal since we didn't have any endpoints for pinned messsages before this
-        # anyway, so we just recreate the whole thing (along with triggers which we also need to
-        # update/fix)
-        logging.warning("Recreating pinned_messages table")
-        conn.execute("DROP TABLE pinned_messages")
-        if engine.name == 'sqlite':
-            conn.execute(
-                """
+    # We can't insert the required pinned_messages because we don't have the pinned_by user, but
+    # that isn't a big deal since we didn't have any endpoints for pinned messsages before this
+    # anyway, so we just recreate the whole thing (along with triggers which we also need to
+    # update/fix)
+    logging.warning("Recreating pinned_messages table")
+    conn.execute("DROP TABLE pinned_messages")
+    if engine.name == 'sqlite':
+        conn.execute(
+            """
 CREATE TABLE pinned_messages (
     room INTEGER NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
     message INTEGER NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
@@ -330,9 +330,9 @@ CREATE TABLE pinned_messages (
     PRIMARY KEY(room, message)
 )
 """  # noqa: E501
-            )
-            conn.execute(
-                """
+        )
+        conn.execute(
+            """
 CREATE TRIGGER messages_after_delete AFTER UPDATE OF data ON messages
 FOR EACH ROW WHEN NEW.data IS NULL AND OLD.data IS NOT NULL
 BEGIN
@@ -340,39 +340,39 @@ BEGIN
     DELETE FROM pinned_messages WHERE message = OLD.id;
 END
 """
-            )
-            conn.execute(
-                """
+        )
+        conn.execute(
+            """
 CREATE TRIGGER room_metadata_pinned_add AFTER INSERT ON pinned_messages
 FOR EACH ROW
 BEGIN
     UPDATE rooms SET info_updates = info_updates + 1 WHERE id = NEW.room;
 END
 """
-            )
-            conn.execute(
-                """
+        )
+        conn.execute(
+            """
 CREATE TRIGGER room_metadata_pinned_update AFTER UPDATE ON pinned_messages
 FOR EACH ROW
 BEGIN
     UPDATE rooms SET info_updates = info_updates + 1 WHERE id = NEW.room;
 END
 """
-            )
-            conn.execute(
-                """
+        )
+        conn.execute(
+            """
 CREATE TRIGGER room_metadata_pinned_remove AFTER DELETE ON pinned_messages
 FOR EACH ROW
 BEGIN
     UPDATE rooms SET info_updates = info_updates + 1 WHERE id = OLD.room;
 END
 """
-            )
+        )
 
-            logging.warning("Fixing user_permissions view")
-            conn.execute("DROP VIEW IF EXISTS user_permissions")
-            conn.execute(
-                """
+        logging.warning("Fixing user_permissions view")
+        conn.execute("DROP VIEW IF EXISTS user_permissions")
+        conn.execute(
+            """
 CREATE VIEW user_permissions AS
 SELECT
     rooms.id AS room,
@@ -399,12 +399,12 @@ FROM
     users JOIN rooms LEFT OUTER JOIN user_permission_overrides ON
         users.id = user_permission_overrides.user AND rooms.id = user_permission_overrides.room
 """  # noqa: E501
-            )
+        )
 
-        else:  # postgresql
-            logging.warning("Recreating pinned_messages table")
-            conn.execute(
-                """
+    else:  # postgresql
+        logging.warning("Recreating pinned_messages table")
+        conn.execute(
+            """
 CREATE TABLE pinned_messages (
     room BIGINT NOT NULL REFERENCES rooms ON DELETE CASCADE,
     message BIGINT NOT NULL REFERENCES rooms ON DELETE CASCADE,
@@ -434,11 +434,11 @@ CREATE TRIGGER room_metadata_pinned_remove AFTER DELETE ON pinned_messages
 FOR EACH ROW
 EXECUTE PROCEDURE trigger_room_metadata_info_update_old();
 """
-            )
+        )
 
-            logging.warning("Fixing user_permissions view")
-            conn.execute(
-                """
+        logging.warning("Fixing user_permissions view")
+        conn.execute(
+            """
 CREATE OR REPLACE VIEW user_permissions AS
 SELECT
     rooms.id AS room,
@@ -465,7 +465,7 @@ FROM
     users CROSS JOIN rooms LEFT OUTER JOIN user_permission_overrides ON
         (users.id = user_permission_overrides."user" AND rooms.id = user_permission_overrides.room);
 """  # noqa: E501
-            )
+        )
 
     return True
 
