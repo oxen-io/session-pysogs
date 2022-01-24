@@ -72,32 +72,32 @@ def test_info(room):
     assert inf['description'] == 'Test suite testing room'
     assert abs(inf['created'] - time.time()) <= 1
     assert 'image_id' not in inf
-    assert inf['updates'] == 0
+    assert inf['message_sequence'] == 0
     assert inf['info_updates'] == 0
 
 
 def test_updates(room):
 
-    assert room.updates == 0 and room.info_updates == 0 and room.name == 'Test room'
+    assert room.message_sequence == 0 and room.info_updates == 0 and room.name == 'Test room'
 
     room.name = 'Test Room'
     assert room.name == 'Test Room'
-    assert room.updates == 1
+    assert room.message_sequence == 0
     assert room.info_updates == 1
 
     room.description = 'new desc'
     assert room.description == 'new desc'
-    assert room.updates == 2
+    assert room.message_sequence == 0
     assert room.info_updates == 2
 
     room.token = 'new-token'
     assert room.token == 'new-token'
     # update counts not altered; see the attribute in model/room.py for why
-    assert room.updates == 2
+    assert room.message_sequence == 0
     assert room.info_updates == 2
 
     r2 = Room(id=room.id)
-    assert r2.updates == 2
+    assert r2.message_sequence == 0
     assert r2.info_updates == 2
     assert r2.name == 'Test Room' and r2.description == 'new desc' and r2.token == 'new-token'
 
@@ -430,21 +430,16 @@ def test_mods(room, user, user2, mod, admin, global_mod, global_admin):
     assert room.check_admin(user2)
 
     # Public mod list should only include mod and admin; the global ones are hidden as is user2
-    vis_mods = [x.session_id for x in (mod, admin)]
-    vis_mods.sort()
-    all_mods = [x.session_id for x in (mod, admin, user2, global_mod, global_admin)]
-    all_mods.sort()
+    vis_mods = [mod.session_id]
+    vis_admins = [admin.session_id]
+    hidden_mods = [global_mod.session_id]
+    hidden_admins = sorted(x.session_id for x in (user2, global_admin))
 
-    assert room.get_mods() == vis_mods
-    assert room.get_mods(user) == vis_mods
-    assert room.get_mods(mod) == vis_mods
-    assert room.get_mods(user2) == all_mods
-    assert room.get_mods(global_admin) == all_mods
-
-    # A moderator only sees visible mods, but always including themself (whether or not visible)
-    assert room.get_mods(global_mod) == sorted(vis_mods + [global_mod.session_id])
-
-    # Make global_mod a visible moderator
+    assert room.get_mods() == (vis_mods, vis_admins, [], [])
+    assert room.get_mods(user) == (vis_mods, vis_admins, [], [])
+    assert room.get_mods(mod) == (vis_mods, vis_admins, hidden_mods, hidden_admins)
+    assert room.get_mods(user2) == (vis_mods, vis_admins, hidden_mods, hidden_admins)
+    assert room.get_mods(global_admin) == (vis_mods, vis_admins, hidden_mods, hidden_admins)
 
 
 def test_upload(room, user):
@@ -555,3 +550,66 @@ def test_image_expiries(room, user):
     assert f2.filename == 'def.txt'
 
     assert f1.expiry is not None
+
+
+def test_pinning(room, user, mod, admin, global_admin, no_rate_limit):
+    msgs = [room.add_post(user, f"data {i}".encode(), "sig {i}".encode()) for i in range(1, 10)]
+
+    with pytest.raises(exc.BadPermission):
+        room.pin(msgs[3]['id'], user)
+    with pytest.raises(exc.BadPermission):
+        room.pin(msgs[4]['id'], mod)
+    room.pin(msgs[5]['id'], admin)
+    assert msgs[5]['id'] == 6
+
+    assert -1 < room.pinned_messages[0]['pinned_at'] - time.time() < 1
+    del room.pinned_messages[0]['pinned_at']
+    assert room.pinned_messages == [{"id": 6, "pinned_by": admin.session_id}]
+
+    time.sleep(0.001)
+
+    room.pin(7, global_admin)
+    assert (
+        time.time() - 1
+        < room.pinned_messages[0]['pinned_at']
+        < room.pinned_messages[1]['pinned_at']
+        < time.time() + 1
+    )
+    old_ts_t = room.pinned_messages[1]['pinned_at']
+    rpm = room.pinned_messages.copy()
+    for pm in rpm:
+        del pm['pinned_at']
+    assert rpm == [
+        {"id": 6, "pinned_by": admin.session_id},
+        {"id": 7, "pinned_by": global_admin.session_id},
+    ]
+
+    time.sleep(0.001)
+    # Re-pin (will update its pinned timestamp and thus implicit reorder, along with pinned_by)
+    room.pin(6, global_admin)
+
+    assert (
+        time.time() - 1
+        < room.pinned_messages[0]['pinned_at']
+        < room.pinned_messages[1]['pinned_at']
+        < time.time() + 1
+    )
+    assert old_ts_t == room.pinned_messages[0]['pinned_at']
+    rpm = room.pinned_messages.copy()
+    for pm in rpm:
+        del pm['pinned_at']
+    assert rpm == [
+        {"id": 7, "pinned_by": global_admin.session_id},
+        {"id": 6, "pinned_by": global_admin.session_id},
+    ]
+
+    # Non-existant id should fail
+    with pytest.raises(exc.NoSuchPost):
+        room.pin(123, admin)
+
+    # Pinning some other room's message should fail
+    r2 = Room.create('test-room-2', name='Test room 2', description='Test suite testing room')
+    with pytest.raises(exc.NoSuchPost):
+        r2.pin(7, global_admin)
+
+    assert not r2.pinned_messages

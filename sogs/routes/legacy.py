@@ -242,7 +242,7 @@ def handle_one_compact_poll(req):
 
     deletions = get_deletions_deprecated(room, req.get('from_deletion_server_id'))
 
-    mods = room.get_mods(user)
+    mods = sorted(session_id for moderators in room.get_mods(user) for session_id in moderators)
 
     return {
         'status_code': http.OK,
@@ -283,7 +283,7 @@ def handle_legacy_store_file():
 
 @legacy.post("/rooms/<Room:room>/image")
 def handle_legacy_upload_room_image(room):
-    user, room = legacy_check_user_room(write=True, upload=True, moderator=True)
+    user, room = legacy_check_user_room(admin=True)
     file_id = process_legacy_file_upload_for_room(user, room, lifetime=None)
     room.image = file_id
     return jsonify({'status_code': http.OK, 'result': file_id})
@@ -375,7 +375,7 @@ def handle_legacy_banlist():
 def handle_legacy_get_mods():
     user, room = legacy_check_user_room(read=True)
 
-    mods = room.get_mods(user)
+    mods = sorted(session_id for moderators in room.get_mods(user) for session_id in moderators)
     return jsonify({"status_code": http.OK, "moderators": mods})
 
 

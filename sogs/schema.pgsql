@@ -10,11 +10,11 @@ CREATE TABLE rooms (
     description TEXT, /* Publicly visible room description */
     image BIGINT, /* foreign key to files(id) */
     created FLOAT NOT NULL DEFAULT (extract(epoch from now())),
-    updates BIGINT NOT NULL DEFAULT 0, /* +1 for each new message, edit or deletion */
+    message_sequence BIGINT NOT NULL DEFAULT 0, /* monotonic current top message.seqno value: +1 for each new message, edit or deletion */
     info_updates BIGINT NOT NULL DEFAULT 0, /* +1 for any room metadata update (name/desc/image/pinned/mods) */
     read BOOLEAN NOT NULL DEFAULT TRUE, /* Whether users can read by default */
     write BOOLEAN NOT NULL DEFAULT TRUE, /* Whether users can post by default */
-    upload BOOLEAN NOT NULL DEFAULT TRUE, /* Whether file uploads are allowed */
+    upload BOOLEAN NOT NULL DEFAULT TRUE, /* Whether file uploads are allowed by default */
     CHECK(token SIMILAR TO '[a-zA-Z0-9_-]+')
 );
 CREATE INDEX rooms_token ON rooms(token);
@@ -35,7 +35,7 @@ CREATE TABLE messages (
     "user" BIGINT NOT NULL, /* foreign key to users(id) */
     posted FLOAT NOT NULL DEFAULT (extract(epoch from now())),
     edited FLOAT,
-    updated BIGINT NOT NULL DEFAULT 0, /* set to the room's `updates` counter when posted/edited/deleted */
+    seqno BIGINT NOT NULL DEFAULT 0, /* set to the room's `message_seqno` counter when posted/edited/deleted */
     data BYTEA, /* Actual message content, not including trailing padding; set to null to delete a message */
     data_size BIGINT, /* The message size, including trailing padding (needed because the signature is over the padded data) */
     signature BYTEA, /* Signature of `data` by `public_key`; set to null when deleting a message */
@@ -44,7 +44,7 @@ CREATE TABLE messages (
     whisper_mods BOOLEAN NOT NULL DEFAULT FALSE /* If true: this is a whisper that all mods should see (may or may not have a `whisper` target) */
 );
 CREATE INDEX messages_room ON messages(room, posted);
-CREATE INDEX messages_updated ON messages(room, updated);
+CREATE INDEX messages_updated ON messages(room, seqno);
 CREATE INDEX messages_id ON messages(room, id);
 
 CREATE TABLE message_history (
@@ -56,12 +56,12 @@ CREATE TABLE message_history (
 CREATE INDEX message_history_message ON message_history(message);
 CREATE INDEX message_history_replaced ON message_history(replaced);
 
--- Trigger to increment a room's `updates` counter and assign it to the messages `updated` field for
--- new messages.
+-- Trigger to increment a room's `message_sequence` counter and assign it to the messages `seqno`
+-- field for new messages.
 CREATE OR REPLACE FUNCTION trigger_messages_insert_counter()
 RETURNS TRIGGER LANGUAGE PLPGSQL AS $$BEGIN
-    UPDATE rooms SET updates = updates + 1 WHERE id = NEW.room;
-    UPDATE messages SET updated = (SELECT updates FROM rooms WHERE id = NEW.room) WHERE id = NEW.id;
+    UPDATE rooms SET message_sequence = message_sequence + 1 WHERE id = NEW.room;
+    UPDATE messages SET seqno = (SELECT message_sequence FROM rooms WHERE id = NEW.room) WHERE id = NEW.id;
     RETURN NULL;
 END;$$;
 CREATE TRIGGER messages_insert_counter AFTER INSERT ON messages
@@ -69,15 +69,15 @@ FOR EACH ROW EXECUTE PROCEDURE trigger_messages_insert_counter();
 
 -- Trigger to do various tasks needed when a message is edited/deleted:
 -- * record the old value into message_history
--- * update the room's `updates` counter (so that clients can learn about the update)
--- * update the message's `updated` value to that new counter
+-- * update the room's `message_sequence` counter (so that clients can learn about the update)
+-- * update the message's `seqno` value to that new counter
 -- * update the message's `edit` timestamp
 CREATE OR REPLACE FUNCTION trigger_messages_insert_history()
 RETURNS TRIGGER LANGUAGE PLPGSQL AS $$BEGIN
     INSERT INTO message_history (message, data, signature) VALUES (NEW.id, OLD.data, OLD.signature);
-    UPDATE rooms SET updates = updates + 1 WHERE id = NEW.room;
+    UPDATE rooms SET message_sequence = message_sequence + 1 WHERE id = NEW.room;
     UPDATE messages SET
-        updated = (SELECT updates FROM rooms WHERE id = NEW.room),
+        seqno = (SELECT message_sequence FROM rooms WHERE id = NEW.room),
         edited = (extract(epoch from now()))
     WHERE id = NEW.id;
     RETURN NULL;
@@ -91,29 +91,24 @@ EXECUTE PROCEDURE trigger_messages_insert_history();
 CREATE TABLE pinned_messages (
     room BIGINT NOT NULL REFERENCES rooms ON DELETE CASCADE,
     message BIGINT NOT NULL REFERENCES rooms ON DELETE CASCADE,
-    updated BIGINT NOT NULL  DEFAULT 0, /* set to the room's `info_updated` counter when pinned (used for ordering). */
+    pinned_by BIGINT NOT NULL REFERENCES users,
+    pinned_at FLOAT NOT NULL DEFAULT (extract(epoch from now())),
     PRIMARY KEY(room, message)
 );
 
 
--- Trigger to handle moving a message from one room to another; we reset the posted time to now, and
--- reset the updated value to the new room's value so that the moved message is treated as a brand new message in
--- the new room.  We also clear the message as the pinned message from the moved-from room.
--- FIXME TODO: this isn't right because the old room won't have any record of it being moved, and so
--- clients won't know that they should remove it.  Perhaps instead we should implement moving as a
--- delete + reinsert, via a INSTEAD OF trigger.
-/*
-CREATE OR REPLACE FUNCTION trigger_message_mover()
+-- Trigger to handle required updates after a message gets deleted (in the SOGS context: that is,
+-- has data set to NULL)
+CREATE OR REPLACE FUNCTION trigger_messages_after_delete()
 RETURNS TRIGGER LANGUAGE PLPGSQL AS $$BEGIN
-    UPDATE messages SET posted = (extract(epoch from now())), updated = FALSE
-        WHERE messages.id = NEW.id;
-    UPDATE rooms SET pinned = NULL WHERE id = OLD.room AND pinned = OLD.id;
+    -- Unpin if we deleted a pinned message:
+    DELETE FROM pinned_messages WHERE message = OLD.id;
     RETURN NULL;
 END;$$;
-CREATE TRIGGER message_mover AFTER UPDATE OF room ON messages
-FOR EACH ROW WHEN (NEW.room != OLD.room)
-EXECUTE PROCEDURE trigger_message_mover();
-*/
+CREATE TRIGGER messages_insert_history AFTER UPDATE OF data ON messages
+FOR EACH ROW WHEN (NEW.data IS DISTINCT FROM OLD.data)
+EXECUTE PROCEDURE trigger_messages_insert_history();
+
 
 CREATE TABLE files (
     id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
@@ -199,7 +194,7 @@ EXECUTE PROCEDURE trigger_message_details_deleter();
 -- View of `messages` that is useful for manually inspecting table contents by only returning the
 -- length (rather than raw bytes) for data/signature.
 CREATE VIEW message_metadata AS
-SELECT id, room, "user", session_id, posted, edited, updated, whisper_to,
+SELECT id, room, "user", session_id, posted, edited, seqno, whisper_to,
         length(data) AS data_unpadded, data_size, length(signature) as signature_length
     FROM message_details;
 
@@ -269,7 +264,7 @@ EXECUTE PROCEDURE trigger_room_users_remove_banned();
 -- Triggers to update `rooms.info_updates` on metadata column changes
 CREATE OR REPLACE FUNCTION trigger_room_metadata_update()
 RETURNS TRIGGER LANGUAGE PLPGSQL AS $$BEGIN
-    UPDATE rooms SET updates = updates + 1, info_updates = info_updates + 1 WHERE id = NEW.id;
+    UPDATE rooms SET info_updates = info_updates + 1 WHERE id = NEW.id;
     RETURN NULL;
 END;$$;
 CREATE TRIGGER room_metadata_update AFTER UPDATE ON rooms
@@ -323,15 +318,9 @@ FOR EACH ROW WHEN ((OLD.moderator OR OLD.admin) AND OLD.visible_mod)
 EXECUTE PROCEDURE trigger_room_metadata_info_update_all();
 
 -- Triggers for change to pinned messages
-CREATE OR REPLACE FUNCTION trigger_room_metadata_pinned_add()
-RETURNS TRIGGER LANGUAGE PLPGSQL AS $$BEGIN
-    UPDATE rooms SET info_updates = info_updates + 1 WHERE id = NEW.room;
-    UPDATE pinned_messages SET updated = (SELECT info_updates FROM rooms WHERE id = NEW.room) WHERE id = NEW.id;
-    RETURN NULL;
-END;$$;
-CREATE TRIGGER room_metadata_pinned_add AFTER INSERT ON pinned_messages
+CREATE TRIGGER room_metadata_pinned_add AFTER INSERT OR UPDATE ON pinned_messages
 FOR EACH ROW
-EXECUTE PROCEDURE trigger_room_metadata_pinned_add();
+EXECUTE PROCEDURE trigger_room_metadata_info_update_new();
 
 CREATE TRIGGER room_metadata_pinned_remove AFTER DELETE ON pinned_messages
 FOR EACH ROW
@@ -348,9 +337,9 @@ SELECT
     users.id AS "user",
     users.session_id,
     CASE WHEN users.banned THEN TRUE ELSE COALESCE(user_permission_overrides.banned, FALSE) END AS banned,
-    COALESCE(user_permission_overrides.read, rooms.read) AS read,
-    COALESCE(user_permission_overrides.write, rooms.write) AS write,
-    COALESCE(user_permission_overrides.upload, rooms.upload) AS upload,
+    CASE WHEN users.moderator THEN TRUE ELSE COALESCE(user_permission_overrides.read, rooms.read) END AS read,
+    CASE WHEN users.moderator THEN TRUE ELSE COALESCE(user_permission_overrides.write, rooms.write) END AS write,
+    CASE WHEN users.moderator THEN TRUE ELSE COALESCE(user_permission_overrides.upload, rooms.upload) END AS upload,
     CASE WHEN users.moderator THEN TRUE ELSE COALESCE(user_permission_overrides.moderator, FALSE) END AS moderator,
     CASE WHEN users.admin THEN TRUE ELSE COALESCE(user_permission_overrides.admin, FALSE) END AS admin,
     -- room_moderator will be TRUE if the user is specifically listed as a moderator of the room

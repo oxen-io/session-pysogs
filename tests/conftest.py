@@ -8,6 +8,11 @@ from sogs import web  # noqa: E402
 from sogs.model.room import Room  # noqa: E402
 from sogs.model.user import SystemUser  # noqa: E402
 
+import sogs.omq  # noqa: E402
+
+
+sogs.omq.test_suite = True
+
 
 def pytest_addoption(parser):
     parser.addoption(
@@ -127,6 +132,17 @@ def global_mod(db):
     u = user.User()
     u.set_moderator(added_by=SystemUser())
     return u
+
+
+@pytest.fixture
+def no_rate_limit():
+    """Disables post rate limiting for the test"""
+    import sogs.model.room as mroom
+
+    saved = (mroom.rate_limit_size, mroom.rate_limit_interval)
+    mroom.rate_limit_size, mroom.rate_limit_interval = None, None
+    yield None
+    mroom.rate_limit_size, mroom.rate_limit_interval = saved
 
 
 web.app.config.update({'TESTING': True})
