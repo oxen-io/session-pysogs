@@ -3,13 +3,22 @@ from ..web import app
 from .. import config, crypto, http, utils
 from ..model.room import get_readable_rooms
 
-from . import auth, converters, general, legacy, onion_request  # noqa: F401
+from . import auth, converters  # noqa: F401
+
+from .legacy import legacy as legacy_endpoints
+from .general import general as general_endpoints
+from .onion_request import onion_request as onion_request_endpoints
 
 from io import BytesIO
 
 import qrencode
 
 from PIL.Image import NEAREST
+
+
+app.register_blueprint(legacy_endpoints)
+app.register_blueprint(general_endpoints)
+app.register_blueprint(onion_request_endpoints)
 
 
 @app.get("/")

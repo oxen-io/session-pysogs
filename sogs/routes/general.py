@@ -4,12 +4,14 @@ from .. import http
 from .. import utils
 from .subrequest import make_subrequest
 
-from flask import request, abort, jsonify
+from flask import request, abort, jsonify, Blueprint
 
 # General purpose routes for things like capability retrieval and batching
 
+general = Blueprint('general', __name__)
 
-@app.get("/capabilities")
+
+@general.get("/capabilities")
 def get_caps():
     """
     Return the list of server features/capabilities.  Optionally takes a required= parameter
@@ -114,7 +116,7 @@ def parse_batch_req(r):
     return method, path, headers, json, body
 
 
-@app.post("/batch")
+@general.post("/batch")
 def batch(_sequential=False):
     """
     Submits multiple requests wrapped up in a single request, runs them all, then returns the result
@@ -162,7 +164,7 @@ def batch(_sequential=False):
     return utils.jsonify_with_base64(response)
 
 
-@app.post("/sequence")
+@general.post("/sequence")
 def sequence():
     """
     This is like batch, except that it guarantees to submit requests sequentially in the order
