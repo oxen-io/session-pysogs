@@ -34,6 +34,14 @@ class NoSuchUser(NotFound):
         super().__init__(f"No such user: {session_id}")
 
 
+class NoSuchPost(NotFound):
+    """Thrown when attempting to retrieve or reference a post that doesn't exist"""
+
+    def __init__(self, id):
+        self.id = id
+        super().__init__(f"No such post: {id}")
+
+
 class AlreadyExists(RuntimeError):
     """
     Thrown when attempting to create a record (e.g. a Room) that already exists.

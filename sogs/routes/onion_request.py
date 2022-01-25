@@ -1,10 +1,12 @@
-from flask import request, abort
+from flask import request, abort, Blueprint
 import json
 
 from ..web import app
 from .. import crypto, http, utils
 
 from .subrequest import make_subrequest
+
+onion_request = Blueprint('onion_request', __name__)
 
 
 def handle_onionreq_plaintext(body):
@@ -82,8 +84,8 @@ def handle_onionreq_plaintext(body):
         return json.dumps({'status_code': http.BAD_REQUEST}).encode()
 
 
-@app.post("/oxen/v3/lsrpc")
-@app.post("/loki/v3/lsrpc")
+@onion_request.post("/oxen/v3/lsrpc")
+@onion_request.post("/loki/v3/lsrpc")
 def handle_onion_request():
     """
     Parse an onion request, handle it as a subrequest, then encrypt the subrequest result and send

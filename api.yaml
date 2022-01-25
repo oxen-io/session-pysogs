@@ -66,7 +66,7 @@ paths:
             Forbidden. Returned if the user is banned from the room or otherwise does not have read
             access to the room.
           content: {}
-  /room/{roomToken}/pollInfo:
+  /room/{roomToken}/pollInfo/{info_updated}:
     get:
       tags: [Rooms]
       summary: Polls a room for metadata updates.
@@ -74,28 +74,32 @@ paths:
         - $ref: "#/components/parameters/pathRoomToken"
         - name: info_updated
           description: >
-            The client's current `info_updates` value for the room.  The full room metadata is
-            returned in the response if the room's last update count does not equal the given value.
-          in: query
+            The client's currently cached `info_updates` value for the room.  The full room metadata
+            is returned in the response if and only if the room's last update count does not equal
+            the given value.
+          in: path
           required: true
           schema:
             type: integer
             format: int64
           example: 4567
       description: >
-        Retrives room metadata for this room, including the instantaneous room details (such as the
-        user's permission and current number of active users)
+        Polls room metadata for this room, always including the instantaneous room details (such as
+        the user's permission and current number of active users), and including the full room
+        metadata if the room's info_updated counter has changed from the provided value.
         
       responses:
         200:
           description: >
             Results of polling the room for updated information.  This endpoint always returns
             ephemeral data, such as the number of active users and the current user's permissions,
-            and will include the full room details if changed since the client's last update.
+            and will include the full room details if and only if it has changed (i.e. info_updates
+            does not match) from the `info_updated` value provided by the requestor.
             
             
-            Note that the `details` field is only present and populated if it differs from the
-            provided `info_updated` value; otherwise the values are unchanged and so it is omitted.
+            Note that the `details` field is only present and populated if the room's `info_updates`
+            counter differs from the provided `info_updated` value; otherwise the values are
+            unchanged and so it is omitted.
           content:
             application/json:
               schema:
@@ -111,8 +115,14 @@ paths:
                     $ref: "#/components/schemas/Room/properties/write"
                   upload:
                     $ref: "#/components/schemas/Room/properties/upload"
-                  info_updates:
-                    $ref: "#/components/schemas/Room/properties/info_updates"
+                  moderator:
+                    $ref: "#/components/schemas/Room/properties/moderator"
+                  admin:
+                    $ref: "#/components/schemas/Room/properties/admin"
+                  global_moderator:
+                    $ref: "#/components/schemas/Room/properties/global_moderator"
+                  global_admin:
+                    $ref: "#/components/schemas/Room/properties/global_admin"
                   details:
                     allOf:
                       - $ref: "#/components/schemas/Room"
@@ -209,6 +219,7 @@ paths:
       summary: Returns a single posted message by ID.
       parameters:
         - $ref: "#/components/parameters/pathRoomToken"
+        - $ref: "#/components/parameters/pathMessageId"
         - name: messageId
           in: path
           description: ID of the message to retrieve.
@@ -338,26 +349,27 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/Message'
-  /room/{roomToken}/messages/since/{updateId}:
+  /room/{roomToken}/messages/since/{messageSequence}:
     get:
       tags: [Messages]
       summary: "Retrieves message updates from a room."
       description: >
         This endpoint retrieves new, edited, and deleted messages posted to this room since the
-        given update id.  Returns `limit` messages at a time (100 if no limit is given).  Returned
-        messages include any new messages, updates to existing messages (i.e. edits), and message
-        deletions made to the room since the given update id.  Messages are returned in "update"
-        order, that is, in the order in which the change was applied to the room, from oldest the
-        newest.
+        given message sequence counter.  Returns `limit` messages at a time (100 if no limit is
+        given).  Returned messages include any new messages, updates to existing messages (i.e.
+        edits), and message deletions made to the room since the given update id.  Messages are
+        returned in "update" order, that is, in the order in which the change was applied to the
+        room, from oldest the newest.
       parameters:
         - $ref: "#/components/parameters/pathRoomToken"
         - $ref: "#/components/parameters/queryMessagesLimit"
-        - name: updateId
+        - name: messageSequence
           in: path
           required: true
           description: >
-            The update id from which to retrieve message updates.  To retrieve from the beginning of
-            the room's message history use a value of 0 (the first room update will always be >= 1).
+            The message.seqno value from which to retrieve message updates.  To retrieve from the
+            beginning of the room's message history use a value of 0 (the first room post will
+            always be >= 1).  When polling for updates use the last message.seqno value retrieved.
           schema:
             type: integer
             format: int64
@@ -380,6 +392,91 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/Message'
+
+  /room/{roomToken}/pin/{messageId}:
+    post:
+      tags: [Rooms]
+      summary: "Pin a message in this room"
+      description: >
+        Adds a pinned message to this room.  Any existing pinned messages are not removed.  (If you
+        want to remove existing pins then build a sequence request that first calls .../unpin/all).
+        
+        
+        The user must have admin (not just moderator) permissions in the room.
+        
+        
+        Pinned messages that are already pinned will be re-pinned (that is, their pin timestamp and
+        pinning admin user will be updated).  Because pinned messages are returned in pinning-order
+        this allows admins to order multiple pinned messages in a room by re-pinning (via this
+        endpoint) in the order in which pinned messages should be displayed.
+      parameters:
+        - $ref: "#/components/parameters/pathRoomToken"
+        - $ref: "#/components/parameters/pathMessageId"
+      requestBody:
+        description: json dict.  Currently unused and should be an empty dict.
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        200:
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+        403:
+          description: permission denied: the calling user does not have room admin permission
+        404:
+          description: >
+            The given post was not found in this room or is ineligible for pinning (e.g. a whisper,
+            deleted post, or filtered message).
+
+
+  /room/{roomToken}/unpin/{messageId}:
+    post:
+      tags: [Rooms]
+      summary: "Remove a pinned message from this room"
+      description: >
+        Removes a pinned message from this room, if pinned.
+        
+        
+        The user must have admin (not just moderator) permissions in the room.
+      parameters:
+        - $ref: "#/components/parameters/pathRoomToken"
+        - $ref: "#/components/parameters/pathMessageId"
+      responses:
+        200:
+          description: successful operation (or the message was not pinned in the first place).
+          content:
+            application/json:
+              schema:
+                type: object
+        403:
+          description: permission denied: the calling user does not have room admin permission
+
+  /room/{roomToken}/unpin/all:
+    post:
+      tags: [Rooms]
+      summary: "Removes all pinned messages from this room"
+      description: >
+        Removes all pinned messages from this room.
+        
+        
+        The user must have admin (not just moderator) permissions in the room.
+      parameters:
+        - $ref: "#/components/parameters/pathRoomToken"
+      responses:
+        200:
+          description: successful operation: the room now has no pinned messages.
+          content:
+            application/json:
+              schema:
+                type: object
+        403:
+          description: permission denied: the calling user does not have room admin permission
+
   /room/{roomToken}/file:
     post:
       tags: [Files]
@@ -451,8 +548,9 @@ paths:
       description: >
         This is less efficient when a binary upload is possible because the body must be passed as
         base64-encoded data (which is 33% larger).  The user must have upload and posting
-        permissions for the room.  The file will have a default lifetime of 1 hour, but that is
-        extended to 15 days when the containing message referencing the upload is submitted.
+        permissions for the room.  [NOT YET IMPLEMENTED: The file will have a default lifetime of 1
+          hour, but that is extended to 15 days when the containing message referencing the upload
+          is submitted.]
       parameters:
       - $ref: "#/components/parameters/pathRoomToken"
       requestBody:
@@ -565,7 +663,8 @@ paths:
             Expires:
               description: >
                 The HTTP timestamp at which the file is scheduled to expire.  This header is omitted
-                if the attachment is non-expiring (e.g. for attachments in a pinned message).
+                if the attachment is non-expiring (e.g. for attachments in a pinned message [NOT YET
+                IMPLEMENTED]).
               schema:
                 type: string
                 example: "Fri, 22 Oct 2021 00:42:42 GMT"
@@ -577,9 +676,8 @@ paths:
         403:
           $ref: "#/paths/~1room~1%7BroomToken%7D~1file~1%7BfileId%7D/get/responses/403"
         404:
-          $ref: "#/paths/~1room~1%7BroomToken%7D~1file~1%7BfileId%7D/get/responses/403"
+          $ref: "#/paths/~1room~1%7BroomToken%7D~1file~1%7BfileId%7D/get/responses/404"
 
-                    
   /user/{sessionId}/ban:
     post:
       tags: [Users]
@@ -834,7 +932,8 @@ paths:
                   description: >
                     If `true` then this user will be granted moderator and admin permissions to the
                     given rooms or server.  Admin permissions are required to appoint new moderators
-                    or administrators.
+                    or administrators and to alter room info such as the image, adding/removing
+                    pinned messages, and changing the name/description of the room.
                     
                     
                     If false then this user will have their admin permission removed, but will
@@ -1156,13 +1255,13 @@ components:
           description: >
             Monotonic room information counter that increases each time the room's metadata changes.
           example: 12345
-        updates:
+        message_sequence:
           type: integer
           format: int64
           description: >
             Monotonic room post counter that increases each time a message is posted, edited, or
-            deleted in this room.  (Note that changes to this field do *not* update the room's
-            `info_updates` value.)
+            deleted in this room.  (Note that changes to this field do *not* imply an update the
+            room's `info_updates` value, nor vice versa)
           example: 567890
         created:
           type: number
@@ -1170,7 +1269,8 @@ components:
           description: Unix timestamp when the room was created
           example: 1633629915.34607
         active_users:
-          type: object
+          type: integer
+          format: int64
           description: >
             Number of recently active users in the room over recent time periods.
             
@@ -1180,24 +1280,13 @@ components:
             
             
             Note that changes to this field do *not* update the room's `info_updates` value.
-          properties:
-            hour:
-              type: integer
-              format: int64
-              description: "Number of active users in the past hour."
-            day:
-              type: integer
-              format: int64
-              description: "Number of active users in the past 24 hours."
-            week:
-              type: integer
-              format: int64
-              description: "Number of active users in the past week."
-            month:
-              type: integer
-              format: int64
-              description: "Number of active users in the past 30 days."
-          example: { hour: 842, day: 1917, week: 3481, month: 5609 }
+          example: 4567
+        active_users_cutoff:
+          type: integer
+          format: int64
+          description: >
+            The length of time (in seconds) of the active users cutoff.  Defaults to a week
+            (604800), but the open group admin can set it to some other threshold.
         image_id:
           type: integer
           format: int64
@@ -1207,17 +1296,34 @@ components:
         pinned_messages:
           type: array
           items:
-            type: integer
-            format: int64
+          type: object
+          properties:
+            id:
+              type: integer
+              format: int64
+              description: The numeric message id.
+            pinned_at:
+              type: number
+              format: double
+              description: >
+                Unix timestamp of when the message was pinned.
+            pinned_by:
+              allOf:
+                - $ref: "#/components/schemas/SessionID"
+                - type: object
+                  description: >
+                    The session ID of the moderator who pinned this message.
           description: >
-            IDs of this room's pinned messages, in order of when they were pinned.
-          example: [512, 4998, 11]
+            This room's pinned messages, in order of when they were pinned.  Omitted entirely if
+            there are no pinned messages.
+          example: [{"id": 512, "pinned_at", 1642701309.5007384, "pinned_by": "050123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}]
         moderators:
           type: array
           items:
             type: string
           description: >
-            Session IDs of the room's public moderators.
+            Session IDs of the room's publicly viewable moderators.  This does not include room
+            administrators or hidden moderators.
           example:
             - "050123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
             - "05fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
@@ -1226,17 +1332,18 @@ components:
           items:
             type: string
           description: >
-            Session IDs of the room's public administrators.  (Administrators are moderators who
-            also have permission to add or remove other moderators.)
+            Session IDs of the room's publicly viewable administrators.  (Administrators are
+            moderators who also have permission to add or remove other moderators.)
           example:
             - "050123456776543210012345677654321001234567765432100123456776543210"
-        hidden_mods:
+        hidden_moderators:
           type: array
           items:
             type: string
           description: >
             Session IDs of moderators who are not publicly displayed as moderators of the room.
-            This field is only present if the requestor is a moderator/admin of the room or server.
+            This field is omitted if the requestor is not a moderator/admin of the room or server,
+            or if the list is empty.
           example:
             - "0589abcdeffedcba9889abcdeffedcba9889abcdeffedcba9889abcdeffedcba98"
         hidden_admins:
@@ -1245,7 +1352,8 @@ components:
             type: string
           description: >
             Session IDs of admins who are not publicly displayed as administrators of the room.
-            This field is only present if the requestor is a moderator/admin of the room or server.
+            This field is omitted if the requestor is not a moderator/admin of the room or server,
+            or if the list is empty.
           example:
             - "050011223344556677001122334455667700112233445566770011223344556677"
         moderator:
@@ -1260,23 +1368,35 @@ components:
             Will be set to true if the requestor is recognized with admin permissions in the room.
             Omitted otherwise.
           example: true
+        global_moderator:
+          type: boolean
+          description: >
+            Will be set to true if the requestor is recognized with global moderator permissions in
+            all rooms.  Omitted otherwise.
+          example: true
+        global_admin:
+          type: boolean
+          description: >
+            Will be set to true if the requestor is recognized with global admin permissions in all
+            rooms.  Omitted otherwise.
+          example: true
         read:
           type: boolean
           description: >
-            Whether the user has permission to read messages in the room.  (Note that changes to
-            this property do not cause an `info_update` increment.)
+            Whether the requesting user has permission to read messages in the room.  (Note that
+            changes to this property do not cause an `info_update` increment.)
           example: true
         write:
           type: boolean
           description: >
-            Whether the user has permission to post messages to the room.  (Note that changes to
-            this property do not cause an `info_update` increment.)
+            Whether the requesting user has permission to post messages to the room.  (Note that
+            changes to this property do not cause an `info_update` increment.)
           example: true
         upload:
           type: boolean
           description: >
-            Whether the user has permissions to upload attachments to messages posted to the room.
-            (Note that changes to this property do not cause an `info_update` increment.)
+            Whether the requesting user has permissions to upload attachments to messages posted to
+            the room.  (Note that changes to this property do not cause an `info_update` increment.)
           example: true
     Message:
       title: The content of a posted message
@@ -1305,13 +1425,19 @@ components:
           description: >
             Unix timestamp of the last edit to this message.  This field is omitted if the message
             has never been edited.
-        updated:
+        seqno:
           type: integer
           format: int64
           description: >
-            Set to the room's current monotonic update counter (*not* a timestamp!) when this
-            message is first posted and whenever the message is edited or deleted.  Thus an update
-            to this value for the same message indicates an update or deletion has occurred.
+            This message's event sequence number in the room; this number is set to the room's
+            current monotonic sequence counter (*not* a timestamp!) when this message is first
+            posted and whenever the message is edited or deleted.  Thus an update to this value for
+            the same message indicates an update or deletion has occurred.
+            
+            
+            Note that this sequence number is used for event tracking, *not* message ordering.  For
+            example, an edit will increase this value so that polling clients will receive the edit,
+            but the edit itself should not re-position the message.
         whisper:
           type: boolean
           description: >
@@ -1350,6 +1476,14 @@ components:
       required: true
       schema:
         $ref: "#/components/schemas/RoomToken"
+    pathMessageId:
+      name: messageId
+      in: path
+      description: "Numeric message id of a post."
+      required: true
+      schema:
+        type: integer
+        format: int64
     queryMessagesLimit:
       name: limit
       in: query
@@ -1359,7 +1493,7 @@ components:
         type: integer
         format: int32
         minimum: 1
-        maximum: 255
+        maximum: 256
     pathFileId:
       name: fileId
       in: path

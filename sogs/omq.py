@@ -9,6 +9,7 @@ from .postfork import postfork
 
 omq = None
 mule_conn = None
+test_suite = False
 
 
 def make_omq():
@@ -60,4 +61,7 @@ def send_mule(command, *args, prefix="worker."):
     if prefix:
         command = prefix + command
 
-    omq.send(mule_conn, command, *(bt_serialize(data) for data in args))
+    if test_suite and omq is None:
+        pass  # TODO: for mule call testing we may want to do something else here?
+    else:
+        omq.send(mule_conn, command, *(bt_serialize(data) for data in args))

@@ -1,4 +1,4 @@
-from flask import abort, request, jsonify, g
+from flask import abort, request, jsonify, g, Blueprint
 from werkzeug.exceptions import HTTPException
 from ..web import app
 from .. import crypto, config, db, http, utils
@@ -11,6 +11,8 @@ from ..model.exc import NoSuchRoom
 # Legacy endpoints, to eventually be deleted.  These are invoked automatically if the client invokes
 # an endpoint (via onion request) that doesn't start with a `/` -- we prepend `/legacy/` and submit
 # it as an internal request to land here.
+
+legacy = Blueprint('legacy', __name__, url_prefix='/legacy')
 
 
 def get_pubkey_from_token(token):
@@ -90,7 +92,7 @@ def legacy_check_user_room(
     return (user, room)
 
 
-@app.get("/legacy/rooms")
+@legacy.get("/rooms")
 def get_rooms():
     """serve public room list for user"""
 
@@ -103,7 +105,7 @@ def get_rooms():
     )
 
 
-@app.get("/legacy/rooms/<Room:room>")
+@legacy.get("/rooms/<Room:room>")
 def get_room_info(room):
     """serve room metadata"""
     # This really should be authenticated but legacy Session just doesn't pass along auth info.
@@ -112,7 +114,7 @@ def get_room_info(room):
     return jsonify({'room': room_info, 'status_code': http.OK})
 
 
-@app.get("/legacy/rooms/<Room:room>/image")
+@legacy.get("/rooms/<Room:room>/image")
 def legacy_serve_room_image(room):
     """serve room icon"""
     # This really should be authenticated but legacy Session just doesn't pass along auth info.
@@ -124,20 +126,20 @@ def legacy_serve_room_image(room):
     return jsonify({"status_code": http.OK, "result": room.image.read_base64()})
 
 
-@app.get("/legacy/member_count")
+@legacy.get("/member_count")
 def legacy_member_count():
     user, room = legacy_check_user_room(read=True)
 
     return jsonify({"status_code": http.OK, "member_count": room.active_users()})
 
 
-@app.post("/legacy/claim_auth_token")
+@legacy.post("/claim_auth_token")
 def legacy_claim_auth():
     """this does nothing but needs to exist for backwards compat"""
     return jsonify({'status_code': http.OK})
 
 
-@app.get("/legacy/auth_token_challenge")
+@legacy.get("/auth_token_challenge")
 def legacy_auth_token_challenge():
     """
     legacy endpoint to give back an encrypted auth token bundle for the client to use to
@@ -170,7 +172,7 @@ def legacy_transform_message(m):
     }
 
 
-@app.post("/legacy/messages")
+@legacy.post("/messages")
 def handle_post_legacy_message():
 
     user, room = legacy_check_user_room(write=True)
@@ -187,7 +189,7 @@ def handle_post_legacy_message():
     )
 
 
-@app.get("/legacy/messages")
+@legacy.get("/messages")
 def handle_legacy_get_messages():
     from_id = request.args.get('from_server_id')
     limit = utils.get_int_param('limit', 256, min=1, max=256, truncate=True)
@@ -205,7 +207,7 @@ def handle_legacy_get_messages():
     )
 
 
-@app.post("/legacy/compact_poll")
+@legacy.post("/compact_poll")
 def handle_comapct_poll():
     req_list = request.json
     result = list()
@@ -240,7 +242,7 @@ def handle_one_compact_poll(req):
 
     deletions = get_deletions_deprecated(room, req.get('from_deletion_server_id'))
 
-    mods = room.get_mods(user)
+    mods = sorted(session_id for moderators in room.get_mods(user) for session_id in moderators)
 
     return {
         'status_code': http.OK,
@@ -272,22 +274,22 @@ def process_legacy_file_upload_for_room(
     return room.upload_file(file_content, user, filename=filename, lifetime=lifetime)
 
 
-@app.post("/legacy/files")
+@legacy.post("/files")
 def handle_legacy_store_file():
     user, room = legacy_check_user_room(write=True, upload=True)
     file_id = process_legacy_file_upload_for_room(user, room)
     return jsonify({'status_code': http.OK, 'result': file_id})
 
 
-@app.post("/legacy/rooms/<Room:room>/image")
+@legacy.post("/rooms/<Room:room>/image")
 def handle_legacy_upload_room_image(room):
-    user, room = legacy_check_user_room(write=True, upload=True, moderator=True)
+    user, room = legacy_check_user_room(admin=True)
     file_id = process_legacy_file_upload_for_room(user, room, lifetime=None)
     room.image = file_id
     return jsonify({'status_code': http.OK, 'result': file_id})
 
 
-@app.get("/legacy/files/<int:file_id>")
+@legacy.get("/files/<int:file_id>")
 def handle_legacy_get_file(file_id):
     user, room = legacy_check_user_room(read=True)
 
@@ -300,7 +302,7 @@ def handle_legacy_get_file(file_id):
     return jsonify_with_base64({'status_code': http.OK, 'result': file_content})
 
 
-@app.post("/legacy/delete_messages")
+@legacy.post("/delete_messages")
 def handle_legacy_delete_messages(ids=None):
     user, room = legacy_check_user_room(read=True)
 
@@ -315,12 +317,12 @@ def handle_legacy_delete_messages(ids=None):
     return jsonify({'status_code': http.OK})
 
 
-@app.delete("/legacy/messages/<int:msgid>")
+@legacy.delete("/messages/<int:msgid>")
 def handle_legacy_single_delete(msgid):
     return handle_legacy_delete_messages(ids=[msgid])
 
 
-@app.post("/legacy/block_list")
+@legacy.post("/block_list")
 def handle_legacy_ban():
     user, room = legacy_check_user_room(moderator=True)
     ban = User(session_id=request.json['public_key'], autovivify=True)
@@ -330,7 +332,7 @@ def handle_legacy_ban():
     return jsonify({"status_code": http.OK})
 
 
-@app.post("/legacy/ban_and_delete_all")
+@legacy.post("/ban_and_delete_all")
 def handle_legacy_banhammer():
     mod, room = legacy_check_user_room(moderator=True)
     ban = User(session_id=request.json['public_key'], autovivify=True)
@@ -342,7 +344,7 @@ def handle_legacy_banhammer():
     return jsonify({"status_code": http.OK})
 
 
-@app.delete("/legacy/block_list/<SessionID:session_id>")
+@legacy.delete("/block_list/<SessionID:session_id>")
 def handle_legacy_unban(session_id):
     user, room = legacy_check_user_room(moderator=True)
     to_unban = User(session_id=session_id, autovivify=False)
@@ -352,7 +354,7 @@ def handle_legacy_unban(session_id):
     abort(http.NOT_FOUND)
 
 
-@app.get("/legacy/block_list")
+@legacy.get("/block_list")
 def handle_legacy_banlist():
     # Bypass permission checks here because we want to continue even if we are banned:
     user, room = legacy_check_user_room(no_perms=True)
@@ -369,17 +371,17 @@ def handle_legacy_banlist():
     return jsonify({"status_code": http.OK, "banned_members": bans})
 
 
-@app.get("/legacy/moderators")
+@legacy.get("/moderators")
 def handle_legacy_get_mods():
     user, room = legacy_check_user_room(read=True)
 
-    mods = room.get_mods(user)
+    mods = sorted(session_id for moderators in room.get_mods(user) for session_id in moderators)
     return jsonify({"status_code": http.OK, "moderators": mods})
 
 
 # Posting here adds an admin and requires admin access.  Legacy Session doesn't understand the
 # moderator/admin distinction so we don't support moderator adjustment at all here.
-@app.post("/legacy/moderators")
+@legacy.post("/moderators")
 def handle_legacy_add_admin():
     user, room = legacy_check_user_room(admin=True)
 
@@ -396,7 +398,7 @@ def handle_legacy_add_admin():
 # DELETE here removes an admin or moderator and requires admin access.  (Legacy Session doesn't
 # understand the moderator/admin distinction so we don't distinguish between them and just remove
 # both powers, if present).
-@app.delete("/legacy/moderators/<SessionID:session_id>")
+@legacy.delete("/moderators/<SessionID:session_id>")
 def handle_legacy_remove_admin(session_id):
     user, room = legacy_check_user_room(admin=True)
 

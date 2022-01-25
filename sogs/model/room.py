@@ -4,13 +4,27 @@ from ..omq import send_mule
 from ..web import app
 from .user import User
 from .file import File
-from .exc import NoSuchRoom, NoSuchFile, AlreadyExists, BadPermission, PostRejected, PostRateLimited
+from .exc import (
+    NoSuchRoom,
+    NoSuchFile,
+    NoSuchPost,
+    AlreadyExists,
+    BadPermission,
+    PostRejected,
+    PostRateLimited,
+)
 
 import os
 import re
 import sqlalchemy.exc
 import time
 from typing import Optional, Union, List
+
+
+# TODO: These really should be room properties, not random global constants (these
+# are carried over from old SOGS).
+rate_limit_size = 5
+rate_limit_interval = 16.0
 
 
 class Room:
@@ -25,8 +39,9 @@ class Room:
         image - the Image object for this room's image, if set; None otherwise.  (Note that the
             Image is not query/loaded until wanted).
         created - unix timestamp when the room was created
-        updates - the room message activity counter; this is automatically incremented for each new
-            message, edit, or deletion in the room and is used by clients to query message updates.
+        message_sequence - the room message activity counter; this is automatically incremented for
+            each new message, edit, or deletion in the room and is used by clients to poll for
+            new/edited/deleted messages.
         info_updates - counter on room metadata that is automatically incremented whenever room
             metadata (name, description, image, etc.) changes for the room.
         default_read - True if default user permissions includes read permission
@@ -43,8 +58,8 @@ class Room:
 
     def _refresh(self, *, id=None, token=None, row=None, perms=False):
         """
-        Internal method to (re-)fetch details from the database, most importantly the updates and
-        info_updates after a room metadata update.
+        Internal method to (re-)fetch details from the database, most importantly the
+        message_sequence and info_updates after a room metadata update.
 
         Must be given exactly one of id/token/row for an initial load; for a refresh all can be None
         (to use self.id).
@@ -73,7 +88,7 @@ class Room:
             self._description,
             self._fetch_image_id,
             self.created,
-            self.updates,
+            self.message_sequence,
             self.info_updates,
         ) = (
             row[c]
@@ -84,7 +99,7 @@ class Room:
                 'description',
                 'image',
                 'created',
-                'updates',
+                'message_sequence',
                 'info_updates',
             )
         )
@@ -100,6 +115,8 @@ class Room:
             self._fetch_image_id = None  # We're refreshing and the image didn't change
         else:
             self._image = None  # Retrieved on demand
+
+        self._pinned = None  # Re-retrieved on demand
 
         if perms or not hasattr(self, '_perm_cache'):
             self._perm_cache = {}
@@ -158,7 +175,7 @@ class Room:
             'name': self.name,
             'description': self.description,
             'created': self.created,
-            'updates': self.updates,
+            'message_sequence': self.message_sequence,
             'info_updates': self.info_updates,
         }
         if self.image_id is not None:
@@ -177,11 +194,11 @@ class Room:
         get the renamed URL."""
 
         # Changing the token is effectively moving the room to a new URL, which doesn't actually
-        # affect the updates/info_updates because you'll now have to get the new URL somehow anyway,
-        # in which case you don't care about the update value changing.  (Currently this is provided
-        # for completeness; in order for renamable tokens we'd probably need to add some sort of
-        # token tombstone pointing to the renamed room, otherwise updating token is highly
-        # destructive).
+        # affect the message_sequence/info_updates because you'll now have to get the new URL
+        # somehow anyway, in which case you don't care about the update value changing.  (Currently
+        # this is provided for completeness; in order for renamable tokens we'd probably need to add
+        # some sort of token tombstone pointing to the renamed room, otherwise updating token is
+        # highly destructive).
 
         with db.transaction():
             query("UPDATE rooms SET token = :t WHERE id = :r", r=self.id, t=tok)
@@ -258,6 +275,32 @@ class Room:
             self._fetch_image_id, self._image = None, file
 
             self._refresh()
+
+    @property
+    def pinned_messages(self):
+        """
+        Accesses the list of pinned messages for this room; this is fetched from the database the
+        first time this is accessed.  Each element is a dict such as:
+        {"id": 1234, "pinned_at": 1642701309.5007384, "pinned_by": "05123456....."}
+        The returned list should not be modified; instead call pin() or unpin() to add/remove pinned
+        messages.
+        """
+
+        if self._pinned is None:
+            self._pinned = [
+                {'id': r[0], 'pinned_at': r[1], 'pinned_by': r[2]}
+                for r in query(
+                    """
+                    SELECT message, pinned_at, users.session_id
+                    FROM pinned_messages JOIN users ON pinned_by = users.id
+                    WHERE room = :r
+                    ORDER BY pinned_at
+                    """,
+                    r=self.id,
+                )
+            ]
+
+        return self._pinned
 
     @property
     def default_read(self):
@@ -345,9 +388,9 @@ class Room:
         if user is None:
             is_banned, can_read, can_write, can_upload, is_mod, is_admin = (
                 False,
-                self.default_read,
-                self.default_write,
-                self.default_upload,
+                bool(self.default_read),
+                bool(self.default_write),
+                bool(self.default_upload),
                 False,
                 False,
             )
@@ -361,7 +404,7 @@ class Room:
                     r=self.id,
                     u=user.id,
                 ).first()
-                self._perm_cache[user.id] = list(row)
+                self._perm_cache[user.id] = [bool(c) for c in row]
 
             is_banned, can_read, can_write, can_upload, is_mod, is_admin = self._perm_cache[user.id]
 
@@ -382,7 +425,7 @@ class Room:
 
     # Shortcuts for check_permission calls
 
-    def check_unbanned(self, user: User):
+    def check_unbanned(self, user: Optional[User]):
         return self.check_permission(user)
 
     def check_read(self, user: Optional[User] = None):
@@ -395,10 +438,10 @@ class Room:
         """Checks for both upload *and* write permission"""
         return self.check_permission(user, write=True, upload=True)
 
-    def check_moderator(self, user: User):
+    def check_moderator(self, user: Optional[User]):
         return self.check_permission(user, moderator=True)
 
-    def check_admin(self, user: User):
+    def check_admin(self, user: Optional[User]):
         return self.check_permission(user, admin=True)
 
     def messages_size(self):
@@ -421,9 +464,10 @@ class Room:
         self,
         user: Optional[User],
         *,
-        after: int = None,
-        before: int = None,
+        after: Optional[int] = None,
+        before: Optional[int] = None,
         recent: bool = False,
+        single: Optional[int] = None,
         limit: int = 256,
     ):
         """
@@ -431,9 +475,12 @@ class Room:
         messages plus any whispers directed to the user and, if the user is a moderator, any
         whispers meant to be displayed to moderators.
 
-        Exactly one of `after`, `begin`, or `recent` must be specified: `after=N` returns messages
-        with ids greater than N in ascending order; `before=N` returns messages with ids less than N
-        in descending order; `recent=True` returns the most recent messages in descending order.
+        Exactly one of `after`, `begin`, `recent` or `single` must be specified:
+        - `after=N` returns messages with ids greater than N in ascending order
+        - `before=N` returns messages with ids less than N in descending order
+        - `recent=True` returns the most recent messages in descending order
+        - `single=123` returns a singleton list containing the single message with the given message
+          id, or an empty list if the message doesn't exist or isn't readable by the user.
 
         Note that data and signature are returned as bytes, *not* base64 encoded.  Session message
         padding *is* appended to the data field (i.e. this returns the full value, not the
@@ -443,11 +490,11 @@ class Room:
         mod = self.check_moderator(user)
         msgs = []
 
-        opt_count = sum((after is not None, before is not None, recent))
+        opt_count = sum((after is not None, before is not None, recent, single is not None))
         if opt_count == 0:
-            raise RuntimeError("Exactly one of before=, after=, or recent= is required")
+            raise RuntimeError("Exactly one of before=, after=, recent=, or single= is required")
         if opt_count > 1:
-            raise RuntimeError("Cannot specify more than one of before=, after=, recent=")
+            raise RuntimeError("Cannot specify more than one of before=, after=, recent=, single=")
 
         # Handle id mapping from an old database import in case the client is requesting
         # messages since some id from the old db.
@@ -460,22 +507,32 @@ class Room:
             f"""
             SELECT * FROM message_details
             WHERE room = :r AND data IS NOT NULL AND NOT filtered
-                {'AND id > :after' if after else 'AND id < :before' if before else ''}
+                {
+                    'AND id > :after' if after is not None else
+                    'AND id < :before' if before is not None else
+                    'AND id = :single' if single is not None else
+                    ''
+                }
                 AND (
                     whisper IS NULL
                     {'OR whisper = :user' if user else ''}
                     {'OR whisper_mods' if mod else ''}
                 )
-            ORDER BY id {'ASC' if after is not None else 'DESC'} LIMIT :limit
+            {
+                '' if single is not None else
+                'ORDER BY id ASC LIMIT :limit' if after is not None else
+                'ORDER BY id DESC LIMIT :limit'
+            }
             """,
             r=self.id,
             after=after,
             before=before,
+            single=single,
             user=user.id if user else None,
             limit=limit,
         ):
             data = utils.add_session_message_padding(row['data'], row['data_size'])
-            msg = {x: row[x] for x in ('id', 'session_id', 'posted', 'updated', 'signature')}
+            msg = {x: row[x] for x in ('id', 'session_id', 'posted', 'seqno', 'signature')}
             msg['data'] = data
             if row['edited'] is not None:
                 msg['edited'] = row['edited']
@@ -487,6 +544,30 @@ class Room:
             msgs.append(msg)
 
         return msgs
+
+    def should_filter(self, user: User, data: bytes):
+        """
+        Checks a message for profanity (if the profanity filter is enabled).
+
+        - Returns False if this message passes (i.e. didn't trigger the profanity filter, or is
+          being posted by an admin to whom the filter doesn't apply).
+
+        Otherwise, depending on the filtering configuration:
+        - Returns True if this message should be silently accepted but filtered (i.e. not shown to
+          users).
+        - Throws PostRejected if the message should be rejected (and rejection passed back to the
+          user).
+        """
+        if config.PROFANITY_FILTER and not self.check_admin(user):
+            import better_profanity
+
+            if better_profanity.profanity.contains_profanity(utils.message_body(data)):
+                if config.PROFANITY_SILENT:
+                    return True
+                else:
+                    # FIXME: can we send back some error code that makes Session not retry?
+                    raise PostRejected("filtration rejected message")
+        return False
 
     def add_post(
         self,
@@ -517,25 +598,10 @@ class Room:
         if whisper_to and not isinstance(whisper_to, User):
             whisper_to = User(session_id=whisper_to, autovivify=True, touch=False)
 
-        filtered = False
-        if config.PROFANITY_FILTER and not self.check_admin(user):
-            import better_profanity
-
-            if better_profanity.profanity.contains_profanity(utils.message_body(data)):
-                if config.PROFANITY_SILENT:
-                    filtered = True
-                else:
-                    # FIXME: can we send back some error code that makes Session not retry?
-                    raise PostRejected("filtration rejected message")
+        filtered = self.should_filter(user, data)
 
         with db.transaction():
-            if not self.check_admin(user):
-
-                # TODO: These really should be room properties, not random global constants (these
-                # are carried over from old SOGS).
-                rate_limit_size = 5
-                rate_limit_interval = 16.0
-
+            if rate_limit_size and not self.check_admin(user):
                 since_limit = time.time() - rate_limit_interval
                 recent_count = query(
                     """
@@ -571,12 +637,12 @@ class Room:
                 whisper_mods=whisper_mods,
             )
             assert msg_id is not None
-            row = query("SELECT posted, updated FROM messages WHERE id = :m", m=msg_id).first()
+            row = query("SELECT posted, seqno FROM messages WHERE id = :m", m=msg_id).first()
             msg = {
                 'id': msg_id,
                 'session_id': user.session_id,
                 'posted': row[0],
-                'updated': row[1],
+                'seqno': row[1],
                 'data': data,
                 'signature': sig,
             }
@@ -719,46 +785,33 @@ class Room:
 
     def get_mods(self, user=None):
         """
-        Returns a list of session_ids who are moderators of the room, with permission checking.
+        Returns session_ids of visible moderators, visible admins, hidden moderators, and hidden
+        admins that `user` is permitted to know about.  Hidden moderator and admins are only visible
+        if `user` is an admin or moderator.
 
-        `user` is the current User or the user's session id, and controls how we return hidden
-        moderators: if the given user is an admin then all hidden mods/admins are included.  If the
-        given user is a moderator then we include that specific user in the mod list if she is a
-        moderator, but don't include any other hidden mods/admins.
-
-        If user is None then we don't include any hidden mods.
+        Returns a 4-tuple of lists of session ids:
+        ([public_mods], [public_admins], [hidden_mods], [hidden_admins])
         """
 
-        we_are_hidden, we_are_admin = False, False
-        mods, hidden_mods = [], []
-
-        curr_session_id = (
-            None if user is None else user.session_id if isinstance(user, User) else user
-        )
-
+        m, hm, a, ha = [], [], [], []
         for session_id, visible, admin in query(
             """
             SELECT session_id, visible_mod, admin FROM user_permissions
             WHERE room = :r AND moderator
+            ORDER BY session_id
             """,
             r=self.id,
         ):
-            if session_id is not None and session_id == curr_session_id:
-                we_are_hidden = not visible
-                we_are_admin = admin
-            elif session_id[0:2] == "ff" and session_id[2:] == crypto.server_pubkey_hex:
+            if session_id[0:2] == "ff" and session_id[2:] == crypto.server_pubkey_hex:
                 # Skip the system user which isn't really a moderator/admin account
                 continue
 
-            (mods if visible else hidden_mods).append(session_id)
+            ((a if admin else m) if visible else (ha if admin else hm)).append(session_id)
 
-        if we_are_admin:
-            mods += hidden_mods
-        elif we_are_hidden:
-            mods.append(curr_session_id)
+        if user is None or not any(user.session_id in modlist for modlist in (m, hm, a, ha)):
+            hm, ha = [], []
 
-        mods.sort()
-        return mods
+        return m, a, hm, ha
 
     def get_all_moderators(self):
         """Returns a tuple of lists of all moderators and admins of the room.  This only includes
@@ -779,6 +832,7 @@ class Room:
             SELECT session_id, o.visible_mod, o.admin
             FROM user_permission_overrides o JOIN users ON o."user" = users.id
             WHERE room = :r AND o.moderator
+            ORDER BY session_id
             """,
             r=self.id,
         ):
@@ -1096,27 +1150,97 @@ class Room:
                     pass
             raise
 
+    def pin(self, msg_id: int, admin: User):
+        """
+        Pins a message to this room.  Requires admin room permissions.
+
+        Pinning a message that is already pinned will keep it pinned but update the
+        pinned_by/pinned_at properties to the current admin/current time.  (This can be useful to
+        reorder pins, which are always sorted oldest-to-newest).
+        """
+
+        if not self.check_admin(admin):
+            app.logger.warning(f"Unable to pin message to {self}: {admin} is not an admin")
+            raise BadPermission()
+
+        with db.transaction():
+            # Make sure the given messages actually exist in this room:
+            if not query(
+                """
+                SELECT COUNT(*) FROM messages
+                WHERE room = :r AND id = :m AND data IS NOT NULL
+                    AND NOT filtered AND whisper IS NULL AND NOT whisper_mods
+                """,
+                r=self.id,
+                m=msg_id,
+            ).first()[0]:
+                raise NoSuchPost(msg_id)
+
+            query(
+                """
+                INSERT INTO pinned_messages (room, message, pinned_by) VALUES (:r, :m, :a)
+                ON CONFLICT (room, message) DO UPDATE SET pinned_by = :a, pinned_at = :now
+                """,
+                r=self.id,
+                m=msg_id,
+                a=admin.id,
+                now=time.time(),
+            )
+        self._pinned = None
+
+    def unpin_all(self, admin: User):
+        """
+        Unpins all pinned messages from this room.  Requires admin privileges.  Returns the
+        number of pinned messages removed.
+        """
+
+        if not self.check_admin(admin):
+            app.logger.warning("Unable to unpin all messages from {self}: {admin} is not an admin")
+            raise BadPermission()
+
+        count = query("DELETE FROM pinned_messages WHERE room = :r", r=self.id).rowcount
+        if count != 0:
+            self._pinned = None
+        return count
+
+    def unpin(self, msg_id: int, admin: User):
+        """
+        Unpins a pinned message in this room.  Requires admin privileges.  Returns the number of
+        pinned messages actually removed (i.e. 0 or 1).
+        """
+
+        if not self.check_admin(admin):
+            app.logger.warning("Unable to unpin message from {self}: {admin} is not an admin")
+            raise BadPermission()
+
+        count = query(
+            "DELETE FROM pinned_messages WHERE room = :r AND message = :m", r=self.id, m=msg_id
+        ).rowcount
+        if count != 0:
+            self._pinned = None
+        return count
+
 
 def get_rooms():
     """Get a list of all rooms; does not check permissions."""
     return [Room(row) for row in query("SELECT * FROM rooms ORDER BY token")]
 
 
-def get_readable_rooms(pubkey=None):
+def get_readable_rooms(user: Optional[User] = None):
     """
-    Get a list of rooms that a user can access; if pubkey is None then return all publicly readable
+    Get a list of rooms that a user can access; if user is None then return all publicly readable
     rooms.
     """
-    if pubkey is None:
+    if user is None:
         result = query("SELECT * FROM rooms WHERE read ORDER BY token")
     else:
         result = query(
             """
             SELECT rooms.* FROM user_permissions perm JOIN rooms ON rooms.id = room
-            WHERE session_id = :s AND perm.read AND NOT perm.banned
+            WHERE "user" = :u AND perm.read AND NOT perm.banned
             ORDER BY token
             """,
-            s=pubkey,
+            u=user.id,
         )
     return [Room(row) for row in result]
 
@@ -1125,9 +1249,9 @@ def get_deletions_deprecated(room: Room, since):
     if since:
         result = query(
             """
-            SELECT id, updated FROM messages
-            WHERE room = :r AND updated > :since AND data IS NULL
-            ORDER BY updated ASC LIMIT 256
+            SELECT id, seqno FROM messages
+            WHERE room = :r AND seqno > :since AND data IS NULL
+            ORDER BY seqno ASC LIMIT 256
             """,
             r=room.id,
             since=since,
@@ -1135,9 +1259,9 @@ def get_deletions_deprecated(room: Room, since):
     else:
         result = query(
             """
-            SELECT id, updated FROM messages
+            SELECT id, seqno FROM messages
             WHERE room = :r AND data IS NULL
-            ORDER BY updated DESC LIMIT 256
+            ORDER BY seqno DESC LIMIT 256
             """,
             r=room.id,
         )

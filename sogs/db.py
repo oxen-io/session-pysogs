@@ -118,9 +118,11 @@ def database_init():
         update_message_views,
         create_message_details_deleter,
         check_for_hacks,
+        seqno_etc_updates,
     ):
-        if migrate(conn):
-            changes = True
+        with transaction(conn):
+            if migrate(conn):
+                changes = True
 
     if changes:
         metadata.clear()
@@ -168,6 +170,7 @@ def add_new_columns(conn):
     for table, cols in new_table_cols.items():
         for name, definition in cols.items():
             if name not in metadata.tables[table].c:
+                logging.warning(f"DB migration: Adding new column {table}.{name}")
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
                 added = True
 
@@ -177,6 +180,7 @@ def add_new_columns(conn):
 def add_new_tables(conn):
     added = False
     if 'user_request_nonces' not in metadata.tables:
+        logging.warning("DB migration: Adding new table user_request_nonces")
         if engine.name == 'sqlite':
             conn.execute(
                 """
@@ -193,14 +197,10 @@ CREATE TABLE user_request_nonces (
                 """
 CREATE TABLE user_request_nonces (
     "user" BIGINT NOT NULL REFERENCES users ON DELETE CASCADE,
-    nonce BLOB NOT NULL,
+    nonce BYTEA NOT NULL UNIQUE,
     expiry FLOAT NOT NULL DEFAULT (extract(epoch from now() + '24 hours'))
 )
 """
-            )
-            conn.execute(
-                "CREATE UNIQUE INDEX user_request_nonces_nonce"
-                " ON user_request_nonces USING HASH (nonce)"
             )
             conn.execute("CREATE INDEX user_request_nonces_expiry ON user_request_nonces(expiry)")
 
@@ -212,6 +212,7 @@ CREATE TABLE user_request_nonces (
 def update_message_views(conn):
     if engine.name != "sqlite":
         if any(x not in metadata.tables['message_metadata'].c for x in ('whisper_to', 'filtered')):
+            logging.warning("DB migration: replacing message_metadata/message_details views")
             conn.execute("DROP VIEW IF EXISTS message_metadata")
             conn.execute("DROP VIEW IF EXISTS message_details")
             conn.execute(
@@ -233,6 +234,7 @@ SELECT id, room, "user", session_id, posted, edited, updated, filtered, whisper_
             )
 
             return True
+        # else: don't worry about this for postgresql because initial pg support had the fix
 
     return False
 
@@ -271,8 +273,10 @@ def check_for_hacks(conn):
         # drop it.
         n_fid_hacks = conn.execute("SELECT COUNT(*) FROM file_id_hacks").first()[0]
         if n_fid_hacks == 0:
+            logging.warning("Dropping file_id_hacks old sogs import table (no longer required)")
             metadata.tables['file_id_hacks'].drop(engine)
         else:
+            logging.warning("Keeping file_id_hacks old sogs import table (still required)")
             global HAVE_FILE_ID_HACKS
             HAVE_FILE_ID_HACKS = True
 
@@ -284,6 +288,186 @@ def check_for_hacks(conn):
             ROOM_IMPORT_HACKS[room] = (id_max, offset)
     except Exception:
         pass
+
+
+def seqno_etc_updates(conn):
+    """
+    Rename rooms.updates/messages.updated to rooms.message_sequence/messages.seqno for better
+    disambiguation with rooms.info_updates.
+
+    This also does various other changes/fixes that came at the same time as the column rename:
+
+    - remove "updated" from and add "pinned_by"/"pinned_at" to pinned_messages
+    - recreate the pinned_messages table and triggers because we need several changes:
+        - add trigger to unpin a message when the message is deleted
+        - remove "updates" (now message_sequence) updates from room metadata update trigger
+        - add AFTER UPDATE trigger to properly update room metadata counter when re-pinning an
+          existing pinned message
+    - fix user_permissions view to return true for read/write/upload to true for moderators
+    """
+
+    if 'seqno' in metadata.tables['messages'].c:
+        return False
+
+    logging.warning("Applying message_sequence renames")
+    conn.execute("ALTER TABLE rooms RENAME COLUMN updates TO message_sequence")
+    conn.execute("ALTER TABLE messages RENAME COLUMN updated TO seqno")
+
+    # We can't insert the required pinned_messages because we don't have the pinned_by user, but
+    # that isn't a big deal since we didn't have any endpoints for pinned messsages before this
+    # anyway, so we just recreate the whole thing (along with triggers which we also need to
+    # update/fix)
+    logging.warning("Recreating pinned_messages table")
+    conn.execute("DROP TABLE pinned_messages")
+    if engine.name == 'sqlite':
+        conn.execute(
+            """
+CREATE TABLE pinned_messages (
+    room INTEGER NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+    message INTEGER NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+    pinned_by INTEGER NOT NULL REFERENCES users(id),
+    pinned_at FLOAT NOT NULL DEFAULT ((julianday('now') - 2440587.5)*86400.0), /* unix epoch when pinned */
+    PRIMARY KEY(room, message)
+)
+"""  # noqa: E501
+        )
+        conn.execute(
+            """
+CREATE TRIGGER messages_after_delete AFTER UPDATE OF data ON messages
+FOR EACH ROW WHEN NEW.data IS NULL AND OLD.data IS NOT NULL
+BEGIN
+    -- Unpin if we deleted a pinned message:
+    DELETE FROM pinned_messages WHERE message = OLD.id;
+END
+"""
+        )
+        conn.execute(
+            """
+CREATE TRIGGER room_metadata_pinned_add AFTER INSERT ON pinned_messages
+FOR EACH ROW
+BEGIN
+    UPDATE rooms SET info_updates = info_updates + 1 WHERE id = NEW.room;
+END
+"""
+        )
+        conn.execute(
+            """
+CREATE TRIGGER room_metadata_pinned_update AFTER UPDATE ON pinned_messages
+FOR EACH ROW
+BEGIN
+    UPDATE rooms SET info_updates = info_updates + 1 WHERE id = NEW.room;
+END
+"""
+        )
+        conn.execute(
+            """
+CREATE TRIGGER room_metadata_pinned_remove AFTER DELETE ON pinned_messages
+FOR EACH ROW
+BEGIN
+    UPDATE rooms SET info_updates = info_updates + 1 WHERE id = OLD.room;
+END
+"""
+        )
+
+        logging.warning("Fixing user_permissions view")
+        conn.execute("DROP VIEW IF EXISTS user_permissions")
+        conn.execute(
+            """
+CREATE VIEW user_permissions AS
+SELECT
+    rooms.id AS room,
+    users.id AS user,
+    users.session_id,
+    CASE WHEN users.banned THEN TRUE ELSE COALESCE(user_permission_overrides.banned, FALSE) END AS banned,
+    CASE WHEN users.moderator THEN TRUE ELSE COALESCE(user_permission_overrides.read, rooms.read) END AS read,
+    CASE WHEN users.moderator THEN TRUE ELSE COALESCE(user_permission_overrides.write, rooms.write) END AS write,
+    CASE WHEN users.moderator THEN TRUE ELSE COALESCE(user_permission_overrides.upload, rooms.upload) END AS upload,
+    CASE WHEN users.moderator THEN TRUE ELSE COALESCE(user_permission_overrides.moderator, FALSE) END AS moderator,
+    CASE WHEN users.admin THEN TRUE ELSE COALESCE(user_permission_overrides.admin, FALSE) END AS admin,
+    -- room_moderator will be TRUE if the user is specifically listed as a moderator of the room
+    COALESCE(user_permission_overrides.moderator OR user_permission_overrides.admin, FALSE) AS room_moderator,
+    -- global_moderator will be TRUE if the user is a global moderator/admin (note that this is
+    -- *not* exclusive of room_moderator: a moderator/admin could be listed in both).
+    COALESCE(users.moderator OR users.admin, FALSE) as global_moderator,
+    -- visible_mod will be TRUE if this mod is a publicly viewable moderator of the room
+    CASE
+        WHEN user_permission_overrides.moderator OR user_permission_overrides.admin THEN user_permission_overrides.visible_mod
+        WHEN users.moderator OR users.admin THEN users.visible_mod
+        ELSE FALSE
+    END AS visible_mod
+FROM
+    users JOIN rooms LEFT OUTER JOIN user_permission_overrides ON
+        users.id = user_permission_overrides.user AND rooms.id = user_permission_overrides.room
+"""  # noqa: E501
+        )
+
+    else:  # postgresql
+        logging.warning("Recreating pinned_messages table")
+        conn.execute(
+            """
+CREATE TABLE pinned_messages (
+    room BIGINT NOT NULL REFERENCES rooms ON DELETE CASCADE,
+    message BIGINT NOT NULL REFERENCES rooms ON DELETE CASCADE,
+    pinned_by BIGINT NOT NULL REFERENCES users,
+    pinned_at FLOAT NOT NULL DEFAULT (extract(epoch from now())),
+    PRIMARY KEY(room, message)
+);
+
+
+-- Trigger to handle required updates after a message gets deleted (in the SOGS context: that is,
+-- has data set to NULL)
+CREATE OR REPLACE FUNCTION trigger_messages_after_delete()
+RETURNS TRIGGER LANGUAGE PLPGSQL AS $$BEGIN
+    -- Unpin if we deleted a pinned message:
+    DELETE FROM pinned_messages WHERE message = OLD.id;
+    RETURN NULL;
+END;$$;
+CREATE TRIGGER messages_after_delete AFTER UPDATE OF data ON messages
+FOR EACH ROW WHEN (NEW.data IS NULL AND OLD.data IS NOT NULL)
+EXECUTE PROCEDURE trigger_messages_after_delete();
+
+CREATE TRIGGER room_metadata_pinned_add AFTER INSERT OR UPDATE ON pinned_messages
+FOR EACH ROW
+EXECUTE PROCEDURE trigger_room_metadata_info_update_new();
+
+CREATE TRIGGER room_metadata_pinned_remove AFTER DELETE ON pinned_messages
+FOR EACH ROW
+EXECUTE PROCEDURE trigger_room_metadata_info_update_old();
+"""
+        )
+
+        logging.warning("Fixing user_permissions view")
+        conn.execute(
+            """
+CREATE OR REPLACE VIEW user_permissions AS
+SELECT
+    rooms.id AS room,
+    users.id AS "user",
+    users.session_id,
+    CASE WHEN users.banned THEN TRUE ELSE COALESCE(user_permission_overrides.banned, FALSE) END AS banned,
+    CASE WHEN users.moderator THEN TRUE ELSE COALESCE(user_permission_overrides.read, rooms.read) END AS read,
+    CASE WHEN users.moderator THEN TRUE ELSE COALESCE(user_permission_overrides.write, rooms.write) END AS write,
+    CASE WHEN users.moderator THEN TRUE ELSE COALESCE(user_permission_overrides.upload, rooms.upload) END AS upload,
+    CASE WHEN users.moderator THEN TRUE ELSE COALESCE(user_permission_overrides.moderator, FALSE) END AS moderator,
+    CASE WHEN users.admin THEN TRUE ELSE COALESCE(user_permission_overrides.admin, FALSE) END AS admin,
+    -- room_moderator will be TRUE if the user is specifically listed as a moderator of the room
+    COALESCE(user_permission_overrides.moderator OR user_permission_overrides.admin, FALSE) AS room_moderator,
+    -- global_moderator will be TRUE if the user is a global moderator/admin (note that this is
+    -- *not* exclusive of room_moderator: a moderator/admin could be listed in both).
+    COALESCE(users.moderator OR users.admin, FALSE) as global_moderator,
+    -- visible_mod will be TRUE if this mod is a publicly viewable moderator of the room
+    CASE
+        WHEN user_permission_overrides.moderator OR user_permission_overrides.admin THEN user_permission_overrides.visible_mod
+        WHEN users.moderator OR users.admin THEN users.visible_mod
+        ELSE FALSE
+    END AS visible_mod
+FROM
+    users CROSS JOIN rooms LEFT OUTER JOIN user_permission_overrides ON
+        (users.id = user_permission_overrides."user" AND rooms.id = user_permission_overrides.room);
+"""  # noqa: E501
+        )
+
+    return True
 
 
 def create_admin_user(dbconn):
@@ -305,7 +489,7 @@ def create_admin_user(dbconn):
 
 
 if config.DB_URL.startswith('postgresql'):
-    # room.token is a 'citext' (case-insensitive text), which sqlalchemy doesn't recognize out of
+    # rooms.token is a 'citext' (case-insensitive text), which sqlalchemy doesn't recognize out of
     # the box.  Map it to a plain TEXT which is good enough for what we need (if we actually needed
     # to generate this wouldn't suffice: we'd have to use something like the sqlalchemy-citext
     # module).
@@ -341,6 +525,12 @@ def _init_engine(*args, **kwargs):
 
     if engine.name == "sqlite":
         import sqlite3
+
+        if sqlite3.sqlite_version_info < (3, 25, 0):
+            raise RuntimeError(
+                f"SQLite3 library version {'.'.join(sqlite3.sqlite_version_info)} "
+                "is too old for pysogs (3.25.0+ required)!"
+            )
 
         have_returning = sqlite3.sqlite_version_info >= (3, 35, 0)
 
