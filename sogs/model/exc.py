@@ -64,6 +64,11 @@ class BadPermission(RuntimeError):
         super().__init__("Permission denied" if msg is None else msg)
 
 
+class InvalidData(RuntimeError):
+    """Thrown if something in model was fed invalid data, for example a signature of an invalid
+    size, or an unparseable entity."""
+
+
 class PostRejected(RuntimeError):
     """
     Thrown when a post is refused for some reason other than a permission error (e.g. the post
@@ -95,3 +100,8 @@ def abort_perm_denied(e):
 @app.errorhandler(PostRejected)
 def abort_post_rejected(e):
     flask.abort(http.TOO_MANY_REQUESTS)
+
+
+@app.errorhandler(InvalidData)
+def abort_invalid_data(e):
+    flask.abort(http.BAD_REQUEST)

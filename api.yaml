@@ -135,9 +135,14 @@ paths:
         - $ref: "#/components/parameters/pathRoomToken"
       requestBody:
         description: >
-          JSON body containing the message details to be submitted to the room. Note that the
-          `session_id` field is not contained in the response (since it is simply the client's own
-          ID).
+          JSON body containing the message details to be submitted to the room.
+
+
+        data and signature are required; whisper_to and whisper_mods are permitted only for
+        moderators/admins.  The former sends a whisper within the room that will only be shown by
+        the given user; the latter sends a whisper in the room that will be seen by all moderators.
+        It is possible for a message to use both of these whisper modes at once, for example to
+        (privately) warn a user and have that warning visible by all other moderators.
         required: true
         content:
           application/json:
@@ -157,6 +162,12 @@ paths:
                     Base64-encoded message data XEd25519 signature, signed by the poster's X25519
                     key contained in the session ID.
                   example: NjgwYzFjOGI0YTljNTliNDk1MDRmMzY5YzFmMzRkYjM4ZTU3Mzk2YzA2ODYwODk3MzI1ZmFhMjNkYTZmNzE3YTk3MmY4MTJjZDU1MGFkMTQ2Yzk1MTdlOGM1NzMyZjgxZDE3NWViODg5OGQxZjQyMjg5ZWNkNjNjODJiMDZjNzM=
+                whisper_to:
+                  $ref: "#/components/schemas/SessionID"
+                whisper_mods:
+                  type: boolean
+                  description: >
+                    True if this message is a whisper that should be visible to all room moderators.
                 files:
                   type: array
                   description: >
@@ -257,11 +268,11 @@ paths:
         $ref: "#/paths/~1room~1%7BroomToken%7D~1message/post/requestBody"
       responses:
         200:
-          description: Message updated successfully
+          description: Message updated successfully; returns an empty dict as body.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Message"
+                type: object
         403:
           description: >
             Forbidden.  Returned if the user does not have permission to post messages to this room,

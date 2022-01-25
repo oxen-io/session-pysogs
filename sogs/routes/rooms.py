@@ -1,7 +1,8 @@
 from .. import config, http, utils
 from ..model import room as mroom
+from . import auth
 
-from flask import abort, jsonify, g, Blueprint
+from flask import abort, jsonify, g, Blueprint, request
 
 # General purpose routes for things like capability retrieval and batching
 
@@ -124,6 +125,41 @@ def message_single(room, msg_id):
         abort(http.NOT_FOUND)
 
     return utils.jsonify_with_base64(msgs[0])
+
+
+@rooms.post("/room/<Room:room>/message")
+@auth.user_required
+def post_message(room):
+    req = request.json
+
+    # TODO: files tracking
+
+    msg = room.add_post(
+        g.user,
+        data=utils.decode_base64(req.get('data')),
+        sig=utils.decode_base64(req.get('signature')),
+        whisper_to=req.get('whisper_to'),
+        whisper_mods=bool(req.get('whisper_mods')),
+    )
+
+    return utils.jsonify_with_base64(msg), http.CREATED
+
+
+@rooms.put("/room/<Room:room>/message/<int:msg_id>")
+@auth.user_required
+def edit_message(room, msg_id):
+    req = request.json
+
+    # TODO: files tracking
+
+    room.edit_post(
+        g.user,
+        msg_id,
+        data=utils.decode_base64(req.get('data')),
+        sig=utils.decode_base64(req.get('signature')),
+    )
+
+    return jsonify({})
 
 
 @rooms.post("/room/<Room:room>/pin/<int:msg_id>")

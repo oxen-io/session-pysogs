@@ -12,6 +12,7 @@ from .exc import (
     BadPermission,
     PostRejected,
     PostRateLimited,
+    InvalidData,
 )
 
 import os
@@ -503,6 +504,24 @@ class Room:
             if after <= max_old_id:
                 after += offset
 
+        whisper_clause = (
+            # For a mod we want to see:
+            # - all whisper_mods messsages
+            # - anything directed to us specifically
+            # - anything we sent (i.e. outbound whispers)
+            # - non-whispers
+            "whisper_mods OR whisper = :user OR user = :user OR whisper IS NULL"
+            if mod
+            # For a regular user we want to see:
+            # - anything with whisper_to sent to us
+            # - non-whispers
+            else "whisper = :user OR (whisper IS NULL AND NOT whisper_mods)"
+            if user
+            # Otherwise for public, non-user access we want to see:
+            # - non-whispers
+            else "whisper IS NULL AND NOT whisper_mods"
+        )
+
         for row in query(
             f"""
             SELECT * FROM message_details
@@ -513,11 +532,7 @@ class Room:
                     'AND id = :single' if single is not None else
                     ''
                 }
-                AND (
-                    whisper IS NULL
-                    {'OR whisper = :user' if user else ''}
-                    {'OR whisper_mods' if mod else ''}
-                )
+                AND ({whisper_clause})
             {
                 '' if single is not None else
                 'ORDER BY id ASC LIMIT :limit' if after is not None else
@@ -590,6 +605,9 @@ class Room:
         if not self.check_write(user):
             raise BadPermission()
 
+        if data is None or sig is None or len(sig) != 32:
+            raise InvalidData()
+
         whisper_mods = bool(whisper_mods)
         if (whisper_to or whisper_mods) and not self.check_moderator(user):
             app.logger.warning(f"Cannot post a whisper to {self}: {user} is not a moderator")
@@ -654,6 +672,64 @@ class Room:
 
         send_mule("message_posted", msg['id'])
         return msg
+
+    def edit_post(self, user: User, msg_id: int, data: bytes, sig: bytes):
+        """
+        Edits a post in the room.  The post must exist, must have been authored by the same user,
+        and must not be deleted.  The user must *currently* have write permission (i.e. if they lose
+        write permission they cannot edit existing posts made before they were restricted).
+
+        Edits cannot alter the whisper_to/whisper_mods properties.
+
+        Raises:
+        - BadPermission() if attempting to edit another user's message or not having write
+          permission in the room.
+        - A subclass of PostRejected() if the edit is unacceptable, for instance for triggering the
+          profanity filter.
+        - NoSuchPost() if the post is deleted.
+        """
+        if not self.check_write(user):
+            raise BadPermission()
+
+        if data is None or sig is None or len(sig) != 32:
+            raise InvalidData()
+
+        filtered = self.should_filter(user, data)
+        with db.transaction():
+            author = query(
+                '''
+                SELECT "user" FROM messages
+                WHERE id = :m AND room = :r AND data IS NOT NULL
+                ''',
+                m=msg_id,
+                r=self.id,
+            ).first()
+            if author is None:
+                raise NoSuchPost()
+            author = author[0]
+            if author != user.id:
+                raise BadPermission()
+
+            if filtered:
+                # Silent filtering is enabled and the edit failed the filter, so we want to drop the
+                # actual post update.
+                return
+
+            data_size = len(data)
+            unpadded_data = utils.remove_session_message_padding(data)
+
+            query(
+                """
+                UPDATE messages SET
+                    data = :data, data_size = :data_size, signature = :sig WHERE id = :m
+                """,
+                m=msg_id,
+                data=unpadded_data,
+                data_size=data_size,
+                sig=sig,
+            )
+
+        send_mule("message_edited", msg_id)
 
     def delete_posts(self, message_ids: List[int], deleter: User):
         """

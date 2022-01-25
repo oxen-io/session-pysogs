@@ -1,5 +1,6 @@
-# basic success:
+# success codes:
 OK = 200
+CREATED = 201
 
 # error status codes:
 BAD_REQUEST = 400
