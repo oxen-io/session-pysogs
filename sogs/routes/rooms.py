@@ -92,7 +92,7 @@ def messages_since(room, seqno):
 
     limit = utils.get_int_param('limit', 100, min=1, max=256, truncate=True)
 
-    return utils.jsonify_with_base64(room.get_messages_for(g.user, limit=limit, after=seqno))
+    return utils.jsonify_with_base64(room.get_messages_for(g.user, limit=limit, sequence=seqno))
 
 
 @rooms.get("/room/<Room:room>/messages/before/<int:msg_id>")

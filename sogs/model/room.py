@@ -465,6 +465,7 @@ class Room:
         self,
         user: Optional[User],
         *,
+        sequence: Optional[int] = None,
         after: Optional[int] = None,
         before: Optional[int] = None,
         recent: bool = False,
@@ -477,7 +478,12 @@ class Room:
         whispers meant to be displayed to moderators.
 
         Exactly one of `after`, `begin`, `recent` or `single` must be specified:
-        - `after=N` returns messages with ids greater than N in ascending order
+        - `sequence=N` returns messages that have been posted, edited, or deleted since the given
+          `seqno` (that is: the have seqno greater than N).  Messages are returned in sequence
+          order.
+        - `after=N` returns messages with ids greater than N in ascending order.  This is normally
+          *not* what you want for fetching messages as it omits edits and deletions; typically you
+          want to retrieve by seqno instead.
         - `before=N` returns messages with ids less than N in descending order
         - `recent=True` returns the most recent messages in descending order
         - `single=123` returns a singleton list containing the single message with the given message
@@ -491,11 +497,15 @@ class Room:
         mod = self.check_moderator(user)
         msgs = []
 
-        opt_count = sum((after is not None, before is not None, recent, single is not None))
+        opt_count = sum(arg is not None for arg in (sequence, after, before, single)) + bool(recent)
         if opt_count == 0:
-            raise RuntimeError("Exactly one of before=, after=, recent=, or single= is required")
+            raise RuntimeError(
+                "Exactly one of sequence=, before=, after=, recent=, or single= is required"
+            )
         if opt_count > 1:
-            raise RuntimeError("Cannot specify more than one of before=, after=, recent=, single=")
+            raise RuntimeError(
+                "Cannot specify more than one of sequence=, before=, after=, recent=, single="
+            )
 
         # Handle id mapping from an old database import in case the client is requesting
         # messages since some id from the old db.
@@ -525,8 +535,9 @@ class Room:
         for row in query(
             f"""
             SELECT * FROM message_details
-            WHERE room = :r AND data IS NOT NULL AND NOT filtered
+            WHERE room = :r AND NOT filtered {'AND data IS NOT NULL' if sequence is None else ''}
                 {
+                    'AND seqno > :sequence' if sequence is not None else
                     'AND id > :after' if after is not None else
                     'AND id < :before' if before is not None else
                     'AND id = :single' if single is not None else
@@ -535,11 +546,13 @@ class Room:
                 AND ({whisper_clause})
             {
                 '' if single is not None else
+                'ORDER BY seqno ASC LIMIT :limit' if sequence is not None else
                 'ORDER BY id ASC LIMIT :limit' if after is not None else
                 'ORDER BY id DESC LIMIT :limit'
             }
             """,
             r=self.id,
+            sequence=sequence,
             after=after,
             before=before,
             single=single,
