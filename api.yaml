@@ -136,13 +136,13 @@ paths:
       requestBody:
         description: >
           JSON body containing the message details to be submitted to the room.
-
-
-        data and signature are required; whisper_to and whisper_mods are permitted only for
-        moderators/admins.  The former sends a whisper within the room that will only be shown by
-        the given user; the latter sends a whisper in the room that will be seen by all moderators.
-        It is possible for a message to use both of these whisper modes at once, for example to
-        (privately) warn a user and have that warning visible by all other moderators.
+          
+          
+          data and signature are required; whisper_to and whisper_mods are permitted only for
+          moderators/admins.  The former sends a whisper within the room that will only be shown by
+          the given user; the latter sends a whisper in the room that will be seen by all
+          moderators.  It is possible for a message to use both of these whisper modes at once, for
+          example to (privately) warn a user and have that warning visible by all other moderators.
         required: true
         content:
           application/json:
