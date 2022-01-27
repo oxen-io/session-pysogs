@@ -6,7 +6,6 @@ from . import model
 from .omq import omq
 from .web import app
 
-from binascii import hexlify
 from types import Iterable
 
 from oxenc import bt_serialize
