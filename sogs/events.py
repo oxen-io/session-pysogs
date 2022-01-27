@@ -34,7 +34,7 @@ def _user_from_conn(conn):
     """
     make a model.User from a connection using its curve pubkey as the session id.
     """
-    return model.User(session_id='05' + hexlify(conn.pubkey).decode())
+    return model.User(session_id='05' + conn.pubkey.hex())
 
 
 def _maybe_serialize(data):
