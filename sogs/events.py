@@ -37,13 +37,23 @@ def _user_from_conn(conn):
     return model.User(session_id='05' + hexlify(conn.pubkey).decode())
 
 
+def _maybe_serialize(data):
+    """maybe bt encode data, if data is a bytes dont encode,
+    if data is a string turn it into bytes and dont encode, otherwise bt encode"""
+    if isinstance(data, bytes):
+        return data
+    if isinstance(data, str):
+        return data.encode()
+    return bt_serialize(data)
+
+
 def _propagate_event(eventname, *args):
     """ propagate an event to everyone who cares about it """
     assert event_name_valid(eventname)
     global omq, _pools
     sent = 0
     for conn in _pools[eventname]:
-        omq.send(conn, f'sogs.event.{eventname}', *(bt_serialize(a) for a in args))
+        omq.send(conn, f'sogs.event.{eventname}', *(_maybe_serialize(a) for a in args))
         sent += 1
     if sent:
         app.logger.info(f"sent {eventname} to {sent} subscribers")
