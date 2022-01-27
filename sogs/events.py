@@ -32,7 +32,7 @@ def event_name_valid(eventname):
 
 def _user_from_conn(conn):
     """
-    make a model.User from a connection using it's curve pubkey as the session id.
+    make a model.User from a connection using its curve pubkey as the session id.
     """
     return model.User(session_id='05' + hexlify(conn.pubkey).decode())
 
