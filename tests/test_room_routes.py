@@ -4,10 +4,9 @@ from sogs.model.room import Room
 from sogs.model.file import File
 from sogs import utils
 import sogs.config
-from auth import x_sogs_for
-import json
 import werkzeug.exceptions as wexc
 from util import pad32
+from request import sogs_get, sogs_post, sogs_put
 
 
 def test_list(client, room, user, user2, admin, mod, global_mod, global_admin):
@@ -90,23 +89,23 @@ def test_list(client, room, user, user2, admin, mod, global_mod, global_admin):
     assert r.status_code == 200
     assert r.json == [r2_expected, r_expected]
 
-    r = client.get("/rooms", headers=x_sogs_for(user, "GET", "/rooms"))
+    r = sogs_get(client, "/rooms", user)
     assert r.status_code == 200
     assert r.json == [r2_expected, r_expected]
 
-    r = client.get("/rooms", headers=x_sogs_for(user2, "GET", "/rooms"))
+    r = sogs_get(client, "/rooms", user2)
     assert r.status_code == 200
     assert r.json == [{**r2_expected, "write": True}, r3_expected, r_expected]
 
-    r = client.get("/rooms", headers=x_sogs_for(mod, "GET", "/rooms"))
+    r = sogs_get(client, "/rooms", mod)
     assert r.status_code == 200
     assert r.json == [r2_expected, {**r_expected, **exp_mod}]
 
-    r = client.get("/rooms", headers=x_sogs_for(admin, "GET", "/rooms"))
+    r = sogs_get(client, "/rooms", admin)
     assert r.status_code == 200
     assert r.json == [r2_expected, {**r_expected, **exp_admin}]
 
-    r = client.get("/rooms", headers=x_sogs_for(global_mod, "GET", "/rooms"))
+    r = sogs_get(client, "/rooms", global_mod)
     assert r.status_code == 200
     assert r.json == [
         {**r2_expected, **exp_gmod},
@@ -114,7 +113,7 @@ def test_list(client, room, user, user2, admin, mod, global_mod, global_admin):
         {**r_expected, **exp_gmod},
     ]
 
-    r = client.get("/rooms", headers=x_sogs_for(global_admin, "GET", "/rooms"))
+    r = sogs_get(client, "/rooms", global_admin)
     assert r.status_code == 200
     assert r.json == [
         {**r2_expected, **exp_gadmin},
@@ -122,21 +121,21 @@ def test_list(client, room, user, user2, admin, mod, global_mod, global_admin):
         {**r_expected, **exp_gadmin},
     ]
 
-    r = client.get("/room/room3", headers=x_sogs_for(user, "GET", "/room/room3"))
+    r = sogs_get(client, "/room/room3", user)
     assert r.status_code == 200
     assert r.json == {**r3_expected, "read": False}
 
-    r = client.get("/room/room3", headers=x_sogs_for(user2, "GET", "/room/room3"))
+    r = sogs_get(client, "/room/room3", user2)
     assert r.status_code == 200
     assert r.json == r3_expected
 
-    r = client.get("/room/room3", headers=x_sogs_for(global_admin, "GET", "/room/room3"))
+    r = sogs_get(client, "/room/room3", global_admin)
     assert r.status_code == 200
     assert r.json == {**r3_expected, **exp_gadmin}
 
 
 def test_polling(client, room, user, user2, mod, admin, global_mod, global_admin):
-    r = client.get("/room/test-room", headers=x_sogs_for(user, "GET", "/room/test-room"))
+    r = sogs_get(client, "/room/test-room", user)
     assert r.status_code == 200
     info_up = r.json['info_updates']
     assert info_up == 2
@@ -168,10 +167,7 @@ def test_polling(client, room, user, user2, mod, admin, global_mod, global_admin
         "upload": True,
     }
 
-    r = client.get(
-        f"/room/test-room/pollInfo/{info_up}",
-        headers=x_sogs_for(user, "GET", f"/room/test-room/pollInfo/{info_up}"),
-    )
+    r = sogs_get(client, f"/room/test-room/pollInfo/{info_up}", user)
     assert r.status_code == 200
     assert r.json == basic
 
@@ -179,29 +175,20 @@ def test_polling(client, room, user, user2, mod, admin, global_mod, global_admin
 
     # Changing name
     room.name = 'Test Room'
-    r = client.get(
-        f"/room/test-room/pollInfo/{info_up}",
-        headers=x_sogs_for(user, "GET", f"/room/test-room/pollInfo/{info_up}"),
-    )
+    r = sogs_get(client, f"/room/test-room/pollInfo/{info_up}", user)
     assert r.status_code == 200
     details['info_updates'] += 1
     details['name'] = 'Test Room'
     assert r.json == {**basic, 'details': details}
 
     info_up += 1
-    r = client.get(
-        f"/room/test-room/pollInfo/{info_up}",
-        headers=x_sogs_for(mod, "GET", f"/room/test-room/pollInfo/{info_up}"),
-    )
+    r = sogs_get(client, f"/room/test-room/pollInfo/{info_up}", mod)
     basic['active_users'] += 1
     details['active_users'] += 1
     assert r.status_code == 200
     assert r.json == {**basic, 'moderator': True}
 
-    r = client.get(
-        f"/room/test-room/pollInfo/{info_up}",
-        headers=x_sogs_for(admin, "GET", f"/room/test-room/pollInfo/{info_up}"),
-    )
+    r = sogs_get(client, f"/room/test-room/pollInfo/{info_up}", admin)
     assert r.status_code == 200
     basic['active_users'] += 1
     details['active_users'] += 1
@@ -209,23 +196,14 @@ def test_polling(client, room, user, user2, mod, admin, global_mod, global_admin
 
     # Changing description
     room.description = 'Test suite testing room new desc'
-    r = client.get(
-        f"/room/test-room/pollInfo/{info_up}",
-        headers=x_sogs_for(user, "GET", f"/room/test-room/pollInfo/{info_up}"),
-    )
+    r = sogs_get(client, f"/room/test-room/pollInfo/{info_up}", user)
     assert r.status_code == 200
     details['info_updates'] += 1
     details['description'] = 'Test suite testing room new desc'
     assert r.json == {**basic, 'details': details}
     info_up += 1
     assert info_up == details['info_updates']
-    assert (
-        'details'
-        not in client.get(
-            f"/room/test-room/pollInfo/{info_up}",
-            headers=x_sogs_for(user, "GET", f"/room/test-room/pollInfo/{info_up}"),
-        ).json
-    )
+    assert 'details' not in sogs_get(client, f"/room/test-room/pollInfo/{info_up}", user).json
 
     # Setting room image
     img = File(
@@ -239,10 +217,7 @@ def test_polling(client, room, user, user2, mod, admin, global_mod, global_admin
     )
     room.image = img
 
-    r = client.get(
-        f"/room/test-room/pollInfo/{info_up}",
-        headers=x_sogs_for(user, "GET", f"/room/test-room/pollInfo/{info_up}"),
-    )
+    r = sogs_get(client, f"/room/test-room/pollInfo/{info_up}", user)
     assert r.status_code == 200
     details['image_id'] = 1
     details['info_updates'] += 1
@@ -250,21 +225,12 @@ def test_polling(client, room, user, user2, mod, admin, global_mod, global_admin
     info_up += 1
     assert info_up == details['info_updates']
 
-    assert (
-        'details'
-        not in client.get(
-            f"/room/test-room/pollInfo/{info_up}",
-            headers=x_sogs_for(user, "GET", f"/room/test-room/pollInfo/{info_up}"),
-        ).json
-    )
+    assert 'details' not in sogs_get(client, f"/room/test-room/pollInfo/{info_up}", user).json
 
     # Add moderator
     room.set_moderator(user, added_by=admin)
 
-    r = client.get(
-        f"/room/test-room/pollInfo/{info_up}",
-        headers=x_sogs_for(user, "GET", f"/room/test-room/pollInfo/{info_up}"),
-    )
+    r = sogs_get(client, f"/room/test-room/pollInfo/{info_up}", user)
     assert r.status_code == 200
     details['info_updates'] += 1
     details['moderators'] = sorted(details['moderators'] + [user.session_id])
@@ -283,10 +249,7 @@ def test_polling(client, room, user, user2, mod, admin, global_mod, global_admin
 
     # Remove moderator
     room.remove_moderator(user, removed_by=admin)
-    r = client.get(
-        f"/room/test-room/pollInfo/{info_up}",
-        headers=x_sogs_for(user, "GET", f"/room/test-room/pollInfo/{info_up}"),
-    )
+    r = sogs_get(client, f"/room/test-room/pollInfo/{info_up}", user)
     assert r.status_code == 200
     details['info_updates'] += 1
     details['moderators'] = sorted(x for x in details['moderators'] if x != user.session_id)
@@ -297,10 +260,7 @@ def test_polling(client, room, user, user2, mod, admin, global_mod, global_admin
     # Add global admin
     user2.set_moderator(added_by=global_admin, admin=True, visible=True)
 
-    r = client.get(
-        f"/room/test-room/pollInfo/{info_up}",
-        headers=x_sogs_for(user, "GET", f"/room/test-room/pollInfo/{info_up}"),
-    )
+    r = sogs_get(client, f"/room/test-room/pollInfo/{info_up}", user)
     assert r.status_code == 200
     details['info_updates'] += 1
     details['admins'] = sorted(details['admins'] + [user2.session_id])
@@ -310,10 +270,7 @@ def test_polling(client, room, user, user2, mod, admin, global_mod, global_admin
 
     # Remove global admin
     user2.remove_moderator(removed_by=user2)
-    r = client.get(
-        f"/room/test-room/pollInfo/{info_up}",
-        headers=x_sogs_for(user, "GET", f"/room/test-room/pollInfo/{info_up}"),
-    )
+    r = sogs_get(client, f"/room/test-room/pollInfo/{info_up}", user)
     assert r.status_code == 200
     details['info_updates'] += 1
     details['admins'] = sorted(x for x in details['admins'] if x != user2.session_id)
@@ -324,28 +281,22 @@ def test_polling(client, room, user, user2, mod, admin, global_mod, global_admin
     # Post a message should *not* change info_updates, but should change the message_sequence
     p1 = room.add_post(user, b'fake data', pad32(b'fake sig'))
 
-    r = client.get(
-        f"/room/test-room/pollInfo/{info_up}",
-        headers=x_sogs_for(user, "GET", f"/room/test-room/pollInfo/{info_up}"),
-    )
+    r = sogs_get(client, f"/room/test-room/pollInfo/{info_up}", user)
     assert r.status_code == 200
     assert 'details' not in r.json
 
     details['message_sequence'] += 1
-    r = client.get("/room/test-room", headers=x_sogs_for(user, "GET", "/room/test-room"))
+    r = sogs_get(client, "/room/test-room", user)
     assert r.json['message_sequence'] == details['message_sequence']
 
     # Editing also should change message_sequence and not info_updates
     room.edit_post(user, p1['id'], b'more fake data', pad32(b'another fake sig'))
-    r = client.get(
-        f"/room/test-room/pollInfo/{info_up}",
-        headers=x_sogs_for(user, "GET", f"/room/test-room/pollInfo/{info_up}"),
-    )
+    r = sogs_get(client, f"/room/test-room/pollInfo/{info_up}", user)
     assert r.status_code == 200
     assert 'details' not in r.json
 
     details['message_sequence'] += 1
-    r = client.get("/room/test-room", headers=x_sogs_for(user, "GET", "/room/test-room"))
+    r = sogs_get(client, "/room/test-room", user)
     assert r.json['message_sequence'] == details['message_sequence']
 
 
@@ -362,7 +313,7 @@ def test_fetch_since(client, room, user, no_rate_limit):
         done = False
         while not done:
             url = f"/room/test-room/messages/since/{top_fetched}"
-            r = client.get(url, headers=x_sogs_for(user, "GET", url))
+            r = sogs_get(client, url, user)
             assert r.status_code == 200
             fetches += 1
             c = min(100, counter - top_fetched)
@@ -397,7 +348,7 @@ def test_fetch_since(client, room, user, no_rate_limit):
     done, fetches, top_fetched = False, 0, 0
     while not done:
         url = f"/room/test-room/messages/since/{top_fetched}?limit=25"
-        r = client.get(url, headers=x_sogs_for(user, "GET", url))
+        r = sogs_get(client, url, user)
         assert r.status_code == 200
         fetches += 1
         assert [utils.decode_base64(post['data']) for post in r.json] == [
@@ -416,19 +367,19 @@ def test_fetch_before(client, room, user, no_rate_limit):
         room.add_post(user, f"data-{i}".encode(), pad32(f"fake sig {i}"))
 
     url = "/room/test-room/messages/recent"
-    r100 = client.get(url, headers=x_sogs_for(user, "GET", url))
+    r100 = sogs_get(client, url, user)
     assert len(r100.json) == 100
 
     assert [p['id'] for p in r100.json] == list(range(1000, 900, -1))
 
     url = "/room/test-room/messages/recent?limit=201"
-    r201 = client.get(url, headers=x_sogs_for(user, "GET", url))
+    r201 = sogs_get(client, url, user)
     assert len(r201.json) == 201
 
     assert r100.json == r201.json[:100]
 
     url = f"/room/test-room/messages/before/{r100.json[-1]['id']}?limit=101"
-    r101 = client.get(url, headers=x_sogs_for(user, "GET", url))
+    r101 = sogs_get(client, url, user)
     assert r101.status_code == 200
 
     assert r100.json + r101.json == r201.json
@@ -442,7 +393,7 @@ def test_fetch_before(client, room, user, no_rate_limit):
             url = url + f"?limit={limit}"
         else:
             limit = 100
-        r = client.get(url, headers=x_sogs_for(user, "GET", url))
+        r = sogs_get(client, url, user)
         assert r.status_code == 200
         assert len(r.json) == limit
         assert r.json[0]['id'] == next_exp
@@ -453,7 +404,7 @@ def test_fetch_before(client, room, user, no_rate_limit):
     assert next_exp == 0
     assert before == 1
     url = f"/room/test-room/messages/before/{before}"
-    r = client.get(url, headers=x_sogs_for(user, "GET", url))
+    r = sogs_get(client, url, user)
     assert len(r.json) == 0
 
 
@@ -462,7 +413,7 @@ def test_fetch_one(client, room, user, no_rate_limit):
 
     for i in (5, 2, 8, 7, 9, 6, 10, 1, 3, 4):
         url = f"/room/test-room/message/{i}"
-        r = client.get(url, headers=x_sogs_for(user, "GET", url))
+        r = sogs_get(client, url, user)
         assert r.status_code == 200
         p = posts[i - 1].copy()
         for x in ('data', 'signature'):
@@ -486,7 +437,7 @@ def test_pinning(client, room, user, admin, no_rate_limit):
         room.add_post(user, f"data-{i}".encode(), pad32(f"fake sig {i}"))
 
     def room_json():
-        r = client.get("/room/test-room", headers=x_sogs_for(user, "GET", "/room/test-room"))
+        r = sogs_get(client, "/room/test-room", user)
         assert r.status_code == 200
         return r.json
 
@@ -494,11 +445,11 @@ def test_pinning(client, room, user, admin, no_rate_limit):
 
     url = "/room/test-room/pin/3"
     with pytest.raises(wexc.Forbidden):
-        r = client.post(url, data=b'{}', headers=x_sogs_for(user, "POST", url, b'{}'))
+        r = sogs_post(client, url, {}, user)
 
     assert room_json()['info_updates'] == 1
 
-    r = client.post(url, data=b'{}', headers=x_sogs_for(admin, "POST", url, b'{}'))
+    r = sogs_post(client, url, {}, admin)
     assert r.status_code == 200
 
     ri = room_json()
@@ -507,11 +458,11 @@ def test_pinning(client, room, user, admin, no_rate_limit):
     assert -1 < ri['pinned_messages'][0]['pinned_at'] - time.time() < 1
 
     url = "/room/test-room/pin/7"
-    r = client.post(url, data=b'{}', headers=x_sogs_for(admin, "POST", url, b'{}'))
+    r = sogs_post(client, url, {}, admin)
     assert r.status_code == 200
     time.sleep(0.001)
     url = "/room/test-room/pin/5"
-    r = client.post(url, data=b'{}', headers=x_sogs_for(admin, "POST", url, b'{}'))
+    r = sogs_post(client, url, {}, admin)
     assert r.status_code == 200
 
     ri = room_json()
@@ -532,7 +483,7 @@ def test_pinning(client, room, user, admin, no_rate_limit):
     )
 
     url = "/room/test-room/pin/7"
-    r = client.post(url, data=b'{}', headers=x_sogs_for(admin, "POST", url, b'{}'))
+    r = sogs_post(client, url, {}, admin)
     assert r.status_code == 200
 
     ri = room_json()
@@ -553,7 +504,7 @@ def test_pinning(client, room, user, admin, no_rate_limit):
     )
 
     url = "/room/test-room/unpin/5"
-    r = client.post(url, data=b'{}', headers=x_sogs_for(admin, "POST", url, b'{}'))
+    r = sogs_post(client, url, {}, admin)
     assert r.status_code == 200
 
     ri = room_json()
@@ -566,7 +517,7 @@ def test_pinning(client, room, user, admin, no_rate_limit):
     assert time.time() - 1 < rpm[0]['pinned_at'] < rpm[1]['pinned_at'] < time.time() + 1
 
     url = "/room/test-room/unpin/all"
-    r = client.post(url, data=b'{}', headers=x_sogs_for(admin, "POST", url, b'{}'))
+    r = sogs_post(client, url, {}, admin)
     assert r.status_code == 200
 
     assert 'pinned_messages' not in room_json()
@@ -576,13 +527,7 @@ def test_posting(client, room, user, user2, mod, global_mod):
 
     url_post = "/room/test-room/message"
     d, s = (utils.encode_base64(x) for x in (b"post 1", pad32("sig 1")))
-    p = json.dumps({"data": d, "signature": s}).encode()
-    r = client.post(
-        url_post,
-        data=p,
-        content_type='application/json',
-        headers=x_sogs_for(user, "POST", url_post, p),
-    )
+    r = sogs_post(client, url_post, {"data": d, "signature": s}, user)
     assert r.status_code == 201
 
     p1 = r.json
@@ -596,7 +541,7 @@ def test_posting(client, room, user, user2, mod, global_mod):
     assert -1 < p1['posted'] - time.time() < 1
 
     url_get = "/room/test-room/messages/since/0"
-    r = client.get(url_get, headers=x_sogs_for(user, "GET", url_get))
+    r = sogs_get(client, url_get, user)
     assert r.json == [p1]
 
 
@@ -604,23 +549,13 @@ def test_whisper_to(client, room, user, user2, mod, global_mod):
 
     url_post = "/room/test-room/message"
     d, s = (utils.encode_base64(x) for x in (b"whisper 1", pad32("sig 1")))
-    p = json.dumps({"data": d, "signature": s, "whisper_to": user2.session_id}).encode()
+    p = {"data": d, "signature": s, "whisper_to": user2.session_id}
 
     # Regular users can't post whispers:
     with pytest.raises(wexc.Forbidden):
-        r = client.post(
-            url_post,
-            data=p,
-            content_type='application/json',
-            headers=x_sogs_for(user, "POST", url_post, p),
-        )
+        r = sogs_post(client, url_post, p, user)
 
-    r = client.post(
-        url_post,
-        data=p,
-        content_type='application/json',
-        headers=x_sogs_for(mod, "POST", url_post, p),
-    )
+    r = sogs_post(client, url_post, p, mod)
     assert r.status_code == 201
     msg = r.json
     assert filter_timestamps(msg) == {
@@ -637,22 +572,22 @@ def test_whisper_to(client, room, user, user2, mod, global_mod):
 
     url_get = "/room/test-room/messages/since/0"
     # user shouldn't get the whisper:
-    r = client.get(url_get, headers=x_sogs_for(user, 'GET', url_get))
+    r = sogs_get(client, url_get, user)
     assert r.status_code == 200
     assert filter_timestamps(r.json) == filter_timestamps([])
 
     # user2 should get it:
-    r = client.get(url_get, headers=x_sogs_for(user2, 'GET', url_get))
+    r = sogs_get(client, url_get, user2)
     assert r.status_code == 200
     assert filter_timestamps(r.json) == filter_timestamps([msg])
 
     # The mod who sent it should still see it (even though not directed at mods):
-    r = client.get(url_get, headers=x_sogs_for(mod, 'GET', url_get))
+    r = sogs_get(client, url_get, mod)
     assert r.status_code == 200
     assert filter_timestamps(r.json) == filter_timestamps([msg])
 
     # another mod shouldn't get it
-    r = client.get(url_get, headers=x_sogs_for(global_mod, 'GET', url_get))
+    r = sogs_get(client, url_get, global_mod)
     assert r.status_code == 200
     assert filter_timestamps(r.json) == filter_timestamps([])
 
@@ -661,23 +596,13 @@ def test_whisper_mods(client, room, user, user2, mod, global_mod, admin):
 
     url_post = "/room/test-room/message"
     d, s = (utils.encode_base64(x) for x in (b"whisper 1", pad32("sig 1")))
-    p = json.dumps({"data": d, "signature": s, "whisper_mods": True}).encode()
+    p = {"data": d, "signature": s, "whisper_mods": True}
 
     # Regular users can't post mod whispers:
     with pytest.raises(wexc.Forbidden):
-        r = client.post(
-            url_post,
-            data=p,
-            content_type='application/json',
-            headers=x_sogs_for(user, "POST", url_post, p),
-        )
+        r = sogs_post(client, url_post, p, user)
 
-    r = client.post(
-        url_post,
-        data=p,
-        content_type='application/json',
-        headers=x_sogs_for(mod, "POST", url_post, p),
-    )
+    r = sogs_post(client, url_post, p, mod)
     assert r.status_code == 201
     msg = r.json
     assert filter_timestamps(msg) == {
@@ -695,13 +620,13 @@ def test_whisper_mods(client, room, user, user2, mod, global_mod, admin):
 
     # users shouldn't get the whisper:
     for u in (user, user2):
-        r = client.get(url_get, headers=x_sogs_for(u, 'GET', url_get))
+        r = sogs_get(client, url_get, u)
         assert r.status_code == 200
         assert filter_timestamps(r.json) == filter_timestamps([])
 
     # All mods/admins should get it
     for m in (mod, global_mod, admin):
-        r = client.get(url_get, headers=x_sogs_for(mod, 'GET', url_get))
+        r = sogs_get(client, url_get, mod)
         assert r.status_code == 200
         assert filter_timestamps(r.json) == filter_timestamps([msg])
 
@@ -712,13 +637,8 @@ def test_whisper_both(client, room, user, user2, mod, admin):
 
     url_post = "/room/test-room/message"
     d, s = (utils.encode_base64(x) for x in (b"offensive post!", pad32("sig")))
-    p = json.dumps({"data": d, "signature": s}).encode()
-    r = client.post(
-        url_post,
-        data=p,
-        content_type='application/json',
-        headers=x_sogs_for(user, "POST", url_post, p),
-    )
+    p = {"data": d, "signature": s}
+    r = sogs_post(client, url_post, p, user)
     assert r.status_code == 201
     msg = r.json
     assert filter_timestamps(msg) == {
@@ -731,47 +651,21 @@ def test_whisper_both(client, room, user, user2, mod, admin):
 
     # Regular users can't post mod whispers:
     with pytest.raises(wexc.Forbidden):
-        p = json.dumps(
-            {"data": d, "signature": s, "whisper_mods": True, "whisper_to": mod.session_id}
-        ).encode()
-        r = client.post(
-            url_post,
-            data=p,
-            content_type='application/json',
-            headers=x_sogs_for(user, "POST", url_post, p),
-        )
+        p = {"data": d, "signature": s, "whisper_mods": True, "whisper_to": mod.session_id}
+        r = sogs_post(client, url_post, p, user)
 
     d, s = (utils.encode_base64(x) for x in (b"I'm going to scare this guy", pad32("sig2")))
-    p = json.dumps({"data": d, "signature": s, "whisper_mods": True}).encode()
-    r = client.post(
-        url_post,
-        data=p,
-        content_type='application/json',
-        headers=x_sogs_for(mod, "POST", url_post, p),
-    )
+    r = sogs_post(client, url_post, {"data": d, "signature": s, "whisper_mods": True}, mod)
     assert r.status_code == 201
     w1 = r.json
 
     d, s = (utils.encode_base64(x) for x in (b"WTF, do you want a ban?", pad32("sig3")))
-    p = json.dumps(
-        {"data": d, "signature": s, "whisper_to": user.session_id, "whisper_mods": True}
-    ).encode()
-    r = client.post(
-        url_post,
-        data=p,
-        content_type='application/json',
-        headers=x_sogs_for(mod, "POST", url_post, p),
-    )
+    p = {"data": d, "signature": s, "whisper_to": user.session_id, "whisper_mods": True}
+    r = sogs_post(client, url_post, p, mod)
     w2 = r.json
 
     d, s = (utils.encode_base64(x) for x in (b"No please I'm sorry!!!", pad32("sig4")))
-    p = json.dumps({"data": d, "signature": s}).encode()
-    r = client.post(
-        url_post,
-        data=p,
-        content_type='application/json',
-        headers=x_sogs_for(user, "POST", url_post, p),
-    )
+    r = sogs_post(client, url_post, {"data": d, "signature": s}, user)
     msg2 = r.json
 
     assert filter_timestamps([msg, w1, w2, msg2]) == [
@@ -812,16 +706,16 @@ def test_whisper_both(client, room, user, user2, mod, admin):
 
     url_get = "/room/test-room/messages/since/0"
 
-    r = client.get(url_get, headers=x_sogs_for(user, 'GET', url_get))
+    r = sogs_get(client, url_get, user)
     assert r.json == [msg, w2, msg2]
 
-    r = client.get(url_get, headers=x_sogs_for(user2, 'GET', url_get))
+    r = sogs_get(client, url_get, user2)
     assert r.json == [msg, msg2]
 
-    r = client.get(url_get, headers=x_sogs_for(mod, 'GET', url_get))
+    r = sogs_get(client, url_get, mod)
     assert r.json == [msg, w1, w2, msg2]
 
-    r = client.get(url_get, headers=x_sogs_for(admin, 'GET', url_get))
+    r = sogs_get(client, url_get, admin)
     assert r.json == [msg, w1, w2, msg2]
 
 
@@ -829,13 +723,7 @@ def test_edits(client, room, user, user2, mod, global_admin):
 
     url_post = "/room/test-room/message"
     d, s = (utils.encode_base64(x) for x in (b"post 1", pad32("sig 1")))
-    p = json.dumps({"data": d, "signature": s}).encode()
-    r = client.post(
-        url_post,
-        data=p,
-        content_type='application/json',
-        headers=x_sogs_for(user, "POST", url_post, p),
-    )
+    r = sogs_post(client, url_post, {"data": d, "signature": s}, user)
     assert r.status_code == 201
 
     p1 = r.json
@@ -849,38 +737,36 @@ def test_edits(client, room, user, user2, mod, global_admin):
     assert -1 < p1['posted'] - time.time() < 1
 
     url_get = "/room/test-room/messages/since/0"
-    r = client.get(url_get, headers=x_sogs_for(user, "GET", url_get))
+    r = sogs_get(client, url_get, user)
     assert r.json == [p1]
 
     url_edit = "/room/test-room/message/1"
+
+    # Make sure someone else (even super admin) can't edit our message:
+    d, s = (utils.encode_base64(x) for x in (b"post 1no", pad32("sig 1no")))
+    with pytest.raises(wexc.Forbidden):
+        r = sogs_put(client, url_edit, {"data": d, "signature": s}, global_admin)
+
+    r = sogs_get(client, url_get, user)
+    assert filter_timestamps(r.json) == filter_timestamps([p1])
+    assert 'edited' not in r.json[0]
+
     d, s = (utils.encode_base64(x) for x in (b"post 1b", pad32("sig 1b")))
-    p = json.dumps({"data": d, "signature": s}).encode()
     time.sleep(0.001)
-    r = client.put(
-        url_edit,
-        data=p,
-        content_type='application/json',
-        headers=x_sogs_for(user, "PUT", url_edit, p),
-    )
+    r = sogs_put(client, url_edit, {"data": d, "signature": s}, user)
     assert r.status_code == 200
     assert r.json == {}
     p1['seqno'] = 2
     p1['data'] = d
     p1['signature'] = s
 
-    r = client.get(url_get, headers=x_sogs_for(user, "GET", url_get))
+    r = sogs_get(client, url_get, user)
     assert filter_timestamps(r.json) == filter_timestamps([p1])
     assert time.time() - 1 < r.json[0]['posted'] < r.json[0]['edited'] < time.time() + 1
     p1['edited'] = r.json[0]['edited']
 
     d, s = (utils.encode_base64(x) for x in (b"post 2", pad32("sig 2")))
-    p = json.dumps({"data": d, "signature": s}).encode()
-    r = client.post(
-        url_post,
-        data=p,
-        content_type='application/json',
-        headers=x_sogs_for(user2, "POST", url_post, p),
-    )
+    r = sogs_post(client, url_post, {"data": d, "signature": s}, user2)
     assert r.status_code == 201
     p2 = r.json
     assert filter_timestamps(p2) == {
@@ -893,14 +779,8 @@ def test_edits(client, room, user, user2, mod, global_admin):
     assert -1 < p2['posted'] - time.time() < 1
 
     d, s = (utils.encode_base64(x) for x in (b"post 1c", pad32("sig 1c")))
-    p = json.dumps({"data": d, "signature": s}).encode()
     time.sleep(0.001)
-    r = client.put(
-        url_edit,
-        data=p,
-        content_type='application/json',
-        headers=x_sogs_for(user, "PUT", url_edit, p),
-    )
+    r = sogs_put(client, url_edit, {"data": d, "signature": s}, user)
     assert r.status_code == 200
     assert r.json == {}
     p1['seqno'] = 4
@@ -908,7 +788,7 @@ def test_edits(client, room, user, user2, mod, global_admin):
     p1['signature'] = s
 
     url_get = "/room/test-room/messages/since/3"
-    r = client.get(url_get, headers=x_sogs_for(user2, "GET", url_get))
+    r = sogs_get(client, url_get, user2)
     assert (
         time.time() - 1
         < r.json[0]['posted']
@@ -921,17 +801,17 @@ def test_edits(client, room, user, user2, mod, global_admin):
     assert r.json == [p1]
 
     url_get = "/room/test-room/messages/since/0"
-    r = client.get(url_get, headers=x_sogs_for(mod, "GET", url_get))
+    r = sogs_get(client, url_get, mod)
     assert r.json == [p2, p1]
 
     url_get = "/room/test-room/messages/since/1"
-    r = client.get(url_get, headers=x_sogs_for(global_admin, "GET", url_get))
+    r = sogs_get(client, url_get, global_admin)
     assert r.json == [p2, p1]
 
     url_get = "/room/test-room/messages/since/2"
-    r = client.get(url_get, headers=x_sogs_for(user, "GET", url_get))
+    r = sogs_get(client, url_get, user)
     assert r.json == [p2, p1]
 
     url_get = "/room/test-room/messages/since/4"
-    r = client.get(url_get, headers=x_sogs_for(user, "GET", url_get))
+    r = sogs_get(client, url_get, user)
     assert r.json == []
