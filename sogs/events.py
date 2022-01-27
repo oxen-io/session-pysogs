@@ -16,7 +16,7 @@ from .routes.subrequest import make_subrequest
 from flask import g
 
 # pools for event propagation
-_pools = defaultdict(list)
+_pools = defaultdict(set)
 
 status_OK = 'OK'
 status_ERR = 'ERROR'
@@ -111,7 +111,7 @@ def handle_subscribe(*events, conn=None):
 
     global _pools
     for name in sub:
-        _pools[name].append(conn)
+        _pools[name].add(conn)
     app.logger.debug(f"sub {conn} to {len(sub)} events")
 
 
@@ -127,7 +127,8 @@ def handle_unsubscribe(*events, conn=None):
 
     global _pools
     for name in unsub:
-        _pools[name].remove(conn)
+        if conn in _pools[name]:
+            _pools[name].remove(conn)
     app.logger.debug(f"unsub {conn} to {len(unsub)} events")
 
 
