@@ -5,6 +5,7 @@ import os
 import logging
 import importlib.resources
 import sqlalchemy
+from sqlalchemy.sql.expression import bindparam
 
 HAVE_FILE_ID_HACKS = False
 # roomid => (max, offset).  Max is the highest message id that was in the old table; offset is the
@@ -18,7 +19,7 @@ def get_conn():
     return engine.connect()
 
 
-def query(query, *, dbconn=None, **params):
+def query(query, *, dbconn=None, bind_expanding=None, **params):
     """Executes a query containing :param style placeholders (regardless of the actual underlying
     database placeholder style), binding them using the given params keyword arguments.
 
@@ -33,6 +34,9 @@ def query(query, *, dbconn=None, **params):
 
     See sqlalchemy.text for details.
 
+    bind_expanding can be passed a sequence of bind names that are "expanding" to a tuple, most
+    commonly used to bind and expand the RHS of a `x IN :x` clause.
+
     Can execute on a specific connection by passing it as dbconn; if omitted, uses web.appdb.  (Note
     that dbconn *cannot* be used as a placeholder bind name).
     """
@@ -42,7 +46,12 @@ def query(query, *, dbconn=None, **params):
 
         dbconn = web.appdb
 
-    return dbconn.execute(sqlalchemy.text(query), **params)
+    q = sqlalchemy.text(query)
+
+    if bind_expanding:
+        q = q.bindparams(*(bindparam(c, expanding=True) for c in bind_expanding))
+
+    return dbconn.execute(q, **params)
 
 
 # Begins a (potentially nested) transaction.  Takes an optional connection; if omitted uses
