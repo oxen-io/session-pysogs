@@ -685,6 +685,7 @@ class Room:
                         """,
                         r=self.id,
                         ids=tuple(message_ids[i : i + 50]),
+                        bind_expanding=['ids'],
                     )
                 )
 
@@ -700,11 +701,16 @@ class Room:
                             """,
                             u=deleter.id,
                             ids=ids,
+                            bind_expanding=['ids'],
                         )
                         if res.first()[0]:
                             raise BadPermission()
 
-                    query("DELETE FROM message_details WHERE id IN :ids", ids=ids)
+                    query(
+                        "DELETE FROM message_details WHERE id IN :ids",
+                        ids=ids,
+                        bind_expanding=['ids'],
+                    )
 
                     deleted += ids
                 i += 50
