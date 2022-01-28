@@ -24,7 +24,7 @@ tags:
   description: Endpoint for submitting a batch of requests at once.
 - name: Users
   description: Management of users and user-related info.
-- name: Onion:
+- name: Onion
   description: Submitting an onion request
 security:
   - pubkey: []
@@ -438,7 +438,7 @@ paths:
               schema:
                 type: object
         403:
-          description: permission denied: the calling user does not have room admin permission
+          description: "permission denied: the calling user does not have room admin permission"
         404:
           description: >
             The given post was not found in this room or is ineligible for pinning (e.g. a whisper,
@@ -465,7 +465,7 @@ paths:
               schema:
                 type: object
         403:
-          description: permission denied: the calling user does not have room admin permission
+          description: "permission denied: the calling user does not have room admin permission"
 
   /room/{roomToken}/unpin/all:
     post:
@@ -480,13 +480,13 @@ paths:
         - $ref: "#/components/parameters/pathRoomToken"
       responses:
         200:
-          description: successful operation: the room now has no pinned messages.
+          description: "successful operation: the room now has no pinned messages."
           content:
             application/json:
               schema:
                 type: object
         403:
-          description: permission denied: the calling user does not have room admin permission
+          description: "permission denied: the calling user does not have room admin permission"
 
   /room/{roomToken}/file:
     post:
@@ -1163,7 +1163,7 @@ paths:
                     format: byte
                   bytes:
                     description: "Optional binary body, as raw octets.  Exclusive of `b64` and `json`.  Not recommended when using json unless the data happens to be mostly safe ascii"
-                    trype: string
+                    type: string
                     format: binary
       responses:
         200:
@@ -1231,48 +1231,51 @@ paths:
             schema:
               type: object
               required: [endpoint, method, headers]
-                properties:
-                  method:
-                    type: string
-                    description: "The request method type as a string, i.e. `GET`, `POST`, `PUT`, `DELETE`."
-                  endpoint:
-                    type: string
-                    description: >
-                      The request path, e.g. `/room/123/messages/since/45678`.  This name should be
-                      the full path beginning with a `/`; methods without a leading / are
-                      interpreted as legacy endpoints for older versions of Session and should not
-                      be used.
-                  headers:
-                    type: object
-                    description: >
-                      HTTP headers for the request; should usually include the pubkey, nonce,
-                      timestamp, and signature headers (`X-SOGS-Pubkey`, etc.), and sometimes a
-                      `Content-Type` header (the latter, if omitted, defaults to `application/json`
-                      if using `body`, and `application/octet-stream` if using `body_binary`).
-                  body:
-                    description: >
-                      Request body of the onion request.  This is typically used for text-based
-                      values (such as JSON requests).  Exclusive of `body_binary`.  Not accepted for
-                      `GET` requests.
-                    type: string
-                  body_binary:
-                    description: >
-                      Request body for a onion request to a binary endpoint, with the body encoded
-                      in base64.  Exclusive of `body`.  Not accepted for `GET` requests.
-                      
-                      The endpoint will be called with the *decoded* byte value as its body, thus
-                      allowing you to POST to endpoints that require binary data (such as file
-                      uploads).  Note that when using the Content-Type header defaults to
-                      `application/octet-stream`.
-                      
-                      Note that when including a signature in the `X-SOGS-Signature` header, the
-                      signature must use the decoded byte value of the body, *not* the encoded
-                      base64 value.
-                      
-                      This is somewhat wasteful because of the overhead of base64-encoding, but is a
-                      limitation of onion requests.
-                    type: string
-                    format: byte
+              properties:
+                method:
+                  type: string
+                  description: "The request method type as a string, i.e. `GET`, `POST`, `PUT`, `DELETE`."
+                endpoint:
+                  type: string
+                  description: >
+                    The request path, e.g. `/room/123/messages/since/45678`.  This name should be
+                    the full path beginning with a `/`; methods without a leading / are
+                    interpreted as legacy endpoints for older versions of Session and should not
+                    be used.
+                headers:
+                  type: object
+                  description: >
+                    HTTP headers for the request; should usually include the pubkey, nonce,
+                    timestamp, and signature headers (`X-SOGS-Pubkey`, etc.), and sometimes a
+                    `Content-Type` header (the latter, if omitted, defaults to `application/json`
+                    if using `body`, and `application/octet-stream` if using `body_binary`).
+                body:
+                  description: >
+                    Request body of the onion request.  This is typically used for text-based
+                    values (such as JSON requests).  Exclusive of `body_binary`.  Not accepted for
+                    `GET` requests.
+                  type: string
+                body_binary:
+                  description: >
+                    Request body for a onion request to a binary endpoint, with the body encoded
+                    in base64.  Exclusive of `body`.  Not accepted for `GET` requests.
+                    
+                    
+                    The endpoint will be called with the *decoded* byte value as its body, thus
+                    allowing you to POST to endpoints that require binary data (such as file
+                    uploads).  Note that when using the Content-Type header defaults to
+                    `application/octet-stream`.
+                    
+                    
+                    Note that when including a signature in the `X-SOGS-Signature` header, the
+                    signature must use the decoded byte value of the body, *not* the encoded
+                    base64 value.
+                    
+                    
+                    This is somewhat wasteful because of the overhead of base64-encoding, but is a
+                    limitation of onion requests.
+                  type: string
+                  format: byte
       responses:
         200:
           description: >
@@ -1360,23 +1363,23 @@ components:
         pinned_messages:
           type: array
           items:
-          type: object
-          properties:
-            id:
-              type: integer
-              format: int64
-              description: The numeric message id.
-            pinned_at:
-              type: number
-              format: double
-              description: >
-                Unix timestamp of when the message was pinned.
-            pinned_by:
-              allOf:
-                - $ref: "#/components/schemas/SessionID"
-                - type: object
-                  description: >
-                    The session ID of the moderator who pinned this message.
+            type: object
+            properties:
+              id:
+                type: integer
+                format: int64
+                description: The numeric message id.
+              pinned_at:
+                type: number
+                format: double
+                description: >
+                  Unix timestamp of when the message was pinned.
+              pinned_by:
+                allOf:
+                  - $ref: "#/components/schemas/SessionID"
+                  - type: object
+                    description: >
+                      The session ID of the moderator who pinned this message.
           description: >
             This room's pinned messages, in order of when they were pinned.  Omitted entirely if
             there are no pinned messages.
