@@ -213,9 +213,10 @@ class Room:
     @name.setter
     def name(self, name: str):
         """Sets the room's human-readable name."""
-        with db.transaction():
-            query("UPDATE rooms SET name = :n WHERE id = :r", r=self.id, n=name)
-            self._refresh()
+        if name != self._name:
+            with db.transaction():
+                query("UPDATE rooms SET name = :n WHERE id = :r", r=self.id, n=name)
+                self._refresh()
 
     @property
     def description(self):
@@ -225,9 +226,10 @@ class Room:
     @description.setter
     def description(self, desc):
         """Sets the room's human-readable description."""
-        with db.transaction():
-            query("UPDATE rooms SET description = :d WHERE id = :r", r=self.id, d=desc)
-            self._refresh()
+        if desc != self._description:
+            with db.transaction():
+                query("UPDATE rooms SET description = :d WHERE id = :r", r=self.id, d=desc)
+                self._refresh()
 
     @property
     def image_id(self):
@@ -322,25 +324,28 @@ class Room:
     def default_read(self, read: bool):
         """Sets the default read permission of the room"""
 
-        with db.transaction():
-            query("UPDATE rooms SET read = :read WHERE id = :r", r=self.id, read=read)
-            self._refresh(perms=True)
+        if read != self._default_read:
+            with db.transaction():
+                query("UPDATE rooms SET read = :read WHERE id = :r", r=self.id, read=read)
+                self._refresh(perms=True)
 
     @default_write.setter
     def default_write(self, write: bool):
         """Sets the default write permission of the room"""
 
-        with db.transaction():
-            query("UPDATE rooms SET write = :write WHERE id = :r", r=self.id, write=write)
-            self._refresh(perms=True)
+        if write != self._default_write:
+            with db.transaction():
+                query("UPDATE rooms SET write = :write WHERE id = :r", r=self.id, write=write)
+                self._refresh(perms=True)
 
     @default_upload.setter
     def default_upload(self, upload: bool):
         """Sets the default upload permission of the room"""
 
-        with db.transaction():
-            query("UPDATE rooms SET upload = :upload WHERE id = :r", r=self.id, upload=upload)
-            self._refresh(perms=True)
+        if upload != self._default_upload:
+            with db.transaction():
+                query("UPDATE rooms SET upload = :upload WHERE id = :r", r=self.id, upload=upload)
+                self._refresh(perms=True)
 
     def active_users(self, cutoff=config.ROOM_DEFAULT_ACTIVE_THRESHOLD * 86400):
         """

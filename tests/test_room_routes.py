@@ -134,6 +134,188 @@ def test_list(client, room, user, user2, admin, mod, global_mod, global_admin):
     assert r.json == {**r3_expected, **exp_gadmin}
 
 
+def test_updates(client, room, user, user2, mod, admin, global_mod, global_admin):
+    url_room = '/room/test-room'
+    r = sogs_get(client, url_room, user)
+    assert r.status_code == 200
+    expect_room = {
+        "token": "test-room",
+        "name": "Test room",
+        "description": "Test suite testing room",
+        "info_updates": 2,
+        "message_sequence": 0,
+        "created": room.created,
+        "active_users": 0,
+        "active_users_cutoff": int(86400 * sogs.config.ROOM_DEFAULT_ACTIVE_THRESHOLD),
+        "moderators": [mod.session_id],
+        "admins": [admin.session_id],
+        "read": True,
+        "write": True,
+        "upload": True,
+    }
+    assert r.json == expect_room
+
+    for u in (user, user2, mod, global_mod):
+        r = sogs_put(client, url_room, {"name": "OMG ROOM!"}, u)
+        assert r.status_code == 403
+
+    assert sogs_get(client, url_room, user).json == expect_room
+
+    r = sogs_put(client, url_room, {"name": "OMG ROOM!"}, admin)
+    assert r.status_code == 200
+    expect_room['name'] = "OMG ROOM!"
+    expect_room['info_updates'] += 1
+
+    assert sogs_get(client, url_room, user).json == expect_room
+
+    r = sogs_put(
+        client, url_room, {"name": "rrr", "description": "Tharr be pirrrates!"}, global_admin
+    )
+    assert r.status_code == 200
+    expect_room['name'] = 'rrr'
+    expect_room['description'] = 'Tharr be pirrrates!'
+    expect_room['info_updates'] += 2
+
+    assert sogs_get(client, url_room, user).json == expect_room
+
+    r = sogs_put(client, url_room, {"default_write": False}, admin)
+    assert r.status_code == 200
+    expect_room['write'] = False
+    expect_room['upload'] = False  # upload requires default_upload *and* write
+    # expect_room['info_updates'] += 0  # permission updates don't increment info_updates
+
+    assert sogs_get(client, url_room, user).json == expect_room
+
+    expect_mod = {
+        'read': True,
+        'write': True,
+        'upload': True,
+        'default_read': True,
+        'default_write': False,
+        'default_upload': True,
+        'moderator': True,
+        'moderators': [mod.session_id],
+        'admins': [admin.session_id],
+        'hidden_moderators': [global_mod.session_id],
+        'hidden_admins': [global_admin.session_id],
+    }
+    assert sogs_get(client, url_room, mod).json == {**expect_room, **expect_mod}
+
+    r = sogs_put(client, url_room, {"default_upload": False, "default_read": True}, admin)
+    assert r.status_code == 200
+    expect_mod['default_upload'] = False
+
+    assert sogs_get(client, url_room, user).json == expect_room
+    assert sogs_get(client, url_room, mod).json == {**expect_room, **expect_mod}
+
+    r = sogs_put(client, url_room, {"default_read": False}, admin)
+    assert r.status_code == 200
+    expect_room['read'] = False
+    expect_mod['default_read'] = False
+
+    assert sogs_get(client, url_room, user).json == expect_room
+    assert sogs_get(client, url_room, mod).json == {**expect_room, **expect_mod}
+
+    r = sogs_put(
+        client,
+        url_room,
+        {
+            "default_read": True,
+            "default_write": True,
+            "default_upload": True,
+            "name": "Gudaye, mytes!",
+            "description": (
+                "Room for learning to speak Australian\n\n"
+                "Throw a shrimpie on the barbie and crack a coldie from the bottle-o!"
+            ),
+        },
+        admin,
+    )
+    assert r.status_code == 200
+    for x in ('read', 'write', 'upload'):
+        expect_room[x] = True
+    expect_room['name'] = "Gudaye, mytes!"
+    expect_room['description'] = (
+        "Room for learning to speak Australian\n\n"
+        "Throw a shrimpie on the barbie and crack a coldie from the bottle-o!"
+    )
+    expect_room['info_updates'] += 2
+    for x in ('read', 'write', 'upload'):
+        expect_mod['default_' + x] = True
+
+    assert sogs_get(client, url_room, user).json == expect_room
+    assert sogs_get(client, url_room, mod).json == {**expect_room, **expect_mod}
+
+    r = sogs_put(client, url_room, {"description": None}, admin)
+    assert r.status_code == 200
+
+    del expect_room['description']
+    expect_room['info_updates'] += 1
+
+    assert sogs_get(client, url_room, user).json == expect_room
+    assert sogs_get(client, url_room, mod).json == {**expect_room, **expect_mod}
+
+    r = sogs_put(client, url_room, {"description": "ddd"}, admin)
+    expect_room['description'] = 'ddd'
+    expect_room['info_updates'] += 1
+    assert sogs_get(client, url_room, user).json == expect_room
+
+    # empty string description should be treated as null
+    r = sogs_put(client, url_room, {"description": ""}, admin)
+    del expect_room['description']
+    expect_room['info_updates'] += 1
+    assert sogs_get(client, url_room, user).json == expect_room
+
+    # Name strips out all control chars (i.e. anything below \x20); description strips out all
+    # except newline (\x0a) and tab (\x09).
+    r = sogs_put(
+        client,
+        url_room,
+        {
+            "description": f"a{''.join(chr(c) for c in range(33))}z",
+            "name": f"a{''.join(chr(c) for c in range(33))}z",
+        },
+        admin,
+    )
+    expect_room['description'] = 'a\x09\x0a z'
+    expect_room['name'] = 'a z'
+    expect_room['info_updates'] += 2
+
+    assert sogs_get(client, url_room, user).json == expect_room
+    assert sogs_get(client, url_room, mod).json == {**expect_room, **expect_mod}
+
+    # Test bad arguments properly err:
+    assert [
+        sogs_put(client, url_room, data, admin).status_code
+        for data in (
+            {},
+            {'name': 42},
+            {'name': None},
+            {'description': 42},
+            {'default_read': "foo"},
+            {'default_write': "bar"},
+            {'default_upload': None},
+        )
+    ] == [400] * 7
+
+    assert sogs_get(client, url_room, user).json == expect_room
+    assert sogs_get(client, url_room, mod).json == {**expect_room, **expect_mod}
+
+    # Last but not least let's fill up name and description with emoji!
+    emoname = "💰 🐈 🍌 🌋 ‽"
+    emodesc = (
+        "💾 🚌 🗑 📱 🆗 😴 👖 💲 🍹 📉 🍩 🛎 🚣 ⚫️ 🐕 🕒 🏕 🎩 🆕 🍭 💋 🐌 📡 🚫 "
+        "🕢 🚮 🎳 🚠 📦 😛 ♋️ 🌼 🏭 👼 🙆 👗 🏡 😞 🎠 ⭕️ 💚 💁 💸 🌟 ☀️ 🍀 🎶 🍿"
+    )
+    r = sogs_put(client, url_room, {"description": emodesc, "name": emoname}, admin)
+    expect_room['description'] = emodesc
+    expect_room['name'] = emoname
+    expect_room['info_updates'] += 2
+
+    assert sogs_get(client, url_room, user).json == expect_room
+    assert sogs_get(client, url_room, mod).json == {**expect_room, **expect_mod}
+
+
 def test_polling(client, room, user, user2, mod, admin, global_mod, global_admin):
     r = sogs_get(client, "/room/test-room", user)
     assert r.status_code == 200

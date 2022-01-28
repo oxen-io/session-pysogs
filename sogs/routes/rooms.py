@@ -1,5 +1,6 @@
-from .. import config, http, utils
+from .. import config, db, http, utils
 from ..model import room as mroom
+from ..web import app
 from . import auth
 
 from flask import abort, jsonify, g, Blueprint, request
@@ -56,6 +57,65 @@ def get_one_room(room):
 @rooms.get("/rooms")
 def get_rooms():
     return jsonify([get_one_room(r) for r in mroom.get_readable_rooms(g.user)])
+
+
+BAD_NAME_CHARS = {c: None for c in range(32)}
+BAD_DESCRIPTION_CHARS = {c: None for c in range(32) if not (0x09 <= c <= 0x0A)}
+
+
+@rooms.put("/room/<Room:room>")
+@auth.user_required
+def update_room(room):
+
+    if not room.check_admin(g.user):
+        abort(http.FORBIDDEN)
+
+    req = request.json
+
+    with db.transaction():
+        did = False
+        if 'name' in req:
+            n = req['name']
+            if not isinstance(n, str):
+                app.logger.warning(f"Room update with invalid name: {type(n)} != str")
+                abort(http.BAD_REQUEST)
+            room.name = n.translate(BAD_NAME_CHARS)
+            did = True
+        if 'description' in req:
+            d = req['description']
+            if not (d is None or isinstance(d, str)):
+                app.logger.warning(f"Room update: invalid description: {type(d)} is not str, null")
+                abort(http.BAD_REQUEST)
+            if d is not None:
+                d = d.translate(BAD_DESCRIPTION_CHARS)
+                if len(d) == 0:
+                    d = None
+
+            room.description = d
+            did = True
+        read, write, upload = (req.get('default_' + x) for x in ('read', 'write', 'upload'))
+        for val in (read, write, upload):
+            if not (val is None or isinstance(val, bool) or isinstance(val, int)):
+                app.logger.warning(
+                    f"Room update: default_read/write/upload must be bool, not {type(val)}"
+                )
+                abort(http.BAD_REQUEST)
+
+        if read is not None:
+            room.default_read = bool(read)
+            did = True
+        if write is not None:
+            room.default_write = bool(write)
+            did = True
+        if upload is not None:
+            room.default_upload = bool(upload)
+            did = True
+
+        if not did:
+            app.logger.warning("Room update: must include at least one field to update")
+            abort(http.BAD_REQUEST)
+
+    return jsonify({})
 
 
 @rooms.get("/room/<Room:room>/pollInfo/<int:info_updated>")

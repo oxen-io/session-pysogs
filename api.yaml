@@ -66,6 +66,67 @@ paths:
             Forbidden. Returned if the user is banned from the room or otherwise does not have read
             access to the room.
           content: {}
+    put:
+      tags: [Rooms]
+      summary: Updates room details/settings.
+      parameters:
+        - $ref: "#/components/parameters/pathRoomToken"
+      requestBody:
+        description:
+          JSON body containing the room details to update.  Any field can be omitted to leave it at
+          its current value.  The invoking user must have admin permissions in the room to call this
+          method.
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: >
+                    New user-displayed single-line name/title of this room.  UTF-8 encoded;
+                    newlines, tabs and other control characters (i.e. all codepoints below \u0020)
+                    will be stripped out.
+                  maxLength: 100
+                  example: "My New Room"
+                description:
+                  type: string
+                  description: >
+                    Long description to show to users, typically in smaller text below the room
+                    name.  UTF-8 encoded, and permits newlines, tabs; other control characters below
+                    \u0020 will be stripped out.  Can be `null` or an empty string to remove the
+                    description entirely.
+                  example: "This is the room for all things new.\n\nHi mom!"
+                default_read:
+                  type: boolean
+                  description: >
+                    Sets the default "read" permission (if true: users can read messages) for users
+                    in this room who do not otherwise have specific permissions applied.
+                  example: true
+                default_write:
+                  type: boolean
+                  description: >
+                    Sets the default "write" permission (if true: users can post messages) for users
+                      in the room who do not otherwise have specific permissions applied.
+                  example: false
+                default_upload:
+                  type: boolean
+                  description: >
+                    Sets the default "upload" permission (if true: users can post messages
+                      containing attachments) for users in the room who do not otherwise have
+                      specific permissions applied.
+                  example: false
+      responses:
+        200:
+          description: The room was successfully updated.  Currently returns an empty json dict.
+          content:
+            application/json:
+              schema:
+                type: object
+        403:
+          description: Forbidden.  Returned if the user does not have admin permission in this room.
+
   /room/{roomToken}/pollInfo/{info_updated}:
     get:
       tags: [Rooms]
