@@ -18,7 +18,6 @@ def get_one_room(room):
     rr = {
         'token': room.token,
         'name': room.name,
-        'description': room.description,
         'info_updates': room.info_updates,
         'message_sequence': room.message_sequence,
         'created': room.created,
@@ -26,12 +25,13 @@ def get_one_room(room):
         'active_users_cutoff': int(config.ROOM_DEFAULT_ACTIVE_THRESHOLD * 86400),
         'moderators': mods,
         'admins': admins,
-        'moderator': room.check_moderator(g.user),
-        'admin': room.check_admin(g.user),
         'read': room.check_read(g.user),
         'write': room.check_write(g.user),
         'upload': room.check_upload(g.user),
     }
+
+    if room.description is not None:
+        rr['description'] = room.description
 
     if room.image_id is not None:
         rr['image_id'] = room.image_id
@@ -45,6 +45,13 @@ def get_one_room(room):
     if h_admins:
         rr['hidden_admins'] = h_admins
 
+    if room.check_moderator(g.user):
+        rr['moderator'] = True
+        rr['default_read'] = room.default_read
+        rr['default_write'] = room.default_write
+        rr['default_upload'] = room.default_upload
+    if room.check_admin(g.user):
+        rr['admin'] = True
     if g.user:
         if g.user.global_moderator:
             rr['global_moderator'] = True
@@ -126,8 +133,6 @@ def poll_room_info(room, info_updated):
     result = {
         'token': room.token,
         'active_users': room.active_users(),
-        'moderator': room.check_moderator(g.user),
-        'admin': room.check_admin(g.user),
         'read': room.check_read(g.user),
         'write': room.check_write(g.user),
         'upload': room.check_upload(g.user),
@@ -136,6 +141,13 @@ def poll_room_info(room, info_updated):
     if room.info_updates != info_updated:
         result['details'] = get_one_room(room)
 
+    if room.check_moderator(g.user):
+        result['moderator'] = True
+        result['default_read'] = room.default_read
+        result['default_write'] = room.default_write
+        result['default_upload'] = room.default_upload
+    if room.check_admin(g.user):
+        result['admin'] = True
     if g.user:
         if g.user.global_moderator:
             result['global_moderator'] = True

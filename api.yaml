@@ -184,6 +184,12 @@ paths:
                     $ref: "#/components/schemas/Room/properties/global_moderator"
                   global_admin:
                     $ref: "#/components/schemas/Room/properties/global_admin"
+                  default_read:
+                    $ref: "#/components/schemas/Room/properties/default_read"
+                  default_write:
+                    $ref: "#/components/schemas/Room/properties/default_write"
+                  default_upload:
+                    $ref: "#/components/schemas/Room/properties/default_upload"
                   details:
                     allOf:
                       - $ref: "#/components/schemas/Room"
@@ -1526,6 +1532,26 @@ components:
             Whether the requesting user has permissions to upload attachments to messages posted to
             the room.  (Note that changes to this property do not cause an `info_update` increment.)
           example: true
+        default_read:
+          type: boolean
+          description: >
+            Whether new users have permission to read posts in this room by default.  This property
+            is only returned if the calling user has moderator/admin permissions.
+          example: true
+        default_write:
+          type: boolean
+          description: >
+            Whether new users have permission to write posts in this room by default.  This property
+            is only returned if the calling user has moderator/admin permissions.
+          example: true
+        default_upload:
+          type: boolean
+          description: >
+            Whether new users have permission to upload attachments to posts in this room by
+            default.  This property is only returned if the calling user has moderator/admin
+            permissions.
+          example: true
+
     Message:
       title: The content of a posted message
       type: object
@@ -1637,9 +1663,6 @@ components:
       description: "Session ID of a user."
       schema:
         $ref: "#/components/schemas/SessionID"
-        
-
-
 
   securitySchemes:
     pubkey:

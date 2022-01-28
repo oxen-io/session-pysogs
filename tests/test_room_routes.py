@@ -31,12 +31,11 @@ def test_list(client, room, user, user2, admin, mod, global_mod, global_admin):
         "active_users_cutoff": int(86400 * sogs.config.ROOM_DEFAULT_ACTIVE_THRESHOLD),
         "moderators": [],
         "admins": [],
-        "moderator": False,
-        "admin": False,
         "read": True,
         "write": False,
         "upload": False,
     }
+    r2_exp_defs = {"default_read": True, "default_write": False, "default_upload": False}
     r_expected = {
         "token": "test-room",
         "name": "Test room",
@@ -48,12 +47,11 @@ def test_list(client, room, user, user2, admin, mod, global_mod, global_admin):
         "active_users_cutoff": int(86400 * sogs.config.ROOM_DEFAULT_ACTIVE_THRESHOLD),
         "moderators": [mod.session_id],
         "admins": [admin.session_id],
-        "moderator": False,
-        "admin": False,
         "read": True,
         "write": True,
         "upload": True,
     }
+    r_exp_defs = {"default_read": True, "default_write": True, "default_upload": True}
     r3_expected = {
         "token": "room3",
         "name": "Room 3",
@@ -65,12 +63,11 @@ def test_list(client, room, user, user2, admin, mod, global_mod, global_admin):
         "active_users_cutoff": int(86400 * sogs.config.ROOM_DEFAULT_ACTIVE_THRESHOLD),
         "moderators": [],
         "admins": [],
-        "moderator": False,
-        "admin": False,
         "read": True,
         "write": False,
         "upload": False,
     }
+    r3_exp_defs = {"default_read": False, "default_write": False, "default_upload": False}
 
     exp_mod = {
         **{p: True for p in ("moderator", "read", "write", "upload")},
@@ -99,26 +96,26 @@ def test_list(client, room, user, user2, admin, mod, global_mod, global_admin):
 
     r = sogs_get(client, "/rooms", mod)
     assert r.status_code == 200
-    assert r.json == [r2_expected, {**r_expected, **exp_mod}]
+    assert r.json == [r2_expected, {**r_expected, **r_exp_defs, **exp_mod}]
 
     r = sogs_get(client, "/rooms", admin)
     assert r.status_code == 200
-    assert r.json == [r2_expected, {**r_expected, **exp_admin}]
+    assert r.json == [r2_expected, {**r_expected, **r_exp_defs, **exp_admin}]
 
     r = sogs_get(client, "/rooms", global_mod)
     assert r.status_code == 200
     assert r.json == [
-        {**r2_expected, **exp_gmod},
-        {**r3_expected, **exp_gmod},
-        {**r_expected, **exp_gmod},
+        {**r2_expected, **r2_exp_defs, **exp_gmod},
+        {**r3_expected, **r3_exp_defs, **exp_gmod},
+        {**r_expected, **r_exp_defs, **exp_gmod},
     ]
 
     r = sogs_get(client, "/rooms", global_admin)
     assert r.status_code == 200
     assert r.json == [
-        {**r2_expected, **exp_gadmin},
-        {**r3_expected, **exp_gadmin},
-        {**r_expected, **exp_gadmin},
+        {**r2_expected, **r2_exp_defs, **exp_gadmin},
+        {**r3_expected, **r3_exp_defs, **exp_gadmin},
+        {**r_expected, **r_exp_defs, **exp_gadmin},
     ]
 
     r = sogs_get(client, "/room/room3", user)
@@ -131,7 +128,7 @@ def test_list(client, room, user, user2, admin, mod, global_mod, global_admin):
 
     r = sogs_get(client, "/room/room3", global_admin)
     assert r.status_code == 200
-    assert r.json == {**r3_expected, **exp_gadmin}
+    assert r.json == {**r3_expected, **r3_exp_defs, **exp_gadmin}
 
 
 def test_updates(client, room, user, user2, mod, admin, global_mod, global_admin):
@@ -322,15 +319,7 @@ def test_polling(client, room, user, user2, mod, admin, global_mod, global_admin
     info_up = r.json['info_updates']
     assert info_up == 2
 
-    basic = {
-        'token': 'test-room',
-        'active_users': 1,
-        'moderator': False,
-        'admin': False,
-        'read': True,
-        'write': True,
-        'upload': True,
-    }
+    basic = {'token': 'test-room', 'active_users': 1, 'read': True, 'write': True, 'upload': True}
     details = {
         "token": "test-room",
         "name": "Test room",
@@ -342,12 +331,11 @@ def test_polling(client, room, user, user2, mod, admin, global_mod, global_admin
         "active_users_cutoff": int(86400 * sogs.config.ROOM_DEFAULT_ACTIVE_THRESHOLD),
         "moderators": [mod.session_id],
         "admins": [admin.session_id],
-        "moderator": False,
-        "admin": False,
         "read": True,
         "write": True,
         "upload": True,
     }
+    defs = {'default_' + x: True for x in ('read', 'write', 'upload')}
 
     r = sogs_get(client, f"/room/test-room/pollInfo/{info_up}", user)
     assert r.status_code == 200
@@ -368,13 +356,13 @@ def test_polling(client, room, user, user2, mod, admin, global_mod, global_admin
     basic['active_users'] += 1
     details['active_users'] += 1
     assert r.status_code == 200
-    assert r.json == {**basic, 'moderator': True}
+    assert r.json == {**basic, 'moderator': True, **defs}
 
     r = sogs_get(client, f"/room/test-room/pollInfo/{info_up}", admin)
     assert r.status_code == 200
     basic['active_users'] += 1
     details['active_users'] += 1
-    assert r.json == {**basic, 'moderator': True, 'admin': True}
+    assert r.json == {**basic, 'moderator': True, 'admin': True, **defs}
 
     # Changing description
     room.description = 'Test suite testing room new desc'
@@ -418,9 +406,11 @@ def test_polling(client, room, user, user2, mod, admin, global_mod, global_admin
     details['moderators'] = sorted(details['moderators'] + [user.session_id])
     assert r.json == {
         **basic,
+        **defs,
         'moderator': True,
         'details': {
             **details,
+            **defs,
             'moderator': True,
             'hidden_admins': [global_admin.session_id],
             'hidden_moderators': [global_mod.session_id],
