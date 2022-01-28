@@ -333,7 +333,7 @@ def test_fetch_since(client, room, user, no_rate_limit):
                 assert post['seqno'] == j
                 assert utils.decode_base64(post['data']) == f"fake data {j}".encode()
                 assert utils.decode_base64(post['signature']) == pad32(f"fake sig {j}")
-                assert -1 <= post['posted'] - time.time() <= 1
+                assert -10 <= post['posted'] - time.time() <= 10
 
                 top_fetched = post['seqno']
 
