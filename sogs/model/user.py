@@ -34,11 +34,23 @@ class User:
         touch - if True (default is False) then update the last_activity time of this user before
         returning it.
         """
+        self._touched = False
+        self._refresh(row=row, id=id, session_id=session_id)
 
-        if sum(x is not None for x in (row, session_id, id)) != 1:
+        if touch:
+            self._touch()
+
+    def _refresh(self, *, row=None, id=None, session_id=None, autovivify=True):
+        """
+        Internal method to (re-)fetch details from the database; this is used during construction
+        but also in the test suite to forcibly re-fetch details.
+        """
+        n_args = sum(x is not None for x in (row, session_id, id))
+        if n_args == 0 and hasattr(self, 'id'):
+            id = self.id
+        elif n_args != 1:
             raise ValueError("User() error: exactly one of row/session_id/id is required")
 
-        self._touched = False
         if session_id is not None:
             row = query("SELECT * FROM users WHERE session_id = :s", s=session_id).first()
 
@@ -61,9 +73,6 @@ class User:
         self.banned, self.global_moderator, self.global_admin, self.visible_mod = (
             bool(row[c]) for c in ('banned', 'moderator', 'admin', 'visible_mod')
         )
-
-        if touch:
-            self._touch()
 
     def __str__(self):
         """Returns string representation of a user: U[050123…cdef], the id prefixed with @ or % if
@@ -113,6 +122,8 @@ class User:
         """
         Make this user a global moderator or admin.  If the user is already a global mod/admin then
         their status is updated according to the given arguments (that is, this can promote/demote).
+
+        If `admin` is None then the current admin status is left unchanged.
         """
 
         if not added_by.global_admin:
@@ -123,12 +134,13 @@ class User:
             raise BadPermission()
 
         query(
-            """
+            f"""
             UPDATE users
-            SET moderator = TRUE, admin = :admin, visible_mod = :visible
+            SET moderator = TRUE, visible_mod = :visible
+                {', admin = :admin' if admin is not None else ''}
             WHERE id = :u
             """,
-            admin=admin,
+            admin=bool(admin),
             visible=visible,
             u=self.id,
         )
@@ -136,7 +148,7 @@ class User:
         self.global_moderator = True
         self.visible_mod = visible
 
-    def remove_moderator(self, *, removed_by: User):
+    def remove_moderator(self, *, removed_by: User, remove_admin_only: bool = False):
         """Removes this user's global moderator/admin status, if set."""
 
         if not removed_by.global_admin:
@@ -145,7 +157,14 @@ class User:
             )
             raise BadPermission()
 
-        query("UPDATE users SET moderator = FALSE, admin = FALSE WHERE id = :u", u=self.id)
+        query(
+            f"""
+            UPDATE users
+            SET admin = FALSE {', moderator = FALSE' if not remove_admin_only else ''}
+            WHERE id = :u
+            """,
+            u=self.id,
+        )
         self.global_admin = False
         self.global_moderator = False
 

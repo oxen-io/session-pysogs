@@ -24,7 +24,7 @@ tags:
   description: Endpoint for submitting a batch of requests at once.
 - name: Users
   description: Management of users and user-related info.
-- name: Onion:
+- name: Onion
   description: Submitting an onion request
 security:
   - pubkey: []
@@ -136,13 +136,13 @@ paths:
       requestBody:
         description: >
           JSON body containing the message details to be submitted to the room.
-
-
-        data and signature are required; whisper_to and whisper_mods are permitted only for
-        moderators/admins.  The former sends a whisper within the room that will only be shown by
-        the given user; the latter sends a whisper in the room that will be seen by all moderators.
-        It is possible for a message to use both of these whisper modes at once, for example to
-        (privately) warn a user and have that warning visible by all other moderators.
+          
+          
+          data and signature are required; whisper_to and whisper_mods are permitted only for
+          moderators/admins.  The former sends a whisper within the room that will only be shown by
+          the given user; the latter sends a whisper in the room that will be seen by all
+          moderators.  It is possible for a message to use both of these whisper modes at once, for
+          example to (privately) warn a user and have that warning visible by all other moderators.
         required: true
         content:
           application/json:
@@ -438,7 +438,7 @@ paths:
               schema:
                 type: object
         403:
-          description: permission denied: the calling user does not have room admin permission
+          description: "permission denied: the calling user does not have room admin permission"
         404:
           description: >
             The given post was not found in this room or is ineligible for pinning (e.g. a whisper,
@@ -465,7 +465,7 @@ paths:
               schema:
                 type: object
         403:
-          description: permission denied: the calling user does not have room admin permission
+          description: "permission denied: the calling user does not have room admin permission"
 
   /room/{roomToken}/unpin/all:
     post:
@@ -480,13 +480,13 @@ paths:
         - $ref: "#/components/parameters/pathRoomToken"
       responses:
         200:
-          description: successful operation: the room now has no pinned messages.
+          description: "successful operation: the room now has no pinned messages."
           content:
             application/json:
               schema:
                 type: object
         403:
-          description: permission denied: the calling user does not have room admin permission
+          description: "permission denied: the calling user does not have room admin permission"
 
   /room/{roomToken}/file:
     post:
@@ -894,10 +894,14 @@ paths:
   /user/{sessionId}/moderator:
     post:
       tags: [Users]
-      summary: Adds or removes moderator powers.
+      summary: Adds or removes moderator/admin powers.
       description: >
         Adds or removes moderator or admin permissions to a user for specific rooms, or globally on
         the server.
+        
+        
+        The invoking user must have admin permissions in all of the rooms specified when adding room
+        mods/admins, and must have global admin permissions when adding a global moderator or admin.
         
         
         Note that the given session ID does not have to exist: it is possible to grant moderator
@@ -922,22 +926,37 @@ paths:
                     invoking user must be an admin of all of the given rooms.
                     
                     
-                    Exclusive of `global`.
+                    This may be set to the single-element list ['*'] to add or remove the moderator
+                    from all rooms in which the current user has admin permissions (the call will
+                    succeed if the calling user is an admin in at least one channel).
+                    
+                    
+                    Exclusive of `global`.  (If you want to apply both at once use two calls, e.g.
+                    bundled in a batch request).
                 global:
                   type: boolean
                   description: >
-                    If true then appoint this user as a moderator or admin of the global server.
-                    The user will receive moderator/admin ability in all rooms on the server.
-                
+                    If true then appoint this user as a global moderator or admin of the server.
+                    The user will receive moderator/admin ability in all rooms on the server (both
+                    current and future).
+                    
+                    
+                    The caller must be a global admin to add/remove a global moderator or admin.
                 moderator:
                   type: boolean
                   description: >
                     If `true` then this user will be granted moderator permission to either the
-                    listed room or the server globally.
+                    listed room(s) or the server globally.
                     
                     
-                    If `false` then this user will have their moderator and admin permissions
-                    removed from the given rooms (or server).
+                    If `false` then this user will have their moderator *and admin* permissions
+                    removed from the given rooms (or server).  Note that removing a global moderator
+                    only removes the global permission but does not remove individual room
+                    moderator permissions that may also be present.
+                    
+                    
+                    See the `admin` parameter description for information on how `admin` and
+                    `moderator` parameters interact.
                 admin:
                   type: boolean
                   description: >
@@ -947,53 +966,87 @@ paths:
                     pinned messages, and changing the name/description of the room.
                     
                     
-                    If false then this user will have their admin permission removed, but will
-                    remain a moderator (if they were previously a moderator or admin).  To remove
-                    both moderator and admin status you can specify simply `moderator: false` rather
-                    than needing to specify both values as false.
+                    If false then this user will have their admin permission removed, but will keep
+                    moderator permissions.  To remove both moderator and admin permissions specify
+                    `moderator: false` (which implies clearing admin permissions as well).
+                    
+                    
+                    Note that removing a global admin only removes the global permission but does not remove
+                    individual room admin permissions that may also be present.
+                    
+                    
+                    The `admin`/`moderator` paramters interact as follows:
+                    - `admin=true`, `moderator` omitted: this adds admin permissions, which
+                      automatically also implies moderator permissions.
+                    - `admin=true, moderator=true`: exactly the same as above.
+                    - `admin=false, moderator=true`: removes any existing admin permissions from the
+                      rooms (or globally), if present, and adds moderator permissions to the
+                      rooms/globally (if not already present).
+                    - `admin=false`, `moderator` omitted: this removes admin permissions but leaves
+                      moderator permissions, if present.  (This effectively "downgrades" an admin to
+                      a moderator).  Unlike the above this does *not* add moderator permissions to
+                      matching rooms if not already present.
+                    - `moderator=true`, `admin` omitted: adds moderator permissions to the given
+                      rooms (or globally), if not already present.  If the user already has admin
+                      permissions this does nothing (that is, admin permission is *not* removed,
+                      unlike the above).
+                    - `moderator=false`, `admin` omitted: this removes moderator *and* admin
+                      permissions from all given rooms (or globally).
+                    - `moderator=false, admin=false`: exactly the same as above.
+                    - `moderator=false, admin=true`: this combination is *not* *permitted* (because
+                      admin permissions imply moderator permissions) and will result in Bad Request
+                      error if given.
                 visible:
                   type: boolean
                   description: >
-                    Whether this user should be a "visible" moderator in the server rooms.  Visible
-                    moderators are identified to all room users (e.g. via a special status badge in
-                    Session clients).
+                    Whether this user should be a "visible" moderator or admin in the specified
+                    rooms (or globally).  Visible moderators are identified to all room users (e.g.
+                    via a special status badge in Session clients).
                     
                     
                     Invisible moderators/admins have the same permission as as visible ones, but
-                    their moderator/admin status is only visible to other moderators but not to
+                    their moderator/admin status is only visible to other moderators, not to
                     ordinary room participants.
                     
                     
                     The default if this field is omitted is true for room-specific moderators/admins
                     and false for server-level global moderators/admins.
+                    
+                    
+                    If an admin or moderator has both global and room-specific moderation
+                    permissions then the visibility of the admin/mod for that room's moderator/admin
+                    list will use the room-specific visibility value, regardless of the global
+                    setting.  (This differs from moderator/admin permissions themselves, which are
+                    additive).
             examples:
-              tworooms:
-                summary: "1-day mute in two rooms"
+              room-moderator:
+                summary: "Add a moderator to a pair of rooms"
                 value:
                   rooms: ["session", "lokinet"]
-                  timeout: 86400
-                  write: false
-              allow-uploads:
-                summary: "Allow file attachments for 1 week"
+                  moderator: true
+              global-admin:
+                summary: "Add a global server admin, visible in all rooms"
                 value:
-                  rooms: ["session-help"]
-                  upload: true
-                  timeout: 604800
-              secretroom:
-                summary: "Grant access to a restricted room"
+                  global: true
+                  admin: true
+                  visible: true
+              hidden-mod:
+                summary: "Add a hidden admin to a room"
                 value:
-                  rooms: ["top-secret"]
-                  read: true
-                  write: true
-                  upload: true
+                  rooms: ["session"]
+                  admin: true
+                  visible: false
       responses:
         200:
           description: Permission update applied successfully.
           content: {}
         403:
           description: >
-            Permission denied.  The user attempting to set the permissions does not have moderator
-            permissions for one or more of the given rooms.
+            Permission denied.  The user attempting to set the permissions does not have admin
+            permissions for one or more of the given rooms and/or global admin permissions.
+          content: {}
+        404:
+          description: Returned if one or more specified room tokens do not exist.
           content: {}
   /user/{sessionId}/deleteMessages:
     post:
@@ -1110,7 +1163,7 @@ paths:
                     format: byte
                   bytes:
                     description: "Optional binary body, as raw octets.  Exclusive of `b64` and `json`.  Not recommended when using json unless the data happens to be mostly safe ascii"
-                    trype: string
+                    type: string
                     format: binary
       responses:
         200:
@@ -1178,48 +1231,51 @@ paths:
             schema:
               type: object
               required: [endpoint, method, headers]
-                properties:
-                  method:
-                    type: string
-                    description: "The request method type as a string, i.e. `GET`, `POST`, `PUT`, `DELETE`."
-                  endpoint:
-                    type: string
-                    description: >
-                      The request path, e.g. `/room/123/messages/since/45678`.  This name should be
-                      the full path beginning with a `/`; methods without a leading / are
-                      interpreted as legacy endpoints for older versions of Session and should not
-                      be used.
-                  headers:
-                    type: object
-                    description: >
-                      HTTP headers for the request; should usually include the pubkey, nonce,
-                      timestamp, and signature headers (`X-SOGS-Pubkey`, etc.), and sometimes a
-                      `Content-Type` header (the latter, if omitted, defaults to `application/json`
-                      if using `body`, and `application/octet-stream` if using `body_binary`).
-                  body:
-                    description: >
-                      Request body of the onion request.  This is typically used for text-based
-                      values (such as JSON requests).  Exclusive of `body_binary`.  Not accepted for
-                      `GET` requests.
-                    type: string
-                  body_binary:
-                    description: >
-                      Request body for a onion request to a binary endpoint, with the body encoded
-                      in base64.  Exclusive of `body`.  Not accepted for `GET` requests.
-                      
-                      The endpoint will be called with the *decoded* byte value as its body, thus
-                      allowing you to POST to endpoints that require binary data (such as file
-                      uploads).  Note that when using the Content-Type header defaults to
-                      `application/octet-stream`.
-                      
-                      Note that when including a signature in the `X-SOGS-Signature` header, the
-                      signature must use the decoded byte value of the body, *not* the encoded
-                      base64 value.
-                      
-                      This is somewhat wasteful because of the overhead of base64-encoding, but is a
-                      limitation of onion requests.
-                    type: string
-                    format: byte
+              properties:
+                method:
+                  type: string
+                  description: "The request method type as a string, i.e. `GET`, `POST`, `PUT`, `DELETE`."
+                endpoint:
+                  type: string
+                  description: >
+                    The request path, e.g. `/room/123/messages/since/45678`.  This name should be
+                    the full path beginning with a `/`; methods without a leading / are
+                    interpreted as legacy endpoints for older versions of Session and should not
+                    be used.
+                headers:
+                  type: object
+                  description: >
+                    HTTP headers for the request; should usually include the pubkey, nonce,
+                    timestamp, and signature headers (`X-SOGS-Pubkey`, etc.), and sometimes a
+                    `Content-Type` header (the latter, if omitted, defaults to `application/json`
+                    if using `body`, and `application/octet-stream` if using `body_binary`).
+                body:
+                  description: >
+                    Request body of the onion request.  This is typically used for text-based
+                    values (such as JSON requests).  Exclusive of `body_binary`.  Not accepted for
+                    `GET` requests.
+                  type: string
+                body_binary:
+                  description: >
+                    Request body for a onion request to a binary endpoint, with the body encoded
+                    in base64.  Exclusive of `body`.  Not accepted for `GET` requests.
+                    
+                    
+                    The endpoint will be called with the *decoded* byte value as its body, thus
+                    allowing you to POST to endpoints that require binary data (such as file
+                    uploads).  Note that when using the Content-Type header defaults to
+                    `application/octet-stream`.
+                    
+                    
+                    Note that when including a signature in the `X-SOGS-Signature` header, the
+                    signature must use the decoded byte value of the body, *not* the encoded
+                    base64 value.
+                    
+                    
+                    This is somewhat wasteful because of the overhead of base64-encoding, but is a
+                    limitation of onion requests.
+                  type: string
+                  format: byte
       responses:
         200:
           description: >
@@ -1307,23 +1363,23 @@ components:
         pinned_messages:
           type: array
           items:
-          type: object
-          properties:
-            id:
-              type: integer
-              format: int64
-              description: The numeric message id.
-            pinned_at:
-              type: number
-              format: double
-              description: >
-                Unix timestamp of when the message was pinned.
-            pinned_by:
-              allOf:
-                - $ref: "#/components/schemas/SessionID"
-                - type: object
-                  description: >
-                    The session ID of the moderator who pinned this message.
+            type: object
+            properties:
+              id:
+                type: integer
+                format: int64
+                description: The numeric message id.
+              pinned_at:
+                type: number
+                format: double
+                description: >
+                  Unix timestamp of when the message was pinned.
+              pinned_by:
+                allOf:
+                  - $ref: "#/components/schemas/SessionID"
+                  - type: object
+                    description: >
+                      The session ID of the moderator who pinned this message.
           description: >
             This room's pinned messages, in order of when they were pinned.  Omitted entirely if
             there are no pinned messages.

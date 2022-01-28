@@ -940,6 +940,8 @@ class Room:
         Sets `user` as a moderator or admin of this room.  Replaces current admin/moderator/visible
         status with the new values if the user is already a moderator/admin of the room.
 
+        `admin` can be specified as None to not touch the current admin permission on the room.
+
         added_by is the user performing the update and must have admin permission.
         """
 
@@ -951,12 +953,13 @@ class Room:
             raise BadPermission()
 
         query(
-            """
-            INSERT INTO user_permission_overrides (room, "user", moderator, admin, visible_mod)
-            VALUES (:r, :u, TRUE, :admin, :visible)
+            f"""
+            INSERT INTO user_permission_overrides
+                (room, "user", moderator, {'admin,' if admin is not None else ''} visible_mod)
+            VALUES (:r, :u, TRUE, {':admin,' if admin is not None else ''} :visible)
             ON CONFLICT (room, "user") DO UPDATE SET
                 moderator = excluded.moderator,
-                admin = excluded.admin,
+                {'admin = excluded.admin,' if admin is not None else ''}
                 visible_mod = excluded.visible_mod
             """,
             r=self.id,
@@ -970,16 +973,22 @@ class Room:
 
         app.logger.info(f"{added_by} set {user} as {'admin' if admin else 'moderator'} of {self}")
 
-    def remove_moderator(self, user: User, *, removed_by: User):
-        """Remove `user` as a moderator/admin of this room.  Requires admin permission."""
+    def remove_moderator(self, user: User, *, removed_by: User, remove_admin_only: bool = False):
+        """
+        Remove `user` as a moderator/admin of this room.  Requires admin permission.
+
+        If `remove_admin_only` is True then user will have admin permissions removed but will remain
+        a room moderator if already a room moderator or admin.
+        """
 
         if not self.check_admin(removed_by):
             raise BadPermission()
 
         query(
-            """
+            f"""
             UPDATE user_permission_overrides
-            SET moderator = FALSE, admin = FALSE, visible_mod = TRUE
+            SET admin = FALSE
+                {', moderator = FALSE, visible_mod = TRUE' if not remove_admin_only else ''}
             WHERE room = :r AND "user" = :u
             """,
             r=self.id,
@@ -1321,6 +1330,63 @@ def get_rooms():
     return [Room(row) for row in query("SELECT * FROM rooms ORDER BY token")]
 
 
+def get_rooms_with_permission(
+    user: User,
+    *,
+    tokens: Optional[Union[list, tuple]] = None,
+    read: Optional[bool] = None,
+    write: Optional[bool] = None,
+    upload: Optional[bool] = None,
+    banned: Optional[bool] = None,
+    moderator: Optional[bool] = None,
+    admin: Optional[bool] = None,
+):
+    """
+    Returns a list of rooms that the given user has matching permissions for.
+
+    Parameters:
+    user: the user object to query permissions for.  May not be None.
+    tokens: if non-None then this specifies a list or tuple of room tokens to filter by.  When
+            omitted, all rooms are returned.  Note that rooms are returned sorted by token, *not* in
+            the order specified here; duplicates are not returned; nor are entries for non-existent
+            tokens.
+    read/write/upload/banned/moderator/admin:
+        Any of these that are specified as non-None must match the user's permissions for the room.
+        For example `read=True, write=False` would return all rooms where the user has read-only
+        access but not rooms in which the user has both or neither read and write permissions.
+        At least one of these arguments must be specified as non-None.
+    """
+    if user is None:
+        raise RuntimeError("user is required for get_rooms_with_permission")
+    if not any(arg is not None for arg in (read, write, upload, banned, moderator, admin)):
+        raise RuntimeError("At least one of read/write/upload/banned/moderator/admin must be given")
+    if tokens and (
+        not (isinstance(tokens, list) or isinstance(tokens, tuple))
+        or any(not isinstance(t, str) for t in tokens)
+    ):
+        raise RuntimeError("tokens= must be a list or tuple of room token names")
+
+    return [
+        Room(row)
+        for row in query(
+            f"""
+        SELECT rooms.* FROM user_permissions perm JOIN rooms ON rooms.id = room
+        WHERE "user" = :u {'AND token IN :tokens' if tokens else ''}
+            {'' if banned is None else ('AND' if banned else 'AND NOT') + ' perm.banned'}
+            {'' if read is None else ('AND' if read else 'AND NOT') + ' perm.read'}
+            {'' if write is None else ('AND' if write else 'AND NOT') + ' perm.write'}
+            {'' if upload is None else ('AND' if upload else 'AND NOT') + ' perm.upload'}
+            {'' if moderator is None else ('AND' if moderator else 'AND NOT') + ' perm.moderator'}
+            {'' if admin is None else ('AND' if admin else 'AND NOT') + ' perm.admin'}
+        ORDER BY token
+        """,
+            u=user.id,
+            tokens=tokens,
+            bind_expanding=['tokens'] if tokens else None,
+        )
+    ]
+
+
 def get_readable_rooms(user: Optional[User] = None):
     """
     Get a list of rooms that a user can access; if user is None then return all publicly readable
@@ -1329,14 +1395,7 @@ def get_readable_rooms(user: Optional[User] = None):
     if user is None:
         result = query("SELECT * FROM rooms WHERE read ORDER BY token")
     else:
-        result = query(
-            """
-            SELECT rooms.* FROM user_permissions perm JOIN rooms ON rooms.id = room
-            WHERE "user" = :u AND perm.read AND NOT perm.banned
-            ORDER BY token
-            """,
-            u=user.id,
-        )
+        return get_rooms_with_permission(user, read=True, banned=False)
     return [Room(row) for row in result]
 
 

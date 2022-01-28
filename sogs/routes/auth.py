@@ -205,6 +205,10 @@ def handle_http_auth():
         )
 
     user = User(session_id=pk, autovivify=True, touch=False)
+    if user.banned:
+        # If the user is banned don't even bother verifying the signature because we want to reject
+        # the request whether or not the signature validation passes.
+        abort_with_reason(http.FORBIDDEN, 'Banned', warn=False)
 
     try:
         query('INSERT INTO user_request_nonces ("user", nonce) VALUES (:u, :n)', u=user.id, n=nonce)
@@ -239,9 +243,6 @@ def handle_http_auth():
         abort_with_reason(
             http.UNAUTHORIZED, "Invalid authentication: X-SOGS-Hash authentication failed"
         )
-
-    if user.banned:
-        abort_with_reason(http.FORBIDDEN, 'Banned', warn=False)
 
     user.touch()
     g.user = user

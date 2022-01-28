@@ -4,7 +4,7 @@ from . import auth
 
 from flask import abort, jsonify, g, Blueprint, request
 
-# General purpose routes for things like capability retrieval and batching
+# Room-related routes
 
 
 rooms = Blueprint('rooms', __name__)
