@@ -1035,28 +1035,36 @@ class Room:
                 """
                 INSERT INTO user_permission_overrides (room, "user", banned, moderator, admin)
                     VALUES (:r, :ban, TRUE, FALSE, FALSE)
-                ON CONFLICT (room, user) DO
+                ON CONFLICT (room, "user") DO
                     UPDATE SET banned = TRUE, moderator = FALSE, admin = FALSE
                 """,
                 r=self.id,
                 ban=to_ban.id,
             )
 
+            # Replace (or remove) an existing scheduled unban:
+            query(
+                'DELETE FROM user_ban_futures WHERE room = :r AND "user" = :u AND NOT banned',
+                r=self.id,
+                u=to_ban.id,
+            )
             if timeout:
                 query(
                     """
-                    INSERT INTO user_permission_futures (room, "user", at, banned)
-                        VALUES (:r, :banned, :at, FALSE)
+                    INSERT INTO user_ban_futures
+                    (room, "user", banned, at) VALUES (:r, :u, FALSE, :at)
                     """,
                     r=self.id,
-                    banned=to_ban.id,
+                    u=to_ban.id,
                     at=time.time() + timeout,
                 )
 
         if to_ban.id in self._perm_cache:
             del self._perm_cache[to_ban.id]
 
-        app.logger.debug(f"Banned {to_ban} from {self} (banned by {mod})")
+        app.logger.debug(
+            f"Banned {to_ban} from {self} {f'for {timeout}s ' if timeout else ''}(banned by {mod})"
+        )
 
     def unban_user(self, to_unban: User, *, mod: User):
         """

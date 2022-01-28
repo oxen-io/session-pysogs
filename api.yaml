@@ -743,7 +743,8 @@ paths:
                     user must be a server-level moderator or admin.
                     
                     
-                    The ban applies immediately to all server requests as early as possible.
+                    The ban applies immediately to all server requests initiated by the user (not
+                    just room access).
                     
                     
                     Exclusive of `rooms`.
@@ -753,13 +754,9 @@ paths:
                   nullable: true
                   example: 86400
                   description: >
-                    How long the ban should apply, in seconds.  If there is an existing ban on the
-                    user in the given rooms this updates the existing expiry to the given value. If
-                    omitted or `null` then the ban does not expire.
-                    
-                    
-                    May only be used with the `rooms` argument; timeouts are not supported on global
-                    bans.
+                    How long the ban should apply, in seconds.  If omitted (or `null`) then the ban
+                    applies forever.  If an unban was previously scheduled then it is replaced (if a
+                    timeout is given) or deleted (if no timeout is provided).
             examples:
               tworooms:
                 summary: "1-day ban from two rooms"

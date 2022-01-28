@@ -156,16 +156,12 @@ def ban_user(sid):
         app.logger.warning("Invalid ban request: timeout must be numeric")
         abort(http.BAD_REQUEST)
 
-    if timeout and global_ban:
-        app.logger.warning("Invalid ban request: global server bans do not support timeouts")
-        abort(http.BAD_REQUEST)
-
     if rooms:
         with db.transaction():
             for room in rooms:
                 room.ban_user(to_ban=user, mod=g.user, timeout=timeout)
     else:
-        user.ban(banned_by=g.user)
+        user.ban(banned_by=g.user, timeout=timeout)
 
     return {}
 

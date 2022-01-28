@@ -94,24 +94,53 @@ def expire_nonce_history():
 def apply_permission_updates():
     with db.transaction():
         now = time.time()
-        num_applied = query(
+        num_perms = query(
             """
-            INSERT INTO user_permission_overrides (room, "user", read, write, upload, banned)
-            SELECT room, "user", read, write, upload, banned FROM user_permission_futures
+            INSERT INTO user_permission_overrides (room, "user", read, write, upload)
+            SELECT room, "user", read, write, upload
+                FROM user_permission_futures
                 WHERE at <= :now
+                ORDER BY at
             ON CONFLICT (room, "user") DO UPDATE SET
                 read = COALESCE(excluded.read, user_permission_overrides.read),
                 write = COALESCE(excluded.write, user_permission_overrides.write),
-                upload = COALESCE(excluded.upload, user_permission_overrides.upload),
-                banned = COALESCE(excluded.banned, user_permission_overrides.banned)
+                upload = COALESCE(excluded.upload, user_permission_overrides.upload)
             """,
             now=now,
         ).rowcount
-        if not num_applied:
-            return 0
 
-        query("DELETE FROM user_permission_futures WHERE at <= :now", now=now)
+        if num_perms > 0:
+            query("DELETE FROM user_permission_futures WHERE at <= :now", now=now)
+
+        num_room_bans, num_user_bans = 0, 0
+        for uid, rid, banned in query(
+            'SELECT "user", room, banned FROM user_ban_futures WHERE at <= :now ORDER BY at',
+            now=now,
+        ):
+            if rid is None:
+                query("UPDATE users SET banned = :b WHERE id = :u", u=uid, b=banned)
+                num_user_bans += 1
+            else:
+                query(
+                    """
+                INSERT INTO user_permission_overrides (room, "user", banned)
+                VALUES (:r, :u, :b)
+                ON CONFLICT (room, "user") DO UPDATE SET banned = excluded.banned
+                """,
+                    r=rid,
+                    u=uid,
+                    b=banned,
+                )
+                num_room_bans += 1
+
+        if num_room_bans > 0 or num_user_bans > 0:
+            query("DELETE FROM user_ban_futures WHERE at <= :now", now=now)
+
+        num_applied = num_perms + num_room_bans + num_user_bans
 
     if num_applied > 0:
-        app.logger.info("Applied {} scheduled user permission updates".format(num_applied))
+        app.logger.info(
+            f"Applied {num_applied} permission updates ({num_perms} perms; "
+            f"{num_room_bans} room (un)bans; {num_user_bans} global (un)bans)"
+        )
     return num_applied
