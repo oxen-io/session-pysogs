@@ -1,12 +1,12 @@
 import pytest
 from sogs.model.room import Room
+from sogs import utils
 import werkzeug.exceptions as wexc
 from request import sogs_get, sogs_post
+from util import pad32
 
 
-def test_global_mods(client, room, user, user2, mod, admin, global_admin, global_mod):
-
-    room2 = Room.create('room2', name='Room 2', description='Test suite testing room2')
+def test_global_mods(client, room, room2, user, user2, mod, admin, global_admin, global_mod):
 
     assert not room2.check_moderator(user)
     assert not room2.check_moderator(user2)
@@ -16,8 +16,8 @@ def test_global_mods(client, room, user, user2, mod, admin, global_admin, global
 
     # No one except global_admin should be able to add a global moderator:
     for u in (user, user2, mod, admin, global_mod):
-        with pytest.raises(wexc.Forbidden):
-            r = sogs_post(client, url_u2_mod, {'global': True, 'moderator': True}, u)
+        r = sogs_post(client, url_u2_mod, {'global': True, 'moderator': True}, u)
+        assert r.status_code == 403
 
     r = sogs_post(client, url_u2_mod, {'global': True, 'moderator': True}, global_admin)
     assert r.status_code == 200
@@ -29,8 +29,8 @@ def test_global_mods(client, room, user, user2, mod, admin, global_admin, global
     assert room2.check_moderator(user2)
     assert not room2.check_admin(user2)
 
-    with pytest.raises(wexc.Forbidden):
-        r = sogs_post(client, url_u2_mod, {'global': True, 'moderator': True}, user2)
+    r = sogs_post(client, url_u2_mod, {'global': True, 'moderator': True}, user2)
+    assert r.status_code == 403
 
     r = sogs_post(client, url_u2_mod, {'global': True, 'moderator': False}, global_admin)
     assert r.status_code == 200
@@ -142,9 +142,7 @@ def test_global_mods(client, room, user, user2, mod, admin, global_admin, global
     assert r.status_code == 400
 
 
-def test_room_mods(client, room, user, user2, mod, admin, global_admin, global_mod):
-
-    room2 = Room.create('room2', name='Room 2', description='Test suite testing room2')
+def test_room_mods(client, room, room2, user, user2, mod, admin, global_admin, global_mod):
 
     assert not room.check_moderator(user)
     assert not room.check_moderator(user2)
@@ -470,3 +468,90 @@ def test_mod_visibility(client, room, user, user2, mod, admin, global_admin):
     sogs_post(client, url_u1_mod, {'rooms': ['test-room'], 'admin': True}, global_admin)
     assert room_mods() == ([s_mod], sorted([s_admin, s_user]), [], [])
     assert room_mods(mod) == ([s_mod], sorted([s_admin, s_user]), [], [s_gadmin])
+
+
+def test_bans(client, room, room2, user, user2, mod, global_mod):
+    url_ban = f'/user/{user.session_id}/ban'
+    url_unban = f'/user/{user.session_id}/unban'
+
+    post = {"data": utils.encode_base64(b"post"), "signature": utils.encode_base64(pad32("sig"))}
+    r = sogs_post(client, "/room/test-room/message", post, user)
+    assert r.status_code == 201
+
+    r = sogs_post(client, url_ban, {'rooms': ['test-room']}, mod)
+    assert r.status_code == 200
+
+    with pytest.raises(wexc.Forbidden):
+        sogs_post(client, "/room/test-room/message", post, user)
+
+    r = sogs_post(client, "/room/test-room/message", post, user2)
+    assert r.status_code == 201
+    r = sogs_post(client, "/room/room2/message", post, user)
+    assert r.status_code == 201
+
+    r = sogs_post(client, url_unban, {'rooms': ['test-room']}, mod)
+    assert r.status_code == 200
+
+    r = sogs_post(client, "/room/test-room/message", post, user)
+    assert r.status_code == 201
+
+    r = sogs_post(client, url_ban, {'rooms': ['*'], 'timeout': 0.001}, global_mod)
+    assert r.status_code == 200
+
+    with pytest.raises(wexc.Forbidden):
+        sogs_post(client, "/room/test-room/message", post, user)
+
+    with pytest.raises(wexc.Forbidden):
+        sogs_post(client, "/room/room2/message", post, user)
+
+    r = sogs_post(client, "/room/test-room/message", post, user2)
+    assert r.status_code == 201
+
+    from sogs.cleanup import cleanup
+
+    assert cleanup() == (0, 0, 0, 2, 0)
+
+    r = sogs_post(client, "/room/test-room/message", post, user)
+    assert r.status_code == 201
+    r = sogs_post(client, "/room/room2/message", post, user)
+    assert r.status_code == 201
+
+    r = sogs_post(client, url_ban, {'global': True}, mod)
+    assert r.status_code == 403
+    r = sogs_post(client, url_ban, {'global': True}, global_mod)
+    assert r.status_code == 200
+
+    # With a global ban we shouldn't be able to access
+    r = sogs_post(client, "/room/test-room/message", post, user)
+    assert r.status_code == 403
+    r = sogs_post(client, "/room/room2/message", post, user)
+    assert r.status_code == 403
+    r = sogs_get(client, "/rooms", user)
+    assert r.status_code == 403
+
+    r = sogs_post(client, "/room/test-room/message", post, user2)
+    assert r.status_code == 201
+
+    r = sogs_post(client, url_unban, {'global': True}, mod)
+    assert r.status_code == 403
+    r = sogs_post(client, url_unban, {'global': True}, global_mod)
+    assert r.status_code == 200
+    r = sogs_post(client, "/room/test-room/message", post, user)
+    assert r.status_code == 201
+    r = sogs_post(client, "/room/room2/message", post, user)
+    assert r.status_code == 201
+
+    # Test bad arguments properly error:
+    assert [
+        sogs_post(client, url_ban, data, global_mod).status_code
+        for data in (
+            {'global': True, 'rooms': ['abc']},
+            {},
+            {'rooms': []},
+            {'global': False, 'rooms': []},
+            {'global': False, 'rooms': None},
+            {'global': True, 'timeout': 3},
+            {'rooms': ['test-room', '*']},
+            {'rooms': ['*', 'test-room']},
+        )
+    ] == [400] * 8

@@ -9,9 +9,8 @@ from util import pad32
 from request import sogs_get, sogs_post, sogs_put
 
 
-def test_list(client, room, user, user2, admin, mod, global_mod, global_admin):
+def test_list(client, room, room2, user, user2, admin, mod, global_mod, global_admin):
 
-    room2 = Room.create('room2', name='Room 2', description='Test suite testing room2')
     room2.default_write = False
     room2.default_upload = False
 
