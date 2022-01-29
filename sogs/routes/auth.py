@@ -123,6 +123,44 @@ def user_required(f):
     return required_user_wrapper
 
 
+def require_mod(room, *, admin=False):
+    """Checks a room for moderator or admin permission; aborts with 401 Unauthorized if there is no
+    user in the request, and 403 Forbidden if g.user does not have moderator (or admin, if
+    specified) permission."""
+    require_user()
+    if not (room.check_admin(g.user) if admin else room.check_moderator(g.user)):
+        abort_with_reason(
+            http.FORBIDDEN,
+            f"This endpoint requires {'admin' if admin else 'moderator'} room permissions",
+        )
+
+
+def mod_required(f):
+    """Decorator for an endpoint that requires a user that has moderator permission in the given
+    room.  The function must take a `room` argument by name, as is typically used with flask
+    endpoints with a <Room:room> argument."""
+
+    @wraps(f)
+    def required_mod_wrapper(*args, room, **kwargs):
+        require_mod(room)
+        return f(*args, room=room, **kwargs)
+
+    return required_mod_wrapper
+
+
+def admin_required(f):
+    """Decorator for an endpoint that requires a user that has admin permission in the given room.
+    The function must take a `room` argument by name, as is typically used with flask endpoints with
+    a <Room:room> argument."""
+
+    @wraps(f)
+    def required_admin_wrapper(*args, room, **kwargs):
+        require_mod(room, admin=True)
+        return f(*args, room=room, **kwargs)
+
+    return required_admin_wrapper
+
+
 @app.before_request
 def handle_http_auth():
     """

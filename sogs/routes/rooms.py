@@ -71,11 +71,8 @@ BAD_DESCRIPTION_CHARS = {c: None for c in range(32) if not (0x09 <= c <= 0x0A)}
 
 
 @rooms.put("/room/<Room:room>")
-@auth.user_required
+@auth.admin_required
 def update_room(room):
-
-    if not room.check_admin(g.user):
-        abort(http.FORBIDDEN)
 
     req = request.json
 
