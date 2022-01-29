@@ -1,5 +1,6 @@
-from .. import config, http, utils
+from .. import config, db, http, utils
 from ..model import room as mroom
+from ..web import app
 from . import auth
 
 from flask import abort, jsonify, g, Blueprint, request
@@ -17,7 +18,6 @@ def get_one_room(room):
     rr = {
         'token': room.token,
         'name': room.name,
-        'description': room.description,
         'info_updates': room.info_updates,
         'message_sequence': room.message_sequence,
         'created': room.created,
@@ -25,12 +25,13 @@ def get_one_room(room):
         'active_users_cutoff': int(config.ROOM_DEFAULT_ACTIVE_THRESHOLD * 86400),
         'moderators': mods,
         'admins': admins,
-        'moderator': room.check_moderator(g.user),
-        'admin': room.check_admin(g.user),
         'read': room.check_read(g.user),
         'write': room.check_write(g.user),
         'upload': room.check_upload(g.user),
     }
+
+    if room.description is not None:
+        rr['description'] = room.description
 
     if room.image_id is not None:
         rr['image_id'] = room.image_id
@@ -44,6 +45,13 @@ def get_one_room(room):
     if h_admins:
         rr['hidden_admins'] = h_admins
 
+    if room.check_moderator(g.user):
+        rr['moderator'] = True
+        rr['default_read'] = room.default_read
+        rr['default_write'] = room.default_write
+        rr['default_upload'] = room.default_upload
+    if room.check_admin(g.user):
+        rr['admin'] = True
     if g.user:
         if g.user.global_moderator:
             rr['global_moderator'] = True
@@ -58,6 +66,62 @@ def get_rooms():
     return jsonify([get_one_room(r) for r in mroom.get_readable_rooms(g.user)])
 
 
+BAD_NAME_CHARS = {c: None for c in range(32)}
+BAD_DESCRIPTION_CHARS = {c: None for c in range(32) if not (0x09 <= c <= 0x0A)}
+
+
+@rooms.put("/room/<Room:room>")
+@auth.admin_required
+def update_room(room):
+
+    req = request.json
+
+    with db.transaction():
+        did = False
+        if 'name' in req:
+            n = req['name']
+            if not isinstance(n, str):
+                app.logger.warning(f"Room update with invalid name: {type(n)} != str")
+                abort(http.BAD_REQUEST)
+            room.name = n.translate(BAD_NAME_CHARS)
+            did = True
+        if 'description' in req:
+            d = req['description']
+            if not (d is None or isinstance(d, str)):
+                app.logger.warning(f"Room update: invalid description: {type(d)} is not str, null")
+                abort(http.BAD_REQUEST)
+            if d is not None:
+                d = d.translate(BAD_DESCRIPTION_CHARS)
+                if len(d) == 0:
+                    d = None
+
+            room.description = d
+            did = True
+        read, write, upload = (req.get('default_' + x) for x in ('read', 'write', 'upload'))
+        for val in (read, write, upload):
+            if not (val is None or isinstance(val, bool) or isinstance(val, int)):
+                app.logger.warning(
+                    f"Room update: default_read/write/upload must be bool, not {type(val)}"
+                )
+                abort(http.BAD_REQUEST)
+
+        if read is not None:
+            room.default_read = bool(read)
+            did = True
+        if write is not None:
+            room.default_write = bool(write)
+            did = True
+        if upload is not None:
+            room.default_upload = bool(upload)
+            did = True
+
+        if not did:
+            app.logger.warning("Room update: must include at least one field to update")
+            abort(http.BAD_REQUEST)
+
+    return jsonify({})
+
+
 @rooms.get("/room/<Room:room>/pollInfo/<int:info_updated>")
 def poll_room_info(room, info_updated):
     if g.user:
@@ -66,8 +130,6 @@ def poll_room_info(room, info_updated):
     result = {
         'token': room.token,
         'active_users': room.active_users(),
-        'moderator': room.check_moderator(g.user),
-        'admin': room.check_admin(g.user),
         'read': room.check_read(g.user),
         'write': room.check_write(g.user),
         'upload': room.check_upload(g.user),
@@ -76,6 +138,13 @@ def poll_room_info(room, info_updated):
     if room.info_updates != info_updated:
         result['details'] = get_one_room(room)
 
+    if room.check_moderator(g.user):
+        result['moderator'] = True
+        result['default_read'] = room.default_read
+        result['default_write'] = room.default_write
+        result['default_upload'] = room.default_upload
+    if room.check_admin(g.user):
+        result['admin'] = True
     if g.user:
         if g.user.global_moderator:
             result['global_moderator'] = True
