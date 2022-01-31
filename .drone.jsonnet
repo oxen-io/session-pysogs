@@ -27,7 +27,10 @@ local debian_pipeline(name,
                       image,
                       arch='amd64',
                       deps=default_deps,
+                      before_pytest=[],
+                      pytest_opts='',
                       extra_cmds=[],
+                      services=[],
                       allow_fail=false) = {
   kind: 'pipeline',
   type: 'docker',
@@ -51,11 +54,13 @@ local debian_pipeline(name,
                   'eatmydata ' + apt_get_quiet + ' update',
                   'eatmydata ' + apt_get_quiet + ' dist-upgrade -y',
                   'eatmydata ' + apt_get_quiet + ' install --no-install-recommends -y ' + std.join(' ', deps),
-                  'PYTHONPATH=. python3 -mpytest -vv --color=yes --sql-tracing',
+                ] + before_pytest + [
+                  'PYTHONPATH=. python3 -mpytest -vv --color=yes --sql-tracing ' + pytest_opts,
                 ]
                 + extra_cmds,
     },
   ],
+  services: services,
 };
 
 [
@@ -91,6 +96,19 @@ local debian_pipeline(name,
   debian_pipeline('Debian stable (amd64)', docker_base + 'debian-stable'),
   debian_pipeline('Ubuntu latest (amd64)', docker_base + 'ubuntu-rolling'),
   debian_pipeline('Ubuntu LTS (amd64)', docker_base + 'ubuntu-lts'),
+
+  debian_pipeline(
+    'PostgreSQL/bullseye',
+    docker_base + 'debian-bullseye',
+    deps=default_deps + ['python3-psycopg2', 'postgresql-client'],
+    services=[
+      { name: 'pg', image: 'postgres:bullseye', environment: { POSTGRES_USER: 'ci', POSTGRES_PASSWORD: 'ci' } },
+    ],
+    before_pytest=[
+      'for i in $(seq 0 30); do if pg_isready -d ci -h pg -U ci -t 1; then break; fi; if [ "$i" = 30 ]; then echo "Timeout waiting for postgresql" >&2; exit 1; fi; sleep 1; done',
+    ],
+    pytest_opts='--pgsql "postgresql://ci:ci@pg/ci"'
+  ),
 
   // ARM builds (ARM64 and armhf)
   debian_pipeline('Debian sid (ARM64)', docker_base + 'debian-sid', arch='arm64'),
