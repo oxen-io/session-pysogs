@@ -10,6 +10,8 @@ from sogs.model.user import SystemUser  # noqa: E402
 
 import sogs.omq  # noqa: E402
 
+import sqlalchemy  # noqa: E402
+
 
 sogs.omq.test_suite = True
 
@@ -46,8 +48,44 @@ def client():
 db_counter_ = 0
 
 
+# Under postgresql & sqlalchemy 1.3.x we have to hack around a bit to get sqlalchemy to properly use
+# the pgsql search_path, most notably passing it in the connect string, but that fails if the schema
+# doesn't already exist; thus we establish an extra connection to the database to create it at
+# session startup and tear it down at session end.
+#
+# Under higher sqlalchemy this simply provides the pgsql url, and under sqlite this returns None.
+@pytest.fixture(scope="session")
+def pgsql(request):
+    pgsql = request.config.getoption("--pgsql")
+    if pgsql:
+        if sqlalchemy.__version__.startswith("1.3."):
+            import psycopg2
+
+            conn = psycopg2.connect(pgsql)
+            with conn.cursor() as cur:
+                cur.execute("CREATE SCHEMA IF NOT EXISTS sogs_tests")
+            conn.commit()
+
+            pgsql_w_schema = pgsql + ('&' if '?' in pgsql else '?')
+            pgsql_w_schema += 'options=--search_path%3Dsogs_tests'
+
+            yield pgsql_w_schema
+
+            if not request.config.getoption("--pgsql-no-drop-schema"):
+                print("DROPPING SCHEMA")
+                with conn.cursor() as cur:
+                    cur.execute("DROP SCHEMA sogs_tests CASCADE")
+                conn.commit()
+
+            conn.close()
+        else:
+            yield pgsql
+    else:
+        yield None
+
+
 @pytest.fixture
-def db(request):
+def db(request, pgsql):
     """
     Import this fixture to get a wiped, re-initialized database for db.engine.  The actual fixture
     value is the db module itself (so typically you don't import it at all but instead get it
@@ -55,7 +93,6 @@ def db(request):
     """
 
     trace = request.config.getoption("--sql-tracing")
-    pgsql = request.config.getoption("--pgsql")
 
     from sogs import db as db_
 
@@ -69,9 +106,8 @@ def db(request):
 
         def pg_setup_schema():
             # Run everything in a separate schema that we can easily drop when done
-            from sqlalchemy import event
 
-            @event.listens_for(db_.engine, "connect", insert=True)
+            @sqlalchemy.event.listens_for(db_.engine, "connect", insert=True)
             def setup_schema(dbapi_connection, connection_record):
                 existing_autocommit = dbapi_connection.autocommit
                 dbapi_connection.autocommit = True
@@ -109,9 +145,14 @@ def db(request):
     yield db_
 
     web.app.logger.warning("closing db")
-    if pgsql and not request.config.getoption("--pgsql-no-drop-schema"):
+    if (
+        pgsql
+        and not sqlalchemy.__version__.startswith("1.3.")
+        and not request.config.getoption("--pgsql-no-drop-schema")
+    ):
         web.app.logger.critical("DROPPING SCHEMA")
         db_.query("DROP SCHEMA sogs_tests CASCADE")
+
     web.appdb.close()
 
 
