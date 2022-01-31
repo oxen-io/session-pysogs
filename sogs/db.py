@@ -117,6 +117,14 @@ def database_init():
         metadata.clear()
         metadata.reflect(bind=engine, views=True)
 
+        if 'messages' not in metadata.tables:
+            msg = (
+                "Critical error: SQL schema creation failed; "
+                f"tables: {', '.join(metadata.tables.keys())}"
+            )
+            logging.critical(msg)
+            raise RuntimeError(msg)
+
     changes = False
 
     # Database migrations/updates/etc.
