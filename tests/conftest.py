@@ -76,6 +76,16 @@ def room(db):
 
 
 @pytest.fixture
+def room2(db):
+    """
+    Creates a test room, typically used with `room` when two separate rooms are needed.  Note that
+    `mod` and `admin` (if used) are only a mod and admin of `room`, not `room2`
+    """
+
+    return Room.create('room2', name='Room 2', description='Test suite testing room2')
+
+
+@pytest.fixture
 def user(db):
     """
     Generates an ordinary user without any special privileges.  Returns a subclass of a model.User

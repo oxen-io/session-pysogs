@@ -759,9 +759,14 @@ paths:
   /user/{sessionId}/ban:
     post:
       tags: [Users]
-      summary: Bans or unbans a user.
+      summary: Bans a user.
       description: >
-        Applies or removes a ban of a user from specific rooms, or from the server globally.
+        Applies a ban of a user from specific rooms, or from the server globally.
+        
+        
+        The invoking user must have moderator (or admin) permission in all given rooms when
+        specifying `rooms`, and must be a global server moderator (or admin) if using the `global`
+        parameter.
         
         
         Note that the given session ID does not have to exist: it is possible to preemptively ban
@@ -774,7 +779,7 @@ paths:
       parameters:
       - $ref: "#/components/parameters/pathSessionId"
       requestBody:
-        description: Details of the ban to apply. To unban a user, specify a negative timeout.
+        description: Details of the ban to apply.
         required: true
         content:
           application/json:
@@ -791,12 +796,22 @@ paths:
                     be a moderator (or admin) of all of the given rooms.
                     
                     
+                    You can specify a single element list `["*"]` to ban the user from all rooms on
+                    the server to which the calling user has moderator permissions.  This differs
+                    from a global ban in that it doesn't apply to non-moderator-permission rooms,
+                    nor does it apply to newly created rooms or non-room endpoints.
+                    
+                    
                     Exclusive of `global`.
                 global:
                   type: boolean
                   description: >
                     If true then apply the ban at the global level, i.e. server-wide. The invoking
                     user must be a server-level moderator or admin.
+                    
+                    
+                    The ban applies immediately to all server requests initiated by the user (not
+                    just room access).
                     
                     
                     Exclusive of `rooms`.
@@ -806,15 +821,9 @@ paths:
                   nullable: true
                   example: 86400
                   description: >
-                    How long the ban should apply, in seconds.  If there is an existing ban on the
-                    user in the given rooms or globally this updates the existing expiry to the
-                    given value. If omitted or `null` the ban does not expire.
-                    
-                    If this value is set to a negative value (`-1` is suggested) then any existing
-                    bans for this user are *removed* from the given rooms/server.  Note, however,
-                    that server bans and room bans are independent: removing a server-level ban does
-                    not remove room-specific bans, and removing a room-level ban will not grant room
-                    access to a user who also has a server-level ban.
+                    How long the ban should apply, in seconds.  If omitted (or `null`) then the ban
+                    applies forever.  If an unban was previously scheduled then it is replaced (if a
+                    timeout is given) or deleted (if no timeout is provided).
             examples:
               tworooms:
                 summary: "1-day ban from two rooms"
@@ -825,21 +834,77 @@ paths:
                 summary: "Permanent server ban"
                 value:
                   global: true
-                  timeout: null
-                  delete_all: true
-              unban:
-                summary: "Unban a user from a room"
-                value:
-                  rooms: ["lokinet"]
-                  global: false,
-                  timeout: -1
       responses:
         200:
           description: Ban applied successfully.
           content: {}
         403:
           description: >
-            Permission denied.  The user attempting to set the ban does not have moderator
+            Permission denied.  The user attempting to set the ban does not have the required
+            moderator permissions for one or more of the given rooms (or server moderator permission
+            for a global ban).
+          content: {}
+  /user/{sessionId}/unban:
+    post:
+      tags: [Users]
+      summary: Removes a user ban.
+      description: >
+        Removes a room-specific or global ban of a user.
+        
+        
+        Note that removing a room-specific ban does not affect an existing global ban, and removing
+        a global ban does not affect existing room-specific bans.
+      parameters:
+      - $ref: "#/components/parameters/pathSessionId"
+      requestBody:
+        description: Details of the ban to remove.
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                rooms:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/RoomToken"
+                  minItems: 1
+                  description: >
+                    List of room tokens from which the ban should be removed (if present). The
+                    invoking user must be a moderator (or admin) of all of the given rooms.
+                    
+                    
+                    You can specify a single element list `["*"]` to unban the user from all rooms
+                    on the server to which the calling user has moderator permissions.  This isn't
+                    the same as removing a global ban; this just removes any room-specific bans that
+                    may currently apply from moderated rooms.
+                    
+                    
+                    Exclusive of `global`.
+                global:
+                  type: boolean
+                  description: >
+                    If true then remove a global server ban of this user. The invoking user must be
+                    a server-level moderator or admin.
+                    
+                    
+                    Exclusive of `rooms`.
+            examples:
+              tworooms:
+                summary: "Remove ban from two rooms"
+                value:
+                  rooms: ["session", "lokinet"]
+              permaban:
+                summary: "Remove server ban"
+                value:
+                  global: true
+      responses:
+        200:
+          description: Ban removed successfully.
+          content: {}
+        403:
+          description: >
+            Permission denied.  The user attempting to remove the ban does not have moderator
             permissions for one or more of the given rooms (or server moderator permission for a
             global ban).
           content: {}

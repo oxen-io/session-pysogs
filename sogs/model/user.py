@@ -5,6 +5,7 @@ from ..db import query
 from ..web import app
 from .exc import NoSuchUser, BadPermission
 
+from typing import Optional
 import time
 
 
@@ -168,11 +169,18 @@ class User:
         self.global_admin = False
         self.global_moderator = False
 
-    def ban(self, *, banned_by: User):
-        """Globally bans this user from the server; can only be applied by a global moderator or
-        global admin, and cannot be applied to another global moderator or admin (to prevent
-        accidental mod/admin banning; to ban them, first explicitly remove them as moderator/admin
-        and then ban)."""
+    def ban(self, *, banned_by: User, timeout: Optional[float] = None):
+        """
+        Globally bans this user from the server; can only be applied by a global moderator or global
+        admin, and cannot be applied to another global moderator or admin (to prevent accidental
+        mod/admin banning; to ban them, first explicitly remove them as moderator/admin and then
+        ban).
+
+        timeout should be None for a non-expiring ban and otherwise should be the duration of the
+        ban, in seconds; an unban will be scheduled to occur after the interval.  In either case,
+        any existing scheduled global unbans for this user will be deleted (and replaced, if a new
+        timeout is provided).
+        """
 
         if not banned_by.global_moderator:
             app.logger.warning(f"Cannot ban {self}: {banned_by} is not a global mod/admin")
@@ -182,17 +190,43 @@ class User:
             app.logger.warning(f"Cannot ban {self}: user is a global moderator/admin")
             raise BadPermission()
 
-        query("UPDATE users SET banned = TRUE WHERE id = :u", u=self.id)
-        app.logger.debug(f"{banned_by} globally banned {self}")
+        with db.transaction():
+            query("UPDATE users SET banned = TRUE WHERE id = :u", u=self.id)
+            query(
+                'DELETE FROM user_ban_futures WHERE room IS NULL AND "user" = :u AND NOT banned',
+                u=self.id,
+            )
+
+            if timeout:
+                query(
+                    """
+                    INSERT INTO user_ban_futures
+                    ("user", room, banned, at) VALUES (:u, NULL, FALSE, :at)
+                    """,
+                    u=self.id,
+                    at=time.time() + timeout,
+                )
+
+        app.logger.debug(
+            f"{banned_by} globally banned {self}{f' for {timeout}s' if timeout else ''}"
+        )
         self.banned = True
 
     def unban(self, *, unbanned_by: User):
-        """Undoes a global ban.  `unbanned_by` must be a global mod/admin."""
+        """
+        Undoes a global ban.  `unbanned_by` must be a global mod/admin.
+
+        Any currently scheduled global ban futures for this user will be removed as well.
+        """
         if not unbanned_by.global_moderator:
             app.logger.warning(f"Cannot unban {self}: {unbanned_by} is not a global mod/admin")
             raise BadPermission()
 
         query("UPDATE users SET banned = FALSE WHERE id = :u", u=self.id)
+        query(
+            'DELETE FROM user_ban_futures WHERE room IS NULL AND "user" = :u AND banned', u=self.id
+        )
+
         app.logger.debug(f"{unbanned_by} removed global ban on {self}")
         self.banned = False
 

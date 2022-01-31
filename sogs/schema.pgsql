@@ -367,11 +367,22 @@ CREATE TABLE user_permission_futures (
     at FLOAT NOT NULL, /* when the change should take effect (unix epoch) */
     read BOOLEAN, /* Set this value @ at, if non-null */
     write BOOLEAN, /* Set this value @ at, if non-null */
-    upload BOOLEAN, /* Set this value @ at, if non-null */
-    banned BOOLEAN, /* Set this value @ at, if non-null */
-    PRIMARY KEY(room, "user")
+    upload BOOLEAN /* Set this value @ at, if non-null */
 );
 CREATE INDEX user_permissions_future_at ON user_permission_futures(at);
+CREATE INDEX user_permissions_future_room_user ON user_permission_futures(room, "user");
+
+-- Similar to the above, but for ban/unbans.  For example to implement a 2-day ban you would set
+-- their user_permissions.banned to TRUE then add a row here with banned = FALSE to schedule the
+-- unban.  (You can also schedule a future *ban* here, but the utility of that is less clear).
+CREATE TABLE user_ban_futures (
+    room INTEGER NOT NULL REFERENCES rooms ON DELETE CASCADE,
+    "user" INTEGER NOT NULL REFERENCES users ON DELETE CASCADE,
+    at FLOAT NOT NULL, /* when the change should take effect (unix epoch) */
+    banned BOOLEAN NOT NULL /* if true then ban at `at`, if false then unban */
+);
+CREATE INDEX user_ban_futures_at ON user_ban_futures(at);
+CREATE INDEX user_ban_futures_room_user ON user_ban_futures(room, "user");
 
 
 -- Nonce tracking to prohibit request signature nonce reuse (thus prevent replay attacks)

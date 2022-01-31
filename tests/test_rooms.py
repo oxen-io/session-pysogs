@@ -6,22 +6,22 @@ from sogs.model.file import File
 from util import pad32
 
 
-def test_create(room):
+def test_create(room, room2):
 
-    r2 = Room.create('test-room-2', name='Test room 2', description='Test suite testing room')
     r3 = Room.create('Test_Room-3', name='Test room 3', description='Test suite testing room3')
 
     rooms = get_rooms()
 
     assert len(rooms) == 3
 
-    assert rooms[0].token == 'test-room'
-    assert rooms[0].name == 'Test room'
-    assert rooms[0].description == 'Test suite testing room'
+    assert rooms[0].token == 'room2'
+    assert rooms[0].id == room2.id
+    assert rooms[0].name == 'Room 2'
+    assert rooms[0].description == 'Test suite testing room2'
 
-    assert rooms[1].token == 'test-room-2'
-    assert rooms[1].id == r2.id
-    assert rooms[1].name == 'Test room 2'
+    assert rooms[1].token == 'test-room'
+    assert rooms[1].id == room.id
+    assert rooms[1].name == 'Test room'
     assert rooms[1].description == 'Test suite testing room'
 
     assert rooms[2].token == 'Test_Room-3'
@@ -30,7 +30,7 @@ def test_create(room):
     assert rooms[2].description == 'Test suite testing room3'
 
     with pytest.raises(exc.AlreadyExists):
-        Room.create('test-room-2', name='x', description=None)
+        Room.create('room2', name='x', description=None)
 
 
 def test_token_insensitive(room):
@@ -53,12 +53,10 @@ def test_token_insensitive(room):
         Room(token='Test-Ro-om')
 
 
-def test_delete(room):
-    r2 = Room.create('test-room-2', name='Test room 2', description='Test suite testing room')
-
+def test_delete(room, room2):
     assert len(get_rooms()) == 2
 
-    r2.delete()
+    room2.delete()
 
     rooms = get_rooms()
     assert len(rooms) == 1
@@ -553,7 +551,7 @@ def test_image_expiries(room, user):
     assert f1.expiry is not None
 
 
-def test_pinning(room, user, mod, admin, global_admin, no_rate_limit):
+def test_pinning(room, room2, user, mod, admin, global_admin, no_rate_limit):
     msgs = [room.add_post(user, f"data {i}".encode(), pad32(f"sig {i}")) for i in range(1, 10)]
 
     with pytest.raises(exc.BadPermission):
@@ -609,8 +607,7 @@ def test_pinning(room, user, mod, admin, global_admin, no_rate_limit):
         room.pin(123, admin)
 
     # Pinning some other room's message should fail
-    r2 = Room.create('test-room-2', name='Test room 2', description='Test suite testing room')
     with pytest.raises(exc.NoSuchPost):
-        r2.pin(7, global_admin)
+        room2.pin(7, global_admin)
 
-    assert not r2.pinned_messages
+    assert not room2.pinned_messages
