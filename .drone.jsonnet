@@ -63,6 +63,20 @@ local debian_pipeline(name,
   services: services,
 };
 
+local debian_pg_pipeline(name, image, pg_tag='bullseye') = debian_pipeline(
+  name,
+  image,
+  deps=default_deps + ['python3-psycopg2', 'postgresql-client'],
+  services=[
+    { name: 'pg', image: 'postgres:bullseye', environment: { POSTGRES_USER: 'ci', POSTGRES_PASSWORD: 'ci' } },
+  ],
+  before_pytest=[
+    'for i in $(seq 0 30); do if pg_isready -d ci -h pg -U ci -t 1; then break; fi; if [ "$i" = 30 ]; then echo "Timeout waiting for postgresql" >&2; exit 1; fi; sleep 1; done',
+  ],
+  pytest_opts='--pgsql "postgresql://ci:ci@pg/ci"'
+);
+
+
 [
   {
     name: 'Lint checks',
@@ -97,18 +111,8 @@ local debian_pipeline(name,
   debian_pipeline('Ubuntu latest (amd64)', docker_base + 'ubuntu-rolling'),
   debian_pipeline('Ubuntu LTS (amd64)', docker_base + 'ubuntu-lts'),
 
-  debian_pipeline(
-    'PostgreSQL/bullseye',
-    docker_base + 'debian-bullseye',
-    deps=default_deps + ['python3-psycopg2', 'postgresql-client'],
-    services=[
-      { name: 'pg', image: 'postgres:bullseye', environment: { POSTGRES_USER: 'ci', POSTGRES_PASSWORD: 'ci' } },
-    ],
-    before_pytest=[
-      'for i in $(seq 0 30); do if pg_isready -d ci -h pg -U ci -t 1; then break; fi; if [ "$i" = 30 ]; then echo "Timeout waiting for postgresql" >&2; exit 1; fi; sleep 1; done',
-    ],
-    pytest_opts='--pgsql "postgresql://ci:ci@pg/ci"'
-  ),
+  debian_pg_pipeline('PostgreSQL 14/sid', docker_base + 'debian-sid', pg_tag='14-bullseye'),
+  debian_pg_pipeline('PostgreSQL 12/focal', docker_base + 'ubuntu-focal', pg_tag='12-bullseye'),
 
   // ARM builds (ARM64 and armhf)
   debian_pipeline('Debian sid (ARM64)', docker_base + 'debian-sid', arch='arm64'),
