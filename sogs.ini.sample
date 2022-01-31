@@ -43,6 +43,12 @@
 ;omq_internal = ipc://./omq.sock
 
 
+; Whether we should show an index of public rooms on the root URL when visited by a
+; browser.
+;
+;http_show_index = yes
+
+
 ; Whether we should show recent messages for public rooms on the sogs room page when visited by a
 ; browser.
 ;

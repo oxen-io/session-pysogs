@@ -14,6 +14,7 @@ DB_URL = 'sqlite:///sogs.db'
 DB_SCHEMA_FILE = 'schema.sql'  # Not configurable, just a constant
 KEY_FILE = 'key_x25519'
 URL_BASE = 'http://example.net'
+HTTP_SHOW_INDEX = True
 HTTP_SHOW_RECENT = True
 OMQ_LISTEN = 'tcp://*:22028'
 OMQ_INTERNAL = 'ipc://./omq.sock'
@@ -83,6 +84,7 @@ def load_config():
                 lambda x: [y for y in x.splitlines() if len(y)],
             ),
             'omq_internal': ('OMQ_INTERNAL', lambda x: re.search('^(?:tcp|ipc)://.', x)),
+            'http_show_index': bool_opt('HTTP_SHOW_INDEX'),
             'http_show_recent': bool_opt('HTTP_SHOW_RECENT'),
         },
         'files': {

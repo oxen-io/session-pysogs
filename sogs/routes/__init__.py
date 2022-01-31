@@ -30,6 +30,8 @@ def serve_index():
     rooms = get_readable_rooms()
     if len(rooms) == 0:
         return render_template('setup.html')
+    if not config.HTTP_SHOW_INDEX:
+        abort(http.FORBIDDEN)
     return render_template(
         "index.html", url_base=config.URL_BASE, rooms=rooms, pubkey=crypto.server_pubkey_hex
     )
