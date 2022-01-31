@@ -587,17 +587,6 @@ def create_admin_user(dbconn):
     )
 
 
-if config.DB_URL.startswith('postgresql'):
-    # rooms.token is a 'citext' (case-insensitive text), which sqlalchemy doesn't recognize out of
-    # the box.  Map it to a plain TEXT which is good enough for what we need (if we actually needed
-    # to generate this wouldn't suffice: we'd have to use something like the sqlalchemy-citext
-    # module).
-    from sqlalchemy.dialects.postgresql.base import ischema_names
-
-    if 'citext' not in ischema_names:
-        ischema_names['citext'] = ischema_names['text']
-
-
 engine, engine_initial_pid, metadata = None, None, None
 
 
@@ -605,6 +594,10 @@ def _init_engine(*args, **kwargs):
     """
     Initializes or reinitializes db.engine.  (Only the test suite should be calling this externally
     to reinitialize).
+
+    Arguments:
+    sogs_preinit - a callable to invoke after setting up `engine` but before calling
+    `database_init()`.
     """
     global engine, engine_initial_pid, metadata, have_returning
 
@@ -616,9 +609,17 @@ def _init_engine(*args, **kwargs):
             return
         args = (config.DB_URL,)
 
-    # Disable *sqlalchemy*-level autocommit, which works so badly that it got completely removed in
-    # 2.0.  (We put the actual sqlite into driver-level autocommit mode below).
-    engine = sqlalchemy.create_engine(*args, **kwargs).execution_options(autocommit=False)
+    preinit = kwargs.pop('sogs_preinit', None)
+
+    exec_opts_args = {}
+    if args[0].startswith('postgresql'):
+        exec_opts_args['isolation_level'] = 'READ COMMITTED'
+    else:
+        # SQLite's Python code is seriously broken, so we have to force off autocommit mode and turn
+        # on driver-level autocommit (which we do below).
+        exec_opts_args['autocommit'] = False
+
+    engine = sqlalchemy.create_engine(*args, **kwargs).execution_options(**exec_opts_args)
     engine_initial_pid = os.getpid()
     metadata = sqlalchemy.MetaData()
 
@@ -650,6 +651,18 @@ def _init_engine(*args, **kwargs):
 
     else:
         have_returning = True
+
+        # rooms.token is a 'citext' (case-insensitive text), which sqlalchemy doesn't recognize out
+        # of the box.  Map it to a plain TEXT which is good enough for what we need (if we actually
+        # needed to generate this wouldn't suffice: we'd have to use something like the
+        # sqlalchemy-citext module).
+        from sqlalchemy.dialects.postgresql.base import ischema_names
+
+        if 'citext' not in ischema_names:
+            ischema_names['citext'] = ischema_names['text']
+
+    if preinit:
+        preinit()
 
     database_init()
 
