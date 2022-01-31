@@ -132,10 +132,10 @@ def database_init():
         migrate_v01x,
         add_new_tables,
         add_new_columns,
-        update_message_views,
         create_message_details_deleter,
         check_for_hacks,
         seqno_etc_updates,
+        update_message_views,
         user_perm_future_updates,
     ):
         with transaction(conn):
@@ -228,7 +228,7 @@ CREATE TABLE user_request_nonces (
 
 
 def update_message_views(conn):
-    if engine.name != "sqlite":
+    if engine.name == "sqlite":
         if any(x not in metadata.tables['message_metadata'].c for x in ('whisper_to', 'filtered')):
             logging.warning("DB migration: replacing message_metadata/message_details views")
             conn.execute("DROP VIEW IF EXISTS message_metadata")
@@ -244,15 +244,26 @@ SELECT messages.*, uposter.session_id, uwhisper.session_id AS whisper_to
             )
             conn.execute(
                 """
+CREATE TRIGGER message_details_deleter INSTEAD OF DELETE ON message_details
+FOR EACH ROW WHEN OLD.data IS NOT NULL
+BEGIN
+    UPDATE messages SET data = NULL, data_size = NULL, signature = NULL
+        WHERE id = OLD.id;
+END
+"""
+            )
+            conn.execute(
+                """
 CREATE VIEW message_metadata AS
-SELECT id, room, "user", session_id, posted, edited, updated, filtered, whisper_to,
+SELECT id, room, "user", session_id, posted, edited, seqno, filtered, whisper_to,
         length(data) AS data_unpadded, data_size, length(signature) as signature_length
     FROM message_details
 """
             )
 
             return True
-        # else: don't worry about this for postgresql because initial pg support had the fix
+
+    # else: don't worry about this for postgresql because initial pg support had the fix
 
     return False
 
@@ -342,7 +353,7 @@ def seqno_etc_updates(conn):
             """
 CREATE TABLE pinned_messages (
     room INTEGER NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
-    message INTEGER NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+    message INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
     pinned_by INTEGER NOT NULL REFERENCES users(id),
     pinned_at FLOAT NOT NULL DEFAULT ((julianday('now') - 2440587.5)*86400.0), /* unix epoch when pinned */
     PRIMARY KEY(room, message)
@@ -425,7 +436,7 @@ FROM
             """
 CREATE TABLE pinned_messages (
     room BIGINT NOT NULL REFERENCES rooms ON DELETE CASCADE,
-    message BIGINT NOT NULL REFERENCES rooms ON DELETE CASCADE,
+    message BIGINT NOT NULL REFERENCES messages ON DELETE CASCADE,
     pinned_by BIGINT NOT NULL REFERENCES users,
     pinned_at FLOAT NOT NULL DEFAULT (extract(epoch from now())),
     PRIMARY KEY(room, message)
@@ -627,6 +638,10 @@ def _init_engine(*args, **kwargs):
             # disable pysqlite's emitting of the BEGIN statement entirely.
             # also stops it from emitting COMMIT before any DDL.
             dbapi_connection.isolation_level = None
+            # Enforce foreign keys.  It is very sad that this is not default.
+            cursor = dbapi_connection.cursor()
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.close()
 
         @sqlalchemy.event.listens_for(engine, "begin")
         def do_begin(conn):
