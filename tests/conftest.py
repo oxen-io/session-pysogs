@@ -10,13 +10,30 @@ from sogs.model.user import SystemUser  # noqa: E402
 
 import sogs.omq  # noqa: E402
 
+import sqlalchemy  # noqa: E402
+
 
 sogs.omq.test_suite = True
+
+
+def pgsql_url(arg):
+    if not arg.startswith('postgresql:'):
+        raise ValueError("Invalid postgresql url; see SQLAlchemy postgresql docs")
+    return arg
 
 
 def pytest_addoption(parser):
     parser.addoption(
         "--sql-tracing", action="store_true", default=False, help="Log all SQL queries"
+    )
+    parser.addoption(
+        "--pgsql", type=pgsql_url, help="Use the given postgresql database url for testing"
+    )
+    parser.addoption(
+        "--pgsql-no-drop-schema",
+        action="store_true",
+        default=False,
+        help="Don't clean up the final test schema; typically used with --maxfail=1",
     )
 
 
@@ -31,8 +48,44 @@ def client():
 db_counter_ = 0
 
 
+# Under postgresql & sqlalchemy 1.3.x we have to hack around a bit to get sqlalchemy to properly use
+# the pgsql search_path, most notably passing it in the connect string, but that fails if the schema
+# doesn't already exist; thus we establish an extra connection to the database to create it at
+# session startup and tear it down at session end.
+#
+# Under higher sqlalchemy this simply provides the pgsql url, and under sqlite this returns None.
+@pytest.fixture(scope="session")
+def pgsql(request):
+    pgsql = request.config.getoption("--pgsql")
+    if pgsql:
+        if sqlalchemy.__version__.startswith("1.3."):
+            import psycopg2
+
+            conn = psycopg2.connect(pgsql)
+            with conn.cursor() as cur:
+                cur.execute("CREATE SCHEMA IF NOT EXISTS sogs_tests")
+            conn.commit()
+
+            pgsql_w_schema = pgsql + ('&' if '?' in pgsql else '?')
+            pgsql_w_schema += 'options=--search_path%3Dsogs_tests'
+
+            yield pgsql_w_schema
+
+            if not request.config.getoption("--pgsql-no-drop-schema"):
+                print("DROPPING SCHEMA")
+                with conn.cursor() as cur:
+                    cur.execute("DROP SCHEMA sogs_tests CASCADE")
+                conn.commit()
+
+            conn.close()
+        else:
+            yield pgsql
+    else:
+        yield None
+
+
 @pytest.fixture
-def db(request):
+def db(request, pgsql):
     """
     Import this fixture to get a wiped, re-initialized database for db.engine.  The actual fixture
     value is the db module itself (so typically you don't import it at all but instead get it
@@ -45,23 +98,61 @@ def db(request):
 
     global db_counter_
     db_counter_ += 1
-    sqlite_uri = f'file:sogs_testdb{db_counter_}?mode=memory&cache=shared'
 
-    web.app.logger.warning(f"using sqlite {sqlite_uri}")
+    if pgsql:
+        web.app.logger.warning(f"using postgresql {pgsql}")
 
-    def sqlite_connect():
-        import sqlite3
+        first = True
 
-        web.app.logger.warning(f"connecting to {sqlite_uri}")
-        return sqlite3.connect(sqlite_uri, uri=True)
+        def pg_setup_schema():
+            # Run everything in a separate schema that we can easily drop when done
 
-    db_._init_engine("sqlite://", creator=sqlite_connect, echo=trace)
+            @sqlalchemy.event.listens_for(db_.engine, "connect", insert=True)
+            def setup_schema(dbapi_connection, connection_record):
+                existing_autocommit = dbapi_connection.autocommit
+                dbapi_connection.autocommit = True
+
+                cursor = dbapi_connection.cursor()
+                nonlocal first
+                if first:
+                    cursor.execute("DROP SCHEMA IF EXISTS sogs_tests CASCADE")
+                    first = False
+                cursor.execute("CREATE SCHEMA IF NOT EXISTS sogs_tests")
+                cursor.execute("SET search_path TO sogs_tests")
+                cursor.close()
+
+                dbapi_connection.autocommit = existing_autocommit
+
+        db_._init_engine(pgsql, echo=trace, sogs_preinit=pg_setup_schema)
+
+    else:
+        sqlite_uri = f'file:sogs_testdb{db_counter_}?mode=memory&cache=shared'
+
+        web.app.logger.warning(f"using sqlite {sqlite_uri}")
+
+        def sqlite_connect():
+            import sqlite3
+
+            web.app.logger.warning(f"connecting to {sqlite_uri}")
+            return sqlite3.connect(sqlite_uri, uri=True)
+
+        db_._init_engine("sqlite://", creator=sqlite_connect, echo=trace)
+
+    db_.database_init()
 
     web.appdb = db_.get_conn()
 
     yield db_
 
     web.app.logger.warning("closing db")
+    if (
+        pgsql
+        and not sqlalchemy.__version__.startswith("1.3.")
+        and not request.config.getoption("--pgsql-no-drop-schema")
+    ):
+        web.app.logger.critical("DROPPING SCHEMA")
+        db_.query("DROP SCHEMA sogs_tests CASCADE")
+
     web.appdb.close()
 
 

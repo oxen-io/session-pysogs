@@ -117,6 +117,14 @@ def database_init():
         metadata.clear()
         metadata.reflect(bind=engine, views=True)
 
+        if 'messages' not in metadata.tables:
+            msg = (
+                "Critical error: SQL schema creation failed; "
+                f"tables: {', '.join(metadata.tables.keys())}"
+            )
+            logging.critical(msg)
+            raise RuntimeError(msg)
+
     changes = False
 
     # Database migrations/updates/etc.
@@ -124,10 +132,10 @@ def database_init():
         migrate_v01x,
         add_new_tables,
         add_new_columns,
-        update_message_views,
         create_message_details_deleter,
         check_for_hacks,
         seqno_etc_updates,
+        update_message_views,
         user_perm_future_updates,
     ):
         with transaction(conn):
@@ -220,7 +228,7 @@ CREATE TABLE user_request_nonces (
 
 
 def update_message_views(conn):
-    if engine.name != "sqlite":
+    if engine.name == "sqlite":
         if any(x not in metadata.tables['message_metadata'].c for x in ('whisper_to', 'filtered')):
             logging.warning("DB migration: replacing message_metadata/message_details views")
             conn.execute("DROP VIEW IF EXISTS message_metadata")
@@ -236,15 +244,26 @@ SELECT messages.*, uposter.session_id, uwhisper.session_id AS whisper_to
             )
             conn.execute(
                 """
+CREATE TRIGGER message_details_deleter INSTEAD OF DELETE ON message_details
+FOR EACH ROW WHEN OLD.data IS NOT NULL
+BEGIN
+    UPDATE messages SET data = NULL, data_size = NULL, signature = NULL
+        WHERE id = OLD.id;
+END
+"""
+            )
+            conn.execute(
+                """
 CREATE VIEW message_metadata AS
-SELECT id, room, "user", session_id, posted, edited, updated, filtered, whisper_to,
+SELECT id, room, "user", session_id, posted, edited, seqno, filtered, whisper_to,
         length(data) AS data_unpadded, data_size, length(signature) as signature_length
     FROM message_details
 """
             )
 
             return True
-        # else: don't worry about this for postgresql because initial pg support had the fix
+
+    # else: don't worry about this for postgresql because initial pg support had the fix
 
     return False
 
@@ -334,7 +353,7 @@ def seqno_etc_updates(conn):
             """
 CREATE TABLE pinned_messages (
     room INTEGER NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
-    message INTEGER NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+    message INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
     pinned_by INTEGER NOT NULL REFERENCES users(id),
     pinned_at FLOAT NOT NULL DEFAULT ((julianday('now') - 2440587.5)*86400.0), /* unix epoch when pinned */
     PRIMARY KEY(room, message)
@@ -417,7 +436,7 @@ FROM
             """
 CREATE TABLE pinned_messages (
     room BIGINT NOT NULL REFERENCES rooms ON DELETE CASCADE,
-    message BIGINT NOT NULL REFERENCES rooms ON DELETE CASCADE,
+    message BIGINT NOT NULL REFERENCES messages ON DELETE CASCADE,
     pinned_by BIGINT NOT NULL REFERENCES users,
     pinned_at FLOAT NOT NULL DEFAULT (extract(epoch from now())),
     PRIMARY KEY(room, message)
@@ -531,7 +550,7 @@ CREATE TABLE user_ban_futures (
         conn.execute(
             """
 CREATE TABLE user_ban_futures (
-    room INTEGER NOT NULL REFERENCES rooms ON DELETE CASCADE,
+    room INTEGER REFERENCES rooms ON DELETE CASCADE,
     "user" INTEGER NOT NULL REFERENCES users ON DELETE CASCADE,
     at FLOAT NOT NULL, /* when the change should take effect (unix epoch) */
     banned BOOLEAN NOT NULL /* if true then ban at `at`, if false then unban */
@@ -568,17 +587,6 @@ def create_admin_user(dbconn):
     )
 
 
-if config.DB_URL.startswith('postgresql'):
-    # rooms.token is a 'citext' (case-insensitive text), which sqlalchemy doesn't recognize out of
-    # the box.  Map it to a plain TEXT which is good enough for what we need (if we actually needed
-    # to generate this wouldn't suffice: we'd have to use something like the sqlalchemy-citext
-    # module).
-    from sqlalchemy.dialects.postgresql.base import ischema_names
-
-    if 'citext' not in ischema_names:
-        ischema_names['citext'] = ischema_names['text']
-
-
 engine, engine_initial_pid, metadata = None, None, None
 
 
@@ -586,6 +594,10 @@ def _init_engine(*args, **kwargs):
     """
     Initializes or reinitializes db.engine.  (Only the test suite should be calling this externally
     to reinitialize).
+
+    Arguments:
+    sogs_preinit - a callable to invoke after setting up `engine` but before calling
+    `database_init()`.
     """
     global engine, engine_initial_pid, metadata, have_returning
 
@@ -597,9 +609,17 @@ def _init_engine(*args, **kwargs):
             return
         args = (config.DB_URL,)
 
-    # Disable *sqlalchemy*-level autocommit, which works so badly that it got completely removed in
-    # 2.0.  (We put the actual sqlite into driver-level autocommit mode below).
-    engine = sqlalchemy.create_engine(*args, **kwargs).execution_options(autocommit=False)
+    preinit = kwargs.pop('sogs_preinit', None)
+
+    exec_opts_args = {}
+    if args[0].startswith('postgresql'):
+        exec_opts_args['isolation_level'] = 'READ COMMITTED'
+    else:
+        # SQLite's Python code is seriously broken, so we have to force off autocommit mode and turn
+        # on driver-level autocommit (which we do below).
+        exec_opts_args['autocommit'] = False
+
+    engine = sqlalchemy.create_engine(*args, **kwargs).execution_options(**exec_opts_args)
     engine_initial_pid = os.getpid()
     metadata = sqlalchemy.MetaData()
 
@@ -619,6 +639,10 @@ def _init_engine(*args, **kwargs):
             # disable pysqlite's emitting of the BEGIN statement entirely.
             # also stops it from emitting COMMIT before any DDL.
             dbapi_connection.isolation_level = None
+            # Enforce foreign keys.  It is very sad that this is not default.
+            cursor = dbapi_connection.cursor()
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.close()
 
         @sqlalchemy.event.listens_for(engine, "begin")
         def do_begin(conn):
@@ -627,6 +651,18 @@ def _init_engine(*args, **kwargs):
 
     else:
         have_returning = True
+
+        # rooms.token is a 'citext' (case-insensitive text), which sqlalchemy doesn't recognize out
+        # of the box.  Map it to a plain TEXT which is good enough for what we need (if we actually
+        # needed to generate this wouldn't suffice: we'd have to use something like the
+        # sqlalchemy-citext module).
+        from sqlalchemy.dialects.postgresql.base import ischema_names
+
+        if 'citext' not in ischema_names:
+            ischema_names['citext'] = ischema_names['text']
+
+    if preinit:
+        preinit()
 
     database_init()
 

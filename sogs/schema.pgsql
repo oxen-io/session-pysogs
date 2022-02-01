@@ -17,7 +17,6 @@ CREATE TABLE rooms (
     upload BOOLEAN NOT NULL DEFAULT TRUE, /* Whether file uploads are allowed by default */
     CHECK(token SIMILAR TO '[a-zA-Z0-9_-]+')
 );
-CREATE INDEX rooms_token ON rooms(token);
 
 -- Trigger to expire an old room image attachment when the room image is changed
 CREATE OR REPLACE FUNCTION trigger_room_image_expiry()
@@ -90,8 +89,8 @@ EXECUTE PROCEDURE trigger_messages_insert_history();
 
 CREATE TABLE pinned_messages (
     room BIGINT NOT NULL REFERENCES rooms ON DELETE CASCADE,
-    message BIGINT NOT NULL REFERENCES rooms ON DELETE CASCADE,
-    pinned_by BIGINT NOT NULL REFERENCES users,
+    message BIGINT NOT NULL REFERENCES messages ON DELETE CASCADE,
+    pinned_by BIGINT NOT NULL, /* foreign key to users(id) */
     pinned_at FLOAT NOT NULL DEFAULT (extract(epoch from now())),
     PRIMARY KEY(room, message)
 );
@@ -154,6 +153,7 @@ CREATE INDEX users_last_active ON users(last_active);
 ALTER TABLE messages ADD CONSTRAINT messages_user_fk FOREIGN KEY ("user") REFERENCES users;
 ALTER TABLE messages ADD CONSTRAINT messages_whisper_fk FOREIGN KEY (whisper) REFERENCES users;
 ALTER TABLE files ADD CONSTRAINT files_uploader_fk FOREIGN KEY (uploader) REFERENCES users;
+ALTER TABLE pinned_messages ADD CONSTRAINT pinned_messages_pinned_by FOREIGN KEY (pinned_by) REFERENCES users;
 
 -- Create a trigger to maintain the implication "admin implies moderator"
 CREATE OR REPLACE FUNCTION trigger_user_admins_are_mods()
@@ -194,7 +194,7 @@ EXECUTE PROCEDURE trigger_message_details_deleter();
 -- View of `messages` that is useful for manually inspecting table contents by only returning the
 -- length (rather than raw bytes) for data/signature.
 CREATE VIEW message_metadata AS
-SELECT id, room, "user", session_id, posted, edited, seqno, whisper_to,
+SELECT id, room, "user", session_id, posted, edited, seqno, filtered, whisper_to,
         length(data) AS data_unpadded, data_size, length(signature) as signature_length
     FROM message_details;
 
@@ -376,7 +376,7 @@ CREATE INDEX user_permissions_future_room_user ON user_permission_futures(room, 
 -- their user_permissions.banned to TRUE then add a row here with banned = FALSE to schedule the
 -- unban.  (You can also schedule a future *ban* here, but the utility of that is less clear).
 CREATE TABLE user_ban_futures (
-    room INTEGER NOT NULL REFERENCES rooms ON DELETE CASCADE,
+    room INTEGER REFERENCES rooms ON DELETE CASCADE,
     "user" INTEGER NOT NULL REFERENCES users ON DELETE CASCADE,
     at FLOAT NOT NULL, /* when the change should take effect (unix epoch) */
     banned BOOLEAN NOT NULL /* if true then ban at `at`, if false then unban */

@@ -81,7 +81,7 @@ END;
 
 CREATE TABLE pinned_messages (
     room INTEGER NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
-    message INTEGER NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+    message INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
     pinned_by INTEGER NOT NULL REFERENCES users(id),
     pinned_at FLOAT NOT NULL DEFAULT ((julianday('now') - 2440587.5)*86400.0), /* unix epoch when pinned */
     PRIMARY KEY(room, message)
@@ -165,7 +165,7 @@ END;
 -- View of `messages` that is useful for manually inspecting table contents by only returning the
 -- length (rather than raw bytes) for data/signature.
 CREATE VIEW message_metadata AS
-SELECT id, room, user, session_id, posted, edited, seqno, whisper_to,
+SELECT id, room, user, session_id, posted, edited, seqno, filtered, whisper_to,
         length(data) AS data_unpadded, data_size, length(signature) as signature_length
     FROM message_details;
 

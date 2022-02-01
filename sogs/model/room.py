@@ -525,7 +525,7 @@ class Room:
             # - anything directed to us specifically
             # - anything we sent (i.e. outbound whispers)
             # - non-whispers
-            "whisper_mods OR whisper = :user OR user = :user OR whisper IS NULL"
+            'whisper_mods OR whisper = :user OR "user" = :user OR whisper IS NULL'
             if mod
             # For a regular user we want to see:
             # - anything with whisper_to sent to us

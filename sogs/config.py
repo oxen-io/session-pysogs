@@ -11,7 +11,6 @@ coloredlogs.install(milliseconds=True, isatty=True, logger=logger)
 
 # Default config settings; most of these are configurable via config.ini (see it for details).
 DB_URL = 'sqlite:///sogs.db'
-DB_SCHEMA_FILE = 'schema.sql'  # Not configurable, just a constant
 KEY_FILE = 'key_x25519'
 URL_BASE = 'http://example.net'
 HTTP_SHOW_INDEX = True
