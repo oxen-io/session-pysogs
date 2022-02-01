@@ -550,7 +550,7 @@ CREATE TABLE user_ban_futures (
         conn.execute(
             """
 CREATE TABLE user_ban_futures (
-    room INTEGER NOT NULL REFERENCES rooms ON DELETE CASCADE,
+    room INTEGER REFERENCES rooms ON DELETE CASCADE,
     "user" INTEGER NOT NULL REFERENCES users ON DELETE CASCADE,
     at FLOAT NOT NULL, /* when the change should take effect (unix epoch) */
     banned BOOLEAN NOT NULL /* if true then ban at `at`, if false then unban */
