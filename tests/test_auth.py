@@ -311,27 +311,27 @@ def test_auth_batch(client, db):
     expected = [
         {
             'code': 200,
-            'content-type': 'application/json',
+            'headers': {'content-type': 'application/json'},
             'body': {'user': {'uid': 1, 'session_id': '05' + A.encode().hex()}, 'foo': 'bar'},
         },
         {
             'code': 200,
-            'content-type': 'application/json',
+            'headers': {'content-type': 'application/json'},
             'body': {'user': {'uid': 1, 'session_id': '05' + A.encode().hex()}},
         },
         {
             'code': 200,
-            'content-type': 'application/json',
+            'headers': {'content-type': 'application/json'},
             'body': {'user': {'uid': 1, 'session_id': '05' + A.encode().hex()}},
         },
         {
             'code': 200,
-            'content-type': 'application/json',
+            'headers': {'content-type': 'application/json'},
             'body': {'user': {'uid': 1, 'session_id': '05' + A.encode().hex()}},
         },
         {
             'code': 200,
-            'content-type': 'application/json',
+            'headers': {'content-type': 'application/json'},
             'body': {
                 'user': {'uid': 1, 'session_id': '05' + A.encode().hex()},
                 'body': ['hi', 'world'],
@@ -339,7 +339,7 @@ def test_auth_batch(client, db):
         },
         {
             'code': 200,
-            'content-type': 'application/json',
+            'headers': {'content-type': 'application/json'},
             'body': {
                 'user': {'uid': 1, 'session_id': '05' + A.encode().hex()},
                 'body': {"it's": "you", "main screen": ["turn", "on"]},
@@ -477,19 +477,27 @@ def test_auth_legacy(client, db, admin, user, room):
     assert r.json == [
         {
             'code': 200,
-            'content-type': 'application/json',
+            'headers': {'content-type': 'application/json'},
             'body': {'status_code': 200, 'banned_members': sorted([user.session_id, S2])},
         },
-        {'code': 200, 'content-type': 'application/json', 'body': {'status_code': 200}},
         {
             'code': 200,
-            'content-type': 'application/json',
+            'headers': {'content-type': 'application/json'},
+            'body': {'status_code': 200},
+        },
+        {
+            'code': 200,
+            'headers': {'content-type': 'application/json'},
             'body': {'status_code': 200, 'banned_members': [S2]},
         },
-        {'code': 200, 'content-type': 'application/json', 'body': {'status_code': 200}},
         {
             'code': 200,
-            'content-type': 'application/json',
+            'headers': {'content-type': 'application/json'},
+            'body': {'status_code': 200},
+        },
+        {
+            'code': 200,
+            'headers': {'content-type': 'application/json'},
             'body': {'status_code': 200, 'banned_members': []},
         },
     ]

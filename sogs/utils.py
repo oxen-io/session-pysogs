@@ -6,7 +6,7 @@ from . import session_pb2 as protobuf
 import base64
 from flask import request, abort, Response
 import json
-from typing import Union
+from typing import Union, Tuple
 
 
 def message_body(data: bytes):
@@ -80,8 +80,25 @@ def jsonify_with_base64(val):
     return Response(json_with_base64(val), mimetype="application/json")
 
 
-def get_session_id(flask_request):
-    return flask_request.headers.get("X-SOGS-Pubkey")
+def bencode_consume_string(body: memoryview) -> Tuple[memoryview, memoryview]:
+    """
+    Parses a bencoded byte string from the beginning of `body`.  Returns a pair of memoryviews on
+    success: the first is the string byte data; the second is the remaining data (i.e. after the
+    consumed string).
+    Raises ValueError on parse failure.
+    """
+    pos = 0
+    print(f"body: {body.tobytes()}")
+    while pos < len(body) and 0x30 <= body[pos] <= 0x39:  # 1+ digits
+        pos += 1
+    if pos == 0 or pos >= len(body) or body[pos] != 0x3A:  # 0x3a == ':'
+        raise ValueError("Invalid string bencoding: did not find `N:` length prefix")
+
+    strlen = int(body[0:pos])  # parse the digits as a base-10 integer
+    pos += 1  # skip the colon
+    if pos + strlen > len(body):
+        raise ValueError("Invalid string bencoding: length exceeds buffer")
+    return body[pos : pos + strlen], body[pos + strlen :]
 
 
 def server_url(room):
