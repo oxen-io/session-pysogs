@@ -2,7 +2,7 @@ import pytest
 from sogs import db, utils
 import werkzeug.exceptions as wexc
 from request import sogs_get, sogs_post
-from util import pad32
+from util import pad64
 import time
 
 
@@ -473,7 +473,7 @@ def test_mod_visibility(client, room, user, user2, mod, admin, global_admin):
 def test_bans(client, room, room2, user, user2, mod, global_mod):
     url_ban = f'/user/{user.session_id}/ban'
     url_unban = f'/user/{user.session_id}/unban'
-    post = {"data": utils.encode_base64(b"post"), "signature": utils.encode_base64(pad32("sig"))}
+    post = {"data": utils.encode_base64(b"post"), "signature": utils.encode_base64(pad64("sig"))}
 
     r = sogs_post(client, "/room/test-room/message", post, user)
     assert r.status_code == 201
@@ -564,7 +564,7 @@ def test_bans(client, room, room2, user, user2, mod, global_mod):
 def test_ban_timeouts(client, room, room2, user, mod, global_mod):
     url_ban = f'/user/{user.session_id}/ban'
     url_unban = f'/user/{user.session_id}/unban'
-    post = {"data": utils.encode_base64(b"post"), "signature": utils.encode_base64(pad32("sig"))}
+    post = {"data": utils.encode_base64(b"post"), "signature": utils.encode_base64(pad64("sig"))}
 
     r = sogs_post(client, url_ban, {'rooms': ['*'], 'timeout': 0.001}, global_mod)
     assert r.status_code == 200
