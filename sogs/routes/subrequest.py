@@ -13,12 +13,13 @@ def make_subrequest(
     *,
     headers={},
     content_type: Optional[str] = None,
-    body: Optional[bytes] = None,
+    body: Optional[Union[bytes, memoryview]] = None,
     json: Optional[Union[dict, list]] = None,
     user_reauth: bool = False,
 ):
     """
-    Makes a subrequest from the given parameters, returns the response object.
+    Makes a subrequest from the given parameters, returns the response object and a dict of
+    lower-case response headers keys to header values.
 
     Parameters:
     method - the HTTP method, e.g. GET or POST
@@ -88,7 +89,12 @@ def make_subrequest(
             app.logger.warning(
                 f"Sub-request for {method} {path} returned status {response.status_code}"
             )
-        return response
+        return response, {
+            k.lower(): v
+            for k, v in response.get_wsgi_headers(subreq_env)
+            if k.lower() != 'content-length'
+        }
+
     except Exception:
         app.logger.warning(f"Sub-request for {method} {path} failed: {traceback.format_exc()}")
         raise

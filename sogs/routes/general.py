@@ -143,15 +143,13 @@ def batch(_sequential=False):
     response = []
     for method, path, headers, json, body in subreqs:
         try:
-            subres = make_subrequest(method, path, headers=headers, body=body, json=json)
+            subres, headers = make_subrequest(method, path, headers=headers, body=body, json=json)
             if subres.content_type == "application/json":
                 body = subres.get_json()
             else:
                 body = subres.get_data()
 
-            response.append(
-                {"code": subres.status_code, "content-type": subres.content_type, "body": body}
-            )
+            response.append({"code": subres.status_code, "headers": headers, "body": body})
         except Exception as e:
             app.logger.warning(f"Batch subrequest failed: {e}")
             response.append(

@@ -1346,7 +1346,7 @@ paths:
         200:
           $ref: "#/paths/~1batch/post/responses/200"
 
-  /oxen/v3/lsrpc:
+  /oxen/v4/lsrpc:
     post:
       tags: [Onion]
       summary: "Endpoint for submitting an encrypted onion request"
@@ -1359,66 +1359,54 @@ paths:
           the onion encryption layer; the onion encryption payload itself is documented elsewhere.
         required: true
         content:
-          application/json:
+          application/octet-stream:
             schema:
-              type: object
-              required: [endpoint, method, headers]
-              properties:
-                method:
-                  type: string
-                  description: "The request method type as a string, i.e. `GET`, `POST`, `PUT`, `DELETE`."
-                endpoint:
-                  type: string
-                  description: >
-                    The request path, e.g. `/room/123/messages/since/45678`.  This name should be
-                    the full path beginning with a `/`; methods without a leading / are
-                    interpreted as legacy endpoints for older versions of Session and should not
-                    be used.
-                headers:
-                  type: object
-                  description: >
-                    HTTP headers for the request; should usually include the pubkey, nonce,
-                    timestamp, and signature headers (`X-SOGS-Pubkey`, etc.), and sometimes a
-                    `Content-Type` header (the latter, if omitted, defaults to `application/json`
-                    if using `body`, and `application/octet-stream` if using `body_binary`).
-                body:
-                  description: >
-                    Request body of the onion request.  This is typically used for text-based
-                    values (such as JSON requests).  Exclusive of `body_binary`.  Not accepted for
-                    `GET` requests.
-                  type: string
-                body_binary:
-                  description: >
-                    Request body for a onion request to a binary endpoint, with the body encoded
-                    in base64.  Exclusive of `body`.  Not accepted for `GET` requests.
-                    
-                    
-                    The endpoint will be called with the *decoded* byte value as its body, thus
-                    allowing you to POST to endpoints that require binary data (such as file
-                    uploads).  Note that when using the Content-Type header defaults to
-                    `application/octet-stream`.
-                    
-                    
-                    Note that when including a signature in the `X-SOGS-Signature` header, the
-                    signature must use the decoded byte value of the body, *not* the encoded
-                    base64 value.
-                    
-                    
-                    This is somewhat wasteful because of the overhead of base64-encoding, but is a
-                    limitation of onion requests.
-                  type: string
-                  format: byte
+              type: string
+              format: binary
+              description: >
+                The onion request data.  This is encoded/encrypted in multiple layers, as follows.
+                
+                
+                The data is first constructed as one or two parts: the first part is json contains
+                request metadata with fields:
+                - method -- "GET", "POST", etc. of the subrequest
+                - endpoint -- the subrequest endpoint, e.g. `/room/some-room/messages/since/123`
+                - headers -- request headers, typically containing X-SOGS-* auth info and, for
+                  POST/PUT requests, a Content-Type.
+                
+                
+                The second part is the request body, in bytes (only for POST/PUT requests).
+                
+                
+                These two pieces are encoded as a one- or two-string bencoded list, which has format:
+                
+                
+                `l123:jsone` or `l123:json456:bodye` where 123 is the length of the json and 456 is
+                the length of the body, if the request has a body.  (Both strings are byte strings).
+                
+                
+                This data is then encrypted using onion-request style encryption; see the
+                oxen-storage-server for details on how this is done.
       responses:
         200:
           description: >
-            Request completed.  The actual response will be base64-encoded and encrypted.  For
-            requests that fail with an HTTP response (i.e. other than 200) the response will
-            base64+decrypt to the json value `{"status_code": N}` where `N` is the integer error
-            code that occurred (e.g. 404).
+            Onion request completed.  The subrequest response will be encoded in a two-string
+            bencoded list (see the request details for the encoding specifics) where the first
+            string contains the response metadata as json with keys:
             
-            For successful (i.e. 200) responses the returned value is whatever the body of the
-            request returned.  (Returning headers via onion requests is not supported.)
-
+            
+            - code -- the HTTP response code of the subrequest, e.g. 200, 404
+            - headers -- a dict of HTTP response headers; the header name keys are always
+              lower-cased.
+            
+            
+            The second part is the response body bytes; as in HTTP, interpreting this depends on the
+            `content-type` header in the `headers` metadata, and the details of the invoked
+            endpoint.
+            
+            
+            These two byte strings are bencoded, and then the bencoded data is encrypted using the
+            same ephemeral key and encryption type as was used in the request.
 
 components:
   schemas:

@@ -11,6 +11,7 @@ local default_deps = [
   'python3-uwsgidecorators',
   'python3-flask',
   'python3-cryptography',
+  'python3-pycryptodome',
   'python3-nacl',
   'python3-pil',
   'python3-protobuf',

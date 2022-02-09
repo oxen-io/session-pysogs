@@ -26,7 +26,7 @@ def test_capabilities(client):
 
 
 def expected_result(code, body, ct="application/json"):
-    return {"code": code, "content-type": ct, "body": body}
+    return {"code": code, "headers": {"content-type": ct}, "body": body}
 
 
 def batch_data():
