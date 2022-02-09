@@ -3,7 +3,7 @@ import time
 import sogs.model.exc as exc
 from sogs.model.room import Room, get_rooms
 from sogs.model.file import File
-from util import pad32
+from util import pad64
 
 
 def test_create(room, room2):
@@ -552,7 +552,7 @@ def test_image_expiries(room, user):
 
 
 def test_pinning(room, room2, user, mod, admin, global_admin, no_rate_limit):
-    msgs = [room.add_post(user, f"data {i}".encode(), pad32(f"sig {i}")) for i in range(1, 10)]
+    msgs = [room.add_post(user, f"data {i}".encode(), pad64(f"sig {i}")) for i in range(1, 10)]
 
     with pytest.raises(exc.BadPermission):
         room.pin(msgs[3]['id'], user)

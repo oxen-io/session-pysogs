@@ -5,7 +5,7 @@ from sogs.model.file import File
 from sogs import utils
 import sogs.config
 import werkzeug.exceptions as wexc
-from util import pad32
+from util import pad64
 from request import sogs_get, sogs_post, sogs_put
 
 
@@ -450,7 +450,7 @@ def test_polling(client, room, user, user2, mod, admin, global_mod, global_admin
     assert info_up == details['info_updates']
 
     # Post a message should *not* change info_updates, but should change the message_sequence
-    p1 = room.add_post(user, b'fake data', pad32(b'fake sig'))
+    p1 = room.add_post(user, b'fake data', pad64(b'fake sig'))
 
     r = sogs_get(client, f"/room/test-room/pollInfo/{info_up}", user)
     assert r.status_code == 200
@@ -461,7 +461,7 @@ def test_polling(client, room, user, user2, mod, admin, global_mod, global_admin
     assert r.json['message_sequence'] == details['message_sequence']
 
     # Editing also should change message_sequence and not info_updates
-    room.edit_post(user, p1['id'], b'more fake data', pad32(b'another fake sig'))
+    room.edit_post(user, p1['id'], b'more fake data', pad64(b'another fake sig'))
     r = sogs_get(client, f"/room/test-room/pollInfo/{info_up}", user)
     assert r.status_code == 200
     assert 'details' not in r.json
@@ -478,7 +478,7 @@ def test_fetch_since(client, room, user, no_rate_limit):
     counts = (1, 1, 1, 2, 0, 3, 0, 0, 5, 7, 11, 12, 0, 25, 0, 101, 0, 203, 0, 100, 200)
     for n in counts:
         for i in range(counter + 1, counter + 1 + n):
-            room.add_post(user, f"fake data {i}".encode(), pad32(f"fake sig {i}"))
+            room.add_post(user, f"fake data {i}".encode(), pad64(f"fake sig {i}"))
         counter += n
 
         done = False
@@ -503,7 +503,7 @@ def test_fetch_since(client, room, user, no_rate_limit):
                 assert post['session_id'] == user.session_id
                 assert post['seqno'] == j
                 assert utils.decode_base64(post['data']) == f"fake data {j}".encode()
-                assert utils.decode_base64(post['signature']) == pad32(f"fake sig {j}")
+                assert utils.decode_base64(post['signature']) == pad64(f"fake sig {j}")
                 assert -10 <= post['posted'] - time.time() <= 10
 
                 top_fetched = post['seqno']
@@ -535,7 +535,7 @@ def test_fetch_since(client, room, user, no_rate_limit):
 
 def test_fetch_before(client, room, user, no_rate_limit):
     for i in range(1000):
-        room.add_post(user, f"data-{i}".encode(), pad32(f"fake sig {i}"))
+        room.add_post(user, f"data-{i}".encode(), pad64(f"fake sig {i}"))
 
     url = "/room/test-room/messages/recent"
     r100 = sogs_get(client, url, user)
@@ -580,7 +580,7 @@ def test_fetch_before(client, room, user, no_rate_limit):
 
 
 def test_fetch_one(client, room, user, no_rate_limit):
-    posts = [room.add_post(user, f"data-{i}".encode(), pad32(f"fake sig {i}")) for i in range(10)]
+    posts = [room.add_post(user, f"data-{i}".encode(), pad64(f"fake sig {i}")) for i in range(10)]
 
     for i in (5, 2, 8, 7, 9, 6, 10, 1, 3, 4):
         url = f"/room/test-room/message/{i}"
@@ -605,7 +605,7 @@ def filter_timestamps(x, fields=time_fields):
 
 def test_pinning(client, room, user, admin, no_rate_limit):
     for i in range(10):
-        room.add_post(user, f"data-{i}".encode(), pad32(f"fake sig {i}"))
+        room.add_post(user, f"data-{i}".encode(), pad64(f"fake sig {i}"))
 
     def room_json():
         r = sogs_get(client, "/room/test-room", user)
@@ -697,7 +697,7 @@ def test_pinning(client, room, user, admin, no_rate_limit):
 def test_posting(client, room, user, user2, mod, global_mod):
 
     url_post = "/room/test-room/message"
-    d, s = (utils.encode_base64(x) for x in (b"post 1", pad32("sig 1")))
+    d, s = (utils.encode_base64(x) for x in (b"post 1", pad64("sig 1")))
     r = sogs_post(client, url_post, {"data": d, "signature": s}, user)
     assert r.status_code == 201
 
@@ -719,7 +719,7 @@ def test_posting(client, room, user, user2, mod, global_mod):
 def test_whisper_to(client, room, user, user2, mod, global_mod):
 
     url_post = "/room/test-room/message"
-    d, s = (utils.encode_base64(x) for x in (b"whisper 1", pad32("sig 1")))
+    d, s = (utils.encode_base64(x) for x in (b"whisper 1", pad64("sig 1")))
     p = {"data": d, "signature": s, "whisper_to": user2.session_id}
 
     # Regular users can't post whispers:
@@ -766,7 +766,7 @@ def test_whisper_to(client, room, user, user2, mod, global_mod):
 def test_whisper_mods(client, room, user, user2, mod, global_mod, admin):
 
     url_post = "/room/test-room/message"
-    d, s = (utils.encode_base64(x) for x in (b"whisper 1", pad32("sig 1")))
+    d, s = (utils.encode_base64(x) for x in (b"whisper 1", pad64("sig 1")))
     p = {"data": d, "signature": s, "whisper_mods": True}
 
     # Regular users can't post mod whispers:
@@ -807,7 +807,7 @@ def test_whisper_both(client, room, user, user2, mod, admin):
     # A whisper aimed at both a user *and* all mods (e.g. a warning to a user)
 
     url_post = "/room/test-room/message"
-    d, s = (utils.encode_base64(x) for x in (b"offensive post!", pad32("sig")))
+    d, s = (utils.encode_base64(x) for x in (b"offensive post!", pad64("sig")))
     p = {"data": d, "signature": s}
     r = sogs_post(client, url_post, p, user)
     assert r.status_code == 201
@@ -825,17 +825,17 @@ def test_whisper_both(client, room, user, user2, mod, admin):
         p = {"data": d, "signature": s, "whisper_mods": True, "whisper_to": mod.session_id}
         r = sogs_post(client, url_post, p, user)
 
-    d, s = (utils.encode_base64(x) for x in (b"I'm going to scare this guy", pad32("sig2")))
+    d, s = (utils.encode_base64(x) for x in (b"I'm going to scare this guy", pad64("sig2")))
     r = sogs_post(client, url_post, {"data": d, "signature": s, "whisper_mods": True}, mod)
     assert r.status_code == 201
     w1 = r.json
 
-    d, s = (utils.encode_base64(x) for x in (b"WTF, do you want a ban?", pad32("sig3")))
+    d, s = (utils.encode_base64(x) for x in (b"WTF, do you want a ban?", pad64("sig3")))
     p = {"data": d, "signature": s, "whisper_to": user.session_id, "whisper_mods": True}
     r = sogs_post(client, url_post, p, mod)
     w2 = r.json
 
-    d, s = (utils.encode_base64(x) for x in (b"No please I'm sorry!!!", pad32("sig4")))
+    d, s = (utils.encode_base64(x) for x in (b"No please I'm sorry!!!", pad64("sig4")))
     r = sogs_post(client, url_post, {"data": d, "signature": s}, user)
     msg2 = r.json
 
@@ -845,14 +845,14 @@ def test_whisper_both(client, room, user, user2, mod, admin):
             'seqno': 1,
             'session_id': user.session_id,
             'data': utils.encode_base64('offensive post!'.encode()),
-            'signature': utils.encode_base64(pad32('sig')),
+            'signature': utils.encode_base64(pad64('sig')),
         },
         {
             'id': 2,
             'seqno': 2,
             'session_id': mod.session_id,
             'data': utils.encode_base64("I'm going to scare this guy".encode()),
-            'signature': utils.encode_base64(pad32('sig2')),
+            'signature': utils.encode_base64(pad64('sig2')),
             'whisper': True,
             'whisper_mods': True,
         },
@@ -861,7 +861,7 @@ def test_whisper_both(client, room, user, user2, mod, admin):
             'seqno': 3,
             'session_id': mod.session_id,
             'data': utils.encode_base64("WTF, do you want a ban?".encode()),
-            'signature': utils.encode_base64(pad32('sig3')),
+            'signature': utils.encode_base64(pad64('sig3')),
             'whisper': True,
             'whisper_mods': True,
             'whisper_to': user.session_id,
@@ -871,7 +871,7 @@ def test_whisper_both(client, room, user, user2, mod, admin):
             'seqno': 4,
             'session_id': user.session_id,
             'data': utils.encode_base64("No please I'm sorry!!!".encode()),
-            'signature': utils.encode_base64(pad32('sig4')),
+            'signature': utils.encode_base64(pad64('sig4')),
         },
     ]
 
@@ -893,7 +893,7 @@ def test_whisper_both(client, room, user, user2, mod, admin):
 def test_edits(client, room, user, user2, mod, global_admin):
 
     url_post = "/room/test-room/message"
-    d, s = (utils.encode_base64(x) for x in (b"post 1", pad32("sig 1")))
+    d, s = (utils.encode_base64(x) for x in (b"post 1", pad64("sig 1")))
     r = sogs_post(client, url_post, {"data": d, "signature": s}, user)
     assert r.status_code == 201
 
@@ -914,7 +914,7 @@ def test_edits(client, room, user, user2, mod, global_admin):
     url_edit = "/room/test-room/message/1"
 
     # Make sure someone else (even super admin) can't edit our message:
-    d, s = (utils.encode_base64(x) for x in (b"post 1no", pad32("sig 1no")))
+    d, s = (utils.encode_base64(x) for x in (b"post 1no", pad64("sig 1no")))
     with pytest.raises(wexc.Forbidden):
         r = sogs_put(client, url_edit, {"data": d, "signature": s}, global_admin)
 
@@ -922,7 +922,7 @@ def test_edits(client, room, user, user2, mod, global_admin):
     assert filter_timestamps(r.json) == filter_timestamps([p1])
     assert 'edited' not in r.json[0]
 
-    d, s = (utils.encode_base64(x) for x in (b"post 1b", pad32("sig 1b")))
+    d, s = (utils.encode_base64(x) for x in (b"post 1b", pad64("sig 1b")))
     time.sleep(0.001)
     r = sogs_put(client, url_edit, {"data": d, "signature": s}, user)
     assert r.status_code == 200
@@ -936,7 +936,7 @@ def test_edits(client, room, user, user2, mod, global_admin):
     assert time.time() - 1 < r.json[0]['posted'] < r.json[0]['edited'] < time.time() + 1
     p1['edited'] = r.json[0]['edited']
 
-    d, s = (utils.encode_base64(x) for x in (b"post 2", pad32("sig 2")))
+    d, s = (utils.encode_base64(x) for x in (b"post 2", pad64("sig 2")))
     r = sogs_post(client, url_post, {"data": d, "signature": s}, user2)
     assert r.status_code == 201
     p2 = r.json
@@ -949,7 +949,7 @@ def test_edits(client, room, user, user2, mod, global_admin):
     }
     assert -1 < p2['posted'] - time.time() < 1
 
-    d, s = (utils.encode_base64(x) for x in (b"post 1c", pad32("sig 1c")))
+    d, s = (utils.encode_base64(x) for x in (b"post 1c", pad64("sig 1c")))
     time.sleep(0.001)
     r = sogs_put(client, url_edit, {"data": d, "signature": s}, user)
     assert r.status_code == 200

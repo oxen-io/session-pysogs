@@ -623,7 +623,7 @@ class Room:
         if not self.check_write(user):
             raise BadPermission()
 
-        if data is None or sig is None or len(sig) != 32:
+        if data is None or sig is None or len(sig) != 64:
             raise InvalidData()
 
         whisper_mods = bool(whisper_mods)
@@ -709,7 +709,7 @@ class Room:
         if not self.check_write(user):
             raise BadPermission()
 
-        if data is None or sig is None or len(sig) != 32:
+        if data is None or sig is None or len(sig) != 64:
             raise InvalidData()
 
         filtered = self.should_filter(user, data)
