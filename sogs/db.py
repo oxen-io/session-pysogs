@@ -180,7 +180,6 @@ def add_new_columns(conn):
             'whisper_mods': 'BOOLEAN NOT NULL DEFAULT FALSE',
             'filtered': 'BOOLEAN NOT NULL DEFAULT FALSE',
         },
-        'user_permission_futures': {'banned': 'BOOLEAN'},
     }
 
     added = False
