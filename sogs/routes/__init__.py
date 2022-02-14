@@ -1,7 +1,7 @@
-from flask import abort, render_template, Response
+from flask import abort, g, render_template, Response
 from ..web import app
 from .. import config, crypto, http, utils
-from ..model.room import get_readable_rooms
+from ..model.room import get_accessible_rooms
 
 from . import auth, converters  # noqa: F401
 
@@ -27,7 +27,7 @@ app.register_blueprint(users_endpoints)
 
 @app.get("/")
 def serve_index():
-    rooms = get_readable_rooms()
+    rooms = get_accessible_rooms()
     if len(rooms) == 0:
         return render_template('setup.html')
     if not config.HTTP_SHOW_INDEX:
@@ -38,21 +38,23 @@ def serve_index():
 
 
 @app.get("/view/room/<Room:room>")
+@auth.read_required
 def view_room(room):
-    if not room.default_read:
+    if not room.check_accessible(g.user):
         abort(http.FORBIDDEN)
 
     return render_template(
         "view_room.html",
         room=room.token,
         room_url=utils.server_url(room.token),
-        show_recent=config.HTTP_SHOW_RECENT,
+        show_recent=config.HTTP_SHOW_RECENT and room.check_read(g.user),
     )
 
 
 @app.get("/view/<Room:room>/invite.png")
+@auth.read_required
 def serve_invite_qr(room):
-    if not room.default_read:
+    if not room.check_accessible(g.user):
         abort(http.FORBIDDEN)
 
     img = qrencode.encode(utils.server_url(room.token))

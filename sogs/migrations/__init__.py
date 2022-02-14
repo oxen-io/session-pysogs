@@ -9,6 +9,7 @@ from . import (
     message_views,
     new_columns,
     new_tables,
+    room_accessible,
     seqno_etc,
     user_perm_futures,
     v_0_1_x,
@@ -33,6 +34,7 @@ def migrate(conn):
         seqno_etc,
         message_views,
         user_perm_futures,
+        room_accessible,
     ):
         changes = False
         with db.transaction(conn):
@@ -40,16 +42,3 @@ def migrate(conn):
         if changes:
             db.metadata.clear()
             db.metadata.reflect(bind=db.engine, views=True)
-
-
-#        migrate_v01x,
-#        add_new_tables,
-#        add_new_columns,
-#        create_message_details_deleter,
-#        check_for_hacks,
-#        seqno_etc_updates,
-#        update_message_views,
-#        user_perm_future_updates,
-
-#        add_accessible_perm_bit,
-#    ):

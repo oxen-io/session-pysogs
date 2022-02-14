@@ -37,8 +37,8 @@ paths:
       tags: [Rooms]
       summary: "Returns a list of available rooms on the server."
       description: >
-        Rooms to which the user does not have access (e.g. because they are banned) are not
-        included.
+        Rooms to which the user does not have access (e.g. because they are banned or the room or
+        requires specific access) are not included.
       responses:
         200:
           description: successful operation
@@ -63,8 +63,8 @@ paths:
                 $ref: "#/components/schemas/Room"
         403:
           description: >
-            Forbidden. Returned if the user is banned from the room or otherwise does not have read
-            access to the room.
+            Forbidden. Returned if the user is banned from the room or does not have access to the
+            room.
           content: {}
     put:
       tags: [Rooms]
@@ -103,6 +103,15 @@ paths:
                   description: >
                     Sets the default "read" permission (if true: users can read messages) for users
                     in this room who do not otherwise have specific permissions applied.
+                  example: true
+                default_accessible:
+                  type: boolean
+                  description: >
+                    Sets the default "accessible" permission for users in this room who do not
+                    otherwise have specific permissions applied.  This accessible permission only
+                    affects users who do not have read permission: accessible without read still
+                    allows the user to access room metadata (but not messages), while both false
+                    prevents room metadata access as well.
                   example: true
                 default_write:
                   type: boolean
@@ -186,6 +195,8 @@ paths:
                     $ref: "#/components/schemas/Room/properties/global_admin"
                   default_read:
                     $ref: "#/components/schemas/Room/properties/default_read"
+                  default_accessible:
+                    $ref: "#/components/schemas/Room/properties/default_accessible"
                   default_write:
                     $ref: "#/components/schemas/Room/properties/default_write"
                   default_upload:
@@ -1043,6 +1054,17 @@ paths:
                     room's messages even if the room's default allows reading.  Specifying this as
                     null will explicitly delete any user-specific read override (effectively
                     returning the user's read permission to the room's default).
+                accessible:
+                  type: boolean
+                  nullable: true
+                  example: false
+                  description: >
+                    If true this grants permission to read the room's metadata when the user doesn't
+                    have read permission.  That is, having this true and read false means the user
+                    cannot read messages, but can get information about the room, while both false
+                    means the user cannot access any details of the room.  Specifying this as null
+                    will explicitly delete any user-specific accessible override, returning the
+                    user's effective permission to the room's default.
                 write:
                   type: boolean
                   nullable: true
@@ -1658,6 +1680,15 @@ components:
           description: >
             Whether new users have permission to read posts in this room by default.  This property
             is only returned if the calling user has moderator/admin permissions.
+          example: true
+        default_accessible:
+          type: boolean
+          description: >
+            Whether new users have permission to access this room's information.  This property only has
+            an effect for users who do not have read permission; it is designed to be set to false
+            (along with default_read) in order to create a room that users can neither read messages
+            from nor access any room metadata.  This property is only returned if the calling user
+            has moderator/admin permissions.
           example: true
         default_write:
           type: boolean

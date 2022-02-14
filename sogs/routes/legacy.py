@@ -4,7 +4,7 @@ from ..web import app
 from .. import crypto, config, db, http, utils
 from ..omq import send_mule
 from ..utils import jsonify_with_base64
-from ..model.room import Room, get_readable_rooms, get_deletions_deprecated
+from ..model.room import Room, get_accessible_rooms, get_deletions_deprecated
 from ..model.user import User
 from ..model.exc import NoSuchRoom
 
@@ -100,7 +100,7 @@ def get_rooms():
         {
             'status_code': http.OK,
             # Legacy Session only wants token (returned as 'id') and name:
-            'rooms': [{'id': r.token, 'name': r.name} for r in get_readable_rooms()],
+            'rooms': [{'id': r.token, 'name': r.name} for r in get_accessible_rooms()],
         }
     )
 
@@ -109,7 +109,11 @@ def get_rooms():
 def get_room_info(room):
     """serve room metadata"""
     # This really should be authenticated but legacy Session just doesn't pass along auth info.
-    # legacy_check_user_room(room=room, update_activity=False, read=True)
+    # legacy_check_user_room(room=room, update_activity=False, accessible=True)
+
+    # NB: this endpoint leaks the room name even when a room is inaccessible as a result because
+    # there is *no* way to know who is requesting the room name.
+
     room_info = {'id': room.token, 'name': room.name}
     return jsonify({'room': room_info, 'status_code': http.OK})
 
@@ -118,7 +122,10 @@ def get_room_info(room):
 def legacy_serve_room_image(room):
     """serve room icon"""
     # This really should be authenticated but legacy Session just doesn't pass along auth info.
-    # legacy_check_user_room(room=room, update_activity=False, read=True)
+    # legacy_check_user_room(room=room, update_activity=False, accessible=True)
+
+    # NB: this endpoint leaks the room image even when a room is inaccessible as a result because
+    # there is *no* way to know who is requesting the room image.
 
     if not room.image:
         abort(http.NOT_FOUND)
@@ -128,7 +135,7 @@ def legacy_serve_room_image(room):
 
 @legacy.get("/member_count")
 def legacy_member_count():
-    user, room = legacy_check_user_room(read=True)
+    user, room = legacy_check_user_room(accessible=True)
 
     return jsonify({"status_code": http.OK, "member_count": room.active_users()})
 

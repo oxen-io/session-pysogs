@@ -13,6 +13,7 @@ CREATE TABLE rooms (
     message_sequence BIGINT NOT NULL DEFAULT 0, /* monotonic current top message.seqno value: +1 for each new message, edit or deletion */
     info_updates BIGINT NOT NULL DEFAULT 0, /* +1 for any room metadata update (name/desc/image/pinned/mods) */
     read BOOLEAN NOT NULL DEFAULT TRUE, /* Whether users can read by default */
+    accessible BOOLEAN NOT NULL DEFAULT TRUE, /* Whether room metadata is accessible when `read` is false */
     write BOOLEAN NOT NULL DEFAULT TRUE, /* Whether users can post by default */
     upload BOOLEAN NOT NULL DEFAULT TRUE, /* Whether file uploads are allowed by default */
     CHECK(token SIMILAR TO '[a-zA-Z0-9_-]+')
@@ -216,6 +217,7 @@ CREATE TABLE user_permission_overrides (
     "user" BIGINT NOT NULL REFERENCES users ON DELETE CASCADE,
     banned BOOLEAN NOT NULL DEFAULT FALSE, /* If true the user is banned */
     read BOOLEAN, /* If false the user may not fetch messages; null uses room default; true allows reading */
+    accessible BOOLEAN, /* When read is false this controls whether room metadata is still visible */
     write BOOLEAN, /* If false the user may not post; null uses room default; true allows posting */
     upload BOOLEAN, /* If false the user may not upload files; null uses room default; true allows uploading */
     moderator BOOLEAN NOT NULL DEFAULT FALSE, /* If true the user may moderate non-moderators */
@@ -247,7 +249,8 @@ RETURNS TRIGGER LANGUAGE PLPGSQL AS $$BEGIN
     RETURN NULL;
 END;$$;
 CREATE TRIGGER user_perms_empty_cleanup AFTER UPDATE ON user_permission_overrides
-FOR EACH ROW WHEN (NOT (NEW.banned OR NEW.moderator OR NEW.admin) AND COALESCE(NEW.read, NEW.write, NEW.upload) IS NULL)
+FOR EACH ROW WHEN (NOT (NEW.banned OR NEW.moderator OR NEW.admin)
+    AND COALESCE(NEW.accessible, NEW.read, NEW.write, NEW.upload) IS NULL)
 EXECUTE PROCEDURE trigger_user_perms_empty_cleanup();
 
 -- Triggers than remove a user from `room_users` when they are banned from the room
@@ -338,6 +341,7 @@ SELECT
     users.session_id,
     CASE WHEN users.banned THEN TRUE ELSE COALESCE(user_permission_overrides.banned, FALSE) END AS banned,
     CASE WHEN users.moderator THEN TRUE ELSE COALESCE(user_permission_overrides.read, rooms.read) END AS read,
+    CASE WHEN users.moderator THEN TRUE ELSE COALESCE(user_permission_overrides.accessible, rooms.accessible) END AS accessible,
     CASE WHEN users.moderator THEN TRUE ELSE COALESCE(user_permission_overrides.write, rooms.write) END AS write,
     CASE WHEN users.moderator THEN TRUE ELSE COALESCE(user_permission_overrides.upload, rooms.upload) END AS upload,
     CASE WHEN users.moderator THEN TRUE ELSE COALESCE(user_permission_overrides.moderator, FALSE) END AS moderator,
@@ -366,6 +370,7 @@ CREATE TABLE user_permission_futures (
     "user" BIGINT NOT NULL REFERENCES users ON DELETE CASCADE,
     at FLOAT NOT NULL, /* when the change should take effect (unix epoch) */
     read BOOLEAN, /* Set this value @ at, if non-null */
+    accessible BOOLEAN, /* Set this value @ at, if non-null */
     write BOOLEAN, /* Set this value @ at, if non-null */
     upload BOOLEAN /* Set this value @ at, if non-null */
 );
