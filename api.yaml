@@ -1826,37 +1826,56 @@ components:
       type: apiKey
       name: X-SOGS-Pubkey
       in: header
-      description: "The Session ID of the requestor"
+      description: >
+        The Ed25519 public key of the request.  For non-blinded requests this is the root session
+        Ed25519 pubkey with '00' prefixed; for blinded requests this begins with '15' and follows
+        the blinding procedure detailed elsewhere.
     nonce:
       type: apiKey
       name: X-SOGS-Nonce
       in: header
       description: >
-        A unique nonce string, in base64, of exactly 16 base64 characters (96 bits).  This must be
-        unique for every request from this pubkey within the last 24 hours; nonce reuse will result
-        in failed requests.  It is typically sufficient to generate 96 bits (12 bytes) or random
-        data for each request, but clients are free to use other nonce generation mechanisms if
-        desired.
+        A unique, random nonce string of exactly 16 source bytes encoded in base64 (i.e. 24 base64
+        characters, including two trailing padding characters).  This must be unique for every
+        request from this pubkey within the last 24 hours; nonce reuse will result in failed
+        requests.
     timestamp:
       type: apiKey
       name: X-SOGS-Timestamp
       in: header
       description: >
-        Unix timestamp integer (expressed as a string) of the time when the request was initiated
-        (to help avoid replay attacks).  This timestamp must be within ±24 hours of the server's
-        time when the request is received.
+        Unix timestamp integer (expressed as a string) of the time when the request was initiated to
+        help avoid replay attacks.  This timestamp must be within ±24 hours of the server's time
+        when the request is received.
     signature:
       type: apiKey
       name: X-SOGS-Signature
       in: header
       description: >
-        XEd25519 signature of
+        Ed25519 signature of
         
         
-        `METHOD || PATH || NONCE || TIMESTAMP || SERVER_PUBKEY || BODY`
+        `SERVER_PUBKEY || NONCE || TIMESTAMP || METHOD || PATH || HBODY`
         
         
-        signed using the client's Session ID pubkey, using base64 encoding (with or without
-        padding).
+        signed using the client's blinded or unblinded pubkey (from the `X-SOGS-Pubkey` header),
+        encoded using base64 (with or without padding).
+        
+        
+        SERVER_PUBKEY and NONCE are 32- and 16-byte values, respectively (i.e. the nonce here is the
+        *decoded* value of the X-SOGS-Nonce header).
+        
+        
+        TIMESTAMP is the timestamp expressed as a decimal string, encoded in ascii bytes.
+        
+        
+        METHOD is the ascii request method (`GET`, `POST`, etc.)
+        
+        
+        PATH is in utf-8 encoded bytes.
+        
+        
+        HBODY is an empty string (i.e. omitted from the signature) if the request has no body, or
+        has an empty body.  Otherwise it must be a 64-byte BLAKE2b hash of the request body.
 
 # vim:sw=2:et:tw=100
