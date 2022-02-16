@@ -39,8 +39,8 @@ def blake2b(
     """
 
     return _multipart_hash(
-            nacl.hashlib.blake2b(digest_size=digest_size, key=key, salt=salt, person=person),
-            data)
+        nacl.hashlib.blake2b(digest_size=digest_size, key=key, salt=salt, person=person), data
+    )
 
 
 def sha512(data):
@@ -53,6 +53,4 @@ def sha512(data):
 
     Returns a bytes of length 64.
     """
-    return _multipart_hash(
-            hashlib.sha512(),
-            data)
+    return _multipart_hash(hashlib.sha512(), data)

@@ -69,12 +69,12 @@ xed25519_pubkey = pyonionreq.xed25519.pubkey
 
 @functools.lru_cache(maxsize=1024)
 def compute_derived_key_bytes(pk_bytes):
-    """ compute derived key as bytes with no prefix """
+    """compute derived key as bytes with no prefix"""
     return crypto_scalarmult(server_pubkey_hash_bytes, pk_bytes)
 
 
 def compute_derived_id(session_id, prefix='15'):
-    """ compute derived session """
+    """compute derived session"""
     return prefix + binascii.hexlify(
         compute_derived_key_bytes(decode_hex_or_b64(session_id[2:], 32))
     ).decode('ascii')

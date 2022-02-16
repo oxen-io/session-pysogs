@@ -200,7 +200,7 @@ def add_new_columns(conn):
             'whisper': 'INTEGER REFERENCES users(id)',
             'whisper_mods': 'BOOLEAN NOT NULL DEFAULT FALSE',
             'filtered': 'BOOLEAN NOT NULL DEFAULT FALSE',
-        },
+        }
     }
 
     added = False

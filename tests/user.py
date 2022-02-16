@@ -11,7 +11,9 @@ class User(sogs.model.user.User):
 
         if blinded:
             a = self.ed_key.to_curve25519_private_key().encode()
-            k = salt.crypto_core_ed25519_scalar_reduce(blake2b(sogs.crypto.server_pubkey_bytes, digest_size=64))
+            k = salt.crypto_core_ed25519_scalar_reduce(
+                blake2b(sogs.crypto.server_pubkey_bytes, digest_size=64)
+            )
             ka = salt.crypto_core_ed25519_scalar_mul(k, a)
             kA = salt.crypto_scalarmult_ed25519_base_noclamp(ka)
             session_id = '15' + kA.hex()

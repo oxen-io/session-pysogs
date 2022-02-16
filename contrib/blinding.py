@@ -1,5 +1,4 @@
 from nacl.signing import SigningKey, VerifyKey
-from nacl.public import PublicKey
 import nacl.bindings as salt
 from nacl.utils import random
 import nacl.hash
@@ -36,7 +35,8 @@ for i in range(trials):
     assert salt.crypto_scalarmult_ed25519_base_noclamp(ka) == kA
     assert salt.crypto_core_ed25519_is_valid_point(kA)
 
-    ##### Signing (e.g. for X-SOGS-*) with a blinded keypair ka/kA
+    #############################
+    # Signing (e.g. for X-SOGS-*) with a blinded keypair ka/kA
 
     # This generation is *almost* just bog standard Ed25519 but we have one change: when generating
     # r we add kA into the hash r = H(H_rh || kA || M), rather than r = H(H_rh || M), so that there
@@ -56,7 +56,8 @@ for i in range(trials):
 
     assert VerifyKey(kA).verify(message_to_sign, full_sig)
 
-    ##### Sending a DM
+    #############################
+    # Sending a DM
 
     # Our user A above wants to send a SOGS DM to another user B:
     s2 = SigningKey.generate()
@@ -72,7 +73,9 @@ for i in range(trials):
     assert salt.crypto_scalarmult_ed25519_base_noclamp(kb) == kB
     assert salt.crypto_core_ed25519_is_valid_point(kB)
 
-    ##### Finding friends:
+    #############################
+    # Finding friends:
+
     # For example (in reality this would come directly from the known session id):
     friend_xpk = salt.crypto_sign_ed25519_pk_to_curve25519(A)
 
@@ -112,7 +115,8 @@ for i in range(trials):
         print("failed; got neither ±A")
         continue
 
-    ##### Encrypting a SOGS DM
+    #############################
+    # Encrypting a SOGS DM
     msg = 'hello 🎂'
 
     # Step one: calculate a shared secret, sending from A to B.  We're going to calculate:
@@ -138,7 +142,8 @@ for i in range(trials):
 
     data = b'\x00' + ciphertext + nonce
 
-    ##### Decrypting a SOGS DM
+    #############################
+    # Decrypting a SOGS DM
     # Opening the box on the recipient end.
 
     # I receive alongside the message from sogs (i.e. this is the blinded session id minus the '15')

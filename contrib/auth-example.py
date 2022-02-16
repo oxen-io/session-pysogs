@@ -1,11 +1,9 @@
 # Example script for demonstrating X-SOGS-* authentication calculation.
 
 import nacl.bindings as salt
-from nacl.public import PrivateKey, PublicKey
 from nacl.signing import SigningKey
 from hashlib import blake2b, sha512
 from base64 import b64encode
-from typing import Optional
 
 # import time
 # import nacl.utils
@@ -125,10 +123,10 @@ for h, v in sig_headers.items():
 # X-SOGS-Pubkey: 00bac6e71efd7dfa4a83c98ed24f254ab2c267f9ccdb172a5280a0444ad24e89cc
 # X-SOGS-Timestamp: 1642472103
 # X-SOGS-Nonce: CdB5nyKVmQGCw6s0Bvv8Ww==
-# X-SOGS-Signature: xxLpXHbomAJMB9AtGMyqvBsXrdd2040y+Ol/IKzElWfKJa3EYZRv1GLO6CTLhrDFUwVQe8PPltyGs54Kd7O5Cg==
+# X-SOGS-Signature: xxLpXHbomAJMB9AtGMyqvBsXrdd2040y+Ol/IKzElWfKJa3EYZRv1GLO6CTLhrDFUwVQe8PPltyGs54Kd7O5Cg==   # noqa E501
 #
 # Blinded headers:
 # X-SOGS-Pubkey: 1598932d4bccbe595a8789d7eb1629cefc483a0eaddc7e20e8fe5c771efafd9af5
 # X-SOGS-Timestamp: 1642472103
 # X-SOGS-Nonce: CdB5nyKVmQGCw6s0Bvv8Ww==
-# X-SOGS-Signature: n4HK33v7gkcz/3pZuWvzmOlY+AbzbpEN1K12dtCc8Gw0m4iP5gUddGKKLEbmoWNhqJeY2S81Lm9uK2DBBN8aCg==
+# X-SOGS-Signature: n4HK33v7gkcz/3pZuWvzmOlY+AbzbpEN1K12dtCc8Gw0m4iP5gUddGKKLEbmoWNhqJeY2S81Lm9uK2DBBN8aCg==  # noqa E501

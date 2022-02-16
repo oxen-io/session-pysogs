@@ -250,7 +250,7 @@ class User:
 
     @property
     def derived_key(self):
-        """ get the derived key for this user """
+        """get the derived key for this user"""
         if self.session_id[0:2] == '15':
             return self.session_id
         return crypto.compute_derived_id(self.session_id)

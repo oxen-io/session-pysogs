@@ -75,15 +75,13 @@ def test_auth_basic(client, db):
 
     # Barely good timestamp
     r = client.get(
-        "/auth_test/whoami",
-        headers=x_sogs(a, B, 'GET', '/auth_test/whoami', timestamp_off=86399),
+        "/auth_test/whoami", headers=x_sogs(a, B, 'GET', '/auth_test/whoami', timestamp_off=86399)
     )
     assert r.status_code == 200
     assert r.json == {"user": {"uid": 1, "session_id": session_id}}
 
     r = client.get(
-        "/auth_test/whoami",
-        headers=x_sogs(a, B, 'GET', '/auth_test/whoami', timestamp_off=-86399),
+        "/auth_test/whoami", headers=x_sogs(a, B, 'GET', '/auth_test/whoami', timestamp_off=-86399)
     )
     assert r.status_code == 200
     assert r.json == {"user": {"uid": 1, "session_id": session_id}}
@@ -275,15 +273,13 @@ def test_auth_malformed(client, db):
 
     # Bad timestamps
     r = client.get(
-        "/auth_test/whoami",
-        headers=x_sogs(a, B, 'GET', '/auth_test/whoami', timestamp_off=86401),
+        "/auth_test/whoami", headers=x_sogs(a, B, 'GET', '/auth_test/whoami', timestamp_off=86401)
     )
     assert r.status_code == 425
     assert r.data == b'Invalid authentication: X-SOGS-Timestamp is too far from current time'
 
     r = client.get(
-        "/auth_test/whoami",
-        headers=x_sogs(a, B, 'GET', '/auth_test/whoami', timestamp_off=-86401),
+        "/auth_test/whoami", headers=x_sogs(a, B, 'GET', '/auth_test/whoami', timestamp_off=-86401)
     )
     assert r.status_code == 425
     assert r.data == b'Invalid authentication: X-SOGS-Timestamp is too far from current time'
@@ -332,10 +328,7 @@ def test_auth_batch(client, db):
         {
             'code': 200,
             'headers': {'content-type': 'application/json'},
-            'body': {
-                'user': {'uid': 1, 'session_id': session_id},
-                'body': ['hi', 'world'],
-            },
+            'body': {'user': {'uid': 1, 'session_id': session_id}, 'body': ['hi', 'world']},
         },
         {
             'code': 200,
