@@ -1,4 +1,4 @@
-from nacl.signing import VerifyKey, SigningKey
+from nacl.signing import SigningKey
 from nacl.public import PublicKey
 from typing import Optional
 import time
@@ -37,13 +37,14 @@ def x_sogs_raw(
 
     if blinded:
         a = s.to_curve25519_private_key().encode()
-        k = salt.crypto_core_ed25519_scalar_reduce(blake2b(sogs.crypto.server_pubkey_bytes, digest_size=64))
+        k = salt.crypto_core_ed25519_scalar_reduce(
+            blake2b(sogs.crypto.server_pubkey_bytes, digest_size=64)
+        )
         ka = salt.crypto_core_ed25519_scalar_mul(k, a)
         kA = salt.crypto_scalarmult_ed25519_base_noclamp(ka)
         pubkey = '15' + kA.hex()
     else:
         pubkey = '00' + s.verify_key.encode().hex()
-
 
     to_sign = [B.encode(), n, str(ts).encode(), method.encode(), full_path.encode()]
     if body:
@@ -54,7 +55,9 @@ def x_sogs_raw(
         r = salt.crypto_core_ed25519_scalar_reduce(sha512([H_rh, kA, *to_sign]))
         sig_R = salt.crypto_scalarmult_ed25519_base_noclamp(r)
         HRAM = salt.crypto_core_ed25519_scalar_reduce(sha512([sig_R, kA, *to_sign]))
-        sig_s = salt.crypto_core_ed25519_scalar_add(r, salt.crypto_core_ed25519_scalar_mul(HRAM, ka))
+        sig_s = salt.crypto_core_ed25519_scalar_add(
+            r, salt.crypto_core_ed25519_scalar_mul(HRAM, ka)
+        )
         sig = sig_R + sig_s
 
     else:
@@ -64,7 +67,7 @@ def x_sogs_raw(
         'X-SOGS-Pubkey': pubkey,
         'X-SOGS-Nonce': sogs.utils.encode_base64(n) if b64_nonce else n.hex(),
         'X-SOGS-Timestamp': str(ts),
-        'X-SOGS-Signature': sogs.utils.encode_base64(sig)
+        'X-SOGS-Signature': sogs.utils.encode_base64(sig),
     }
 
     return h, n, ts, sig

@@ -5,7 +5,6 @@ from ..model.user import User
 from ..hashing import blake2b
 
 from flask import request, abort, Response, g
-import string
 import time
 from nacl.signing import VerifyKey
 from nacl.exceptions import BadSignatureError
@@ -219,7 +218,6 @@ def handle_http_auth():
         # TODO: if "blinding required" config option is set then reject the request here
         session_id = '05' + pk.to_curve25519_public_key().encode().hex()
 
-
     try:
         nonce = utils.decode_hex_or_b64(nonce, 16)
     except Exception:
@@ -260,7 +258,6 @@ def handle_http_auth():
         query('INSERT INTO user_request_nonces ("user", nonce) VALUES (:u, :n)', u=user.id, n=nonce)
     except sqlalchemy.exc.IntegrityError:
         abort_with_reason(http.TOO_EARLY, "Invalid authentication: X-SOGS-Nonce cannot be reused")
-
 
     # Signature validation
 
