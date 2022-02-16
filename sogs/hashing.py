@@ -1,4 +1,15 @@
 import nacl.hashlib
+import hashlib
+
+
+def _multipart_hash(hasher, data):
+    if isinstance(data, bytes):
+        hasher.update(data)
+    else:
+        for part in data:
+            hasher.update(part)
+
+    return hasher.digest()
 
 
 def blake2b(
@@ -27,11 +38,21 @@ def blake2b(
     Returns a bytes of length `digest_size`.
     """
 
-    hasher = nacl.hashlib.blake2b(digest_size=digest_size, key=key, salt=salt, person=person)
-    if isinstance(data, bytes):
-        hasher.update(data)
-    else:
-        for part in data:
-            hasher.update(part)
+    return _multipart_hash(
+            nacl.hashlib.blake2b(digest_size=digest_size, key=key, salt=salt, person=person),
+            data)
 
-    return hasher.digest()
+
+def sha512(data):
+    """
+    Calculates a SHA512 hash.
+
+    data -- can be bytes, or an iterable containing bytes or byte-like values.  (The latter case is
+    particularly recommended to avoid needing to concatenate existing, potentially large, byte
+    values).
+
+    Returns a bytes of length 64.
+    """
+    return _multipart_hash(
+            hashlib.sha512(),
+            data)
