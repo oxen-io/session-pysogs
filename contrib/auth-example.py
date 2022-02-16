@@ -1,70 +1,134 @@
 # Example script for demonstrating X-SOGS-* authentication calculation.
 
-from nacl.bindings import crypto_scalarmult
+import nacl.bindings as salt
 from nacl.public import PrivateKey, PublicKey
-from hashlib import blake2b
+from nacl.signing import SigningKey
+from hashlib import blake2b, sha512
 from base64 import b64encode
+from typing import Optional
 
 # import time
 # import nacl.utils
 
-# We're going to make a request for:
-method = 'GET'
-path = '/room/the-best-room/messages/recent?limit=25'
-# Should use current integer unix time:
-# ts = int(time.time())
-# But for this example I'll use this fixed value:
-ts = 1642472103
 
+def sha512_multipart(*message_parts):
+    """Given any number of arguments, returns the SHA512 hash of them concatenated together.  This
+    also does one level of flatting if any of the given parts are a list or tuple."""
+    hasher = sha512()
+    for m in message_parts:
+        if isinstance(m, list) or isinstance(m, tuple):
+            for mi in m:
+                hasher.update(mi)
+        else:
+            hasher.update(m)
+    return hasher.digest()
+
+
+def blinded_ed25519_signature(message_parts, s: SigningKey, ka: bytes, kA: bytes):
+    """
+    Constructs an Ed25519 signature from a root Ed25519 key and a blinded scalar/pubkey pair, with
+    one tweak to the construction: we add kA into the hashed value that yields r so that we have
+    domain separation for different blinded pubkeys.  (This doesn't affect verification at all).
+    """
+    H_rh = sha512(s.encode()).digest()[32:]
+    r = salt.crypto_core_ed25519_scalar_reduce(sha512_multipart(H_rh, kA, message_parts))
+    sig_R = salt.crypto_scalarmult_ed25519_base_noclamp(r)
+    HRAM = salt.crypto_core_ed25519_scalar_reduce(sha512_multipart(sig_R, kA, message_parts))
+    sig_s = salt.crypto_core_ed25519_scalar_add(r, salt.crypto_core_ed25519_scalar_mul(HRAM, ka))
+    return sig_R + sig_s
+
+
+def get_signing_headers(
+    s: SigningKey,
+    server_pk: bytes,
+    nonce: bytes,
+    method: str,
+    path: str,
+    timestamp: int,
+    body,
+    blinded: bool = True,
+):
+
+    assert len(server_pk) == 32
+    assert len(nonce) == 16
+
+    if blinded:
+        # 64-byte blake2b hash then reduce to get the blinding factor:
+        k = salt.crypto_core_ed25519_scalar_reduce(blake2b(server_pk, digest_size=64).digest())
+
+        # Calculate k*a.  To get 'a' (the Ed25519 private key scalar) we call the sodium function to
+        # convert to an *x* secret key, which seems wrong--but isn't because converted keys use the
+        # same secret scalar secret.  (And so this is just the most convenient way to get 'a' out of
+        # a sodium Ed25519 secret key).
+        a = s.to_curve25519_private_key().encode()
+
+        # Our blinded keypair:
+        ka = salt.crypto_core_ed25519_scalar_mul(k, a)
+        kA = salt.crypto_scalarmult_ed25519_base_noclamp(ka)
+
+        # Blinded session id:
+        pubkey = '15' + kA.hex()
+
+    else:
+        # For unblinded auth we send our *ed25519* master pubkey in the X-SOGS-Pubkey header with a
+        # '00' prefix to disambiguate it; the SOGS server will convert it to X25519 to derive our
+        # X25519 session id.
+        pubkey = '00' + s.verify_key.encode().hex()
+
+    # We need to sign:
+    # SERVER_PUBKEY || NONCE || TIMESTAMP || METHOD || PATH || HBODY
+    # with our blinded key (if blinding) or our Ed25519 master key (if not blinding).
+    to_sign = [server_pk, nonce, str(ts).encode(), method.encode(), path.encode()]
+
+    # HBODY may be omitted if the body is empty (e.g. for GET requests), and otherwise will be the
+    # 64-byte BLAKE2b hash of the request body:
+    if body is not None:
+        to_sign.append(blake2b(body, digest_size=64).digest())
+
+    if blinded:
+        sig = blinded_ed25519_signature(to_sign, s, ka, kA)
+    else:
+        sig = s.sign(b''.join(to_sign)).signature
+
+    return {
+        'X-SOGS-Pubkey': pubkey,
+        'X-SOGS-Timestamp': str(ts),
+        'X-SOGS-Nonce': b64encode(nonce).decode(),
+        'X-SOGS-Signature': b64encode(sig).decode(),
+    }
+
+
+# Session "master" ed25519 key:
+s = SigningKey(bytes.fromhex('c010d89eccbaf5d1c6d19df766c6eedf965d4a28a56f87c9fc819edb59896dd9'))
 # Server pubkey:
-B = PublicKey(bytes.fromhex('c3b3c6f32f0ab5a57f853cc4f30f5da7fda5624b0c77b3fb0829de562ada081d'))
-
-# Don't worry, this isn't an actually used session private key.  Also
-# note that this is the x25519 priv key, *not* the ed25519 priv key.
-a = PrivateKey(bytes.fromhex('881132ee03dbd2da065aa4c94f96081f62142dc8011d1b7a00de83e4aab38ce4'))
-A = a.public_key
-
-# 057aecdcade88d881d2327ab011afd2e04c2ec6acffc9e9df45aaf78a151bd2f7d:
-session_id = '05' + A.encode().hex()
-
-# We should do something like this here:
+B = bytes.fromhex('c3b3c6f32f0ab5a57f853cc4f30f5da7fda5624b0c77b3fb0829de562ada081d')
+# Random 16-byte nonce
 # nonce = nacl.utils.random(16)
-# but for this example I'll use this random nonce:
-nonce = b'\t\xd0y\x9f"\x95\x99\x01\x82\xc3\xab4\x06\xfb\xfc['
+nonce = bytes.fromhex('09d0799f2295990182c3ab3406fbfc5b')  # fixed for reproducible example
+# ts = int(time.time())
+ts = 1642472103  # for reproducible example
+method, path = 'GET', '/room/the-best-room/messages/recent?limit=25'
 
-# Shared key calculation:
-q = crypto_scalarmult(a.encode(), B.encode()) + A.encode() + B.encode()
-r = blake2b(q, digest_size=42, salt=nonce, person=b'sogs.shared_keys').digest()
-
-# Final hash calculation; start without the body:
-hasher = blake2b(
-    method.encode() + path.encode() + str(ts).encode(),
-    digest_size=42,
-    key=r,
-    salt=nonce,
-    person=b'sogs.auth_header',
-)
-
-# Now add the body to the hash, if applicable.  For this GET request
-# there is no body, so this update does nothing.  For a POST request this
-# this would be the body bytes.  (By using a separate update call I avoid
-# having to copy the body again, which is good if the body is large).
-hasher.update(b'')
-
-h = hasher.digest()
-
-headers = {
-    'X-SOGS-Pubkey': session_id,
-    'X-SOGS-Timestamp': str(ts),
-    'X-SOGS-Nonce': b64encode(nonce).decode(),
-    'X-SOGS-Hash': b64encode(h).decode(),
-}
-
-for h, v in headers.items():
+print("Unblinded headers:")
+sig_headers = get_signing_headers(s, B, nonce, method, path, ts, body=None, blinded=False)
+for h, v in sig_headers.items():
     print(f"{h}: {v}")
 
+print("\nBlinded headers:")
+sig_headers = get_signing_headers(s, B, nonce, method, path, ts, body=None, blinded=True)
+for h, v in sig_headers.items():
+    print(f"{h}: {v}")
+
+
 # Prints:
-# X-SOGS-Pubkey: 057aecdcade88d881d2327ab011afd2e04c2ec6acffc9e9df45aaf78a151bd2f7d
+# Unblinded headers:
+# X-SOGS-Pubkey: 00bac6e71efd7dfa4a83c98ed24f254ab2c267f9ccdb172a5280a0444ad24e89cc
 # X-SOGS-Timestamp: 1642472103
 # X-SOGS-Nonce: CdB5nyKVmQGCw6s0Bvv8Ww==
-# X-SOGS-Hash: 0wToLPfUpUSGHGT8n9VIJev5SJ97hUvQTRqBowpnWTqfGb+ldTRa9mU1
+# X-SOGS-Signature: xxLpXHbomAJMB9AtGMyqvBsXrdd2040y+Ol/IKzElWfKJa3EYZRv1GLO6CTLhrDFUwVQe8PPltyGs54Kd7O5Cg==
+#
+# Blinded headers:
+# X-SOGS-Pubkey: 1598932d4bccbe595a8789d7eb1629cefc483a0eaddc7e20e8fe5c771efafd9af5
+# X-SOGS-Timestamp: 1642472103
+# X-SOGS-Nonce: CdB5nyKVmQGCw6s0Bvv8Ww==
+# X-SOGS-Signature: n4HK33v7gkcz/3pZuWvzmOlY+AbzbpEN1K12dtCc8Gw0m4iP5gUddGKKLEbmoWNhqJeY2S81Lm9uK2DBBN8aCg==
