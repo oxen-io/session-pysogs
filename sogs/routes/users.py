@@ -85,9 +85,9 @@ def _serialize_message(msg):
 @users.get("/inbox")
 @auth.user_required
 def get_inbox():
+    """gets all messages"""
     if not g.user.is_blinded:
         abort(http.FORBIDDEN)
-    """gets all messages"""
     limit = utils.get_int_param('limit', 100, min=1, max=256, truncate=True)
     return jsonify([_serialize_message(msg) for msg in Message.to(user=g.user, limit=limit)])
 
