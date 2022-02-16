@@ -248,14 +248,14 @@ def banned_user(db):
 def blind_user(db):
     import user
 
-    return user.User(prefix='15')
+    return user.User(blinded=True)
 
 
 @pytest.fixture
 def blind_user2(db):
     import user
 
-    return user.User(prefix='15')
+    return user.User(blinded=True)
 
 
 @pytest.fixture
