@@ -5,12 +5,19 @@ import os
 from nacl.public import PrivateKey
 from nacl.signing import SigningKey, VerifyKey
 from nacl.encoding import Base64Encoder, HexEncoder
+from nacl.bindings import crypto_scalarmult
+
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X25519PublicKey
 
+from .utils import decode_hex_or_b64
+from .hashing import blake2b
+
+import binascii
 import secrets
 import hmac
+import functools
 
 import pyonionreq
 
@@ -25,6 +32,8 @@ with open(config.KEY_FILE, 'rb') as f:
 server_pubkey = _privkey.public_key
 
 server_pubkey_bytes = server_pubkey.encode()
+server_pubkey_hash_bytes = blake2b(server_pubkey_bytes)
+
 server_pubkey_hex = server_pubkey.encode(HexEncoder).decode('ascii')
 server_pubkey_base64 = server_pubkey.encode(Base64Encoder).decode('ascii')
 
@@ -49,3 +58,21 @@ def server_encrypt(pk, data):
     sk = X25519PrivateKey.from_private_bytes(_privkey.encode())
     secret = hmac.digest(b'LOKI', sk.exchange(pk), 'SHA256')
     return nonce + AESGCM(secret).encrypt(nonce, data, None)
+
+
+xed25519_sign = pyonionreq.xed25519.sign
+xed25519_verify = pyonionreq.xed25519.verify
+xed25519_pubkey = pyonionreq.xed25519.pubkey
+
+
+@functools.lru_cache(maxsize=1024)
+def compute_derived_key_bytes(pk_bytes):
+    """ compute derived key as bytes with no prefix """
+    return crypto_scalarmult(server_pubkey_hash_bytes, pk_bytes)
+
+
+def compute_derived_id(session_id, prefix='15'):
+    """ compute derived session """
+    return prefix + binascii.hexlify(
+        compute_derived_key_bytes(decode_hex_or_b64(session_id[2:], 32))
+    ).decode('ascii')

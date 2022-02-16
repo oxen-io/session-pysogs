@@ -74,4 +74,4 @@ def x_sogs_for(user, *args, **kwargs):
     a = user.privkey
     A = a.public_key
     B = sogs.crypto.server_pubkey
-    return x_sogs(a, A, B, *args, **kwargs)
+    return x_sogs(a, A, B, *args, **kwargs, id_prefix=user.session_id[0:2])

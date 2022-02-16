@@ -1,10 +1,12 @@
-from .. import db, http
+from .. import db, http, utils
 from ..model import room as mroom
+from ..model.exc import NoSuchUser
 from ..model.user import User
+from ..model.message import Message
 from ..web import app
 from . import auth
 
-from flask import abort, jsonify, g, Blueprint, request
+from flask import abort, jsonify, g, Blueprint, request, Response
 
 # User-related routes
 
@@ -68,6 +70,63 @@ def extract_rooms_or_global(req, admin=True):
         abort(http.FORBIDDEN)
 
     return (None, True)
+
+
+def _serialize_message(msg):
+    return {
+        "id": msg.id,
+        "posted_at": msg.posted_at,
+        "expires_at": msg.expires_at,
+        "message": utils.encode_base64(msg.data),
+        "sender": msg.sender.session_id,
+    }
+
+
+@users.get("/inbox")
+@auth.user_required
+def get_inbox():
+    if not g.user.is_blinded:
+        abort(http.FORBIDDEN)
+    """gets all messages"""
+    limit = utils.get_int_param('limit', 100, min=1, max=256, truncate=True)
+    return jsonify([_serialize_message(msg) for msg in Message.to(user=g.user, limit=limit)])
+
+
+@users.get("/inbox/since/<int:msgid>")
+@auth.user_required
+def poll_inbox(msgid):
+    """Returns DMs received since the given id"""
+    if not g.user.is_blinded:
+        abort(http.FORBIDDEN)
+
+    limit = utils.get_int_param('limit', 100, min=1, max=256, truncate=True)
+    msgs = [_serialize_message(msg) for msg in Message.to(user=g.user, since=msgid, limit=limit)]
+    if len(msgs) > 0:
+        return jsonify(msgs)
+    return Response('', status=http.NOT_MODIFIED)
+
+
+@users.post("/inbox/<BlindSessionID:sid>")
+@auth.user_required
+def send_inbox(sid):
+    """send a message to a recipient user via their session id"""
+    try:
+        recip_user = User(session_id=sid, autovivify=False)
+    except NoSuchUser:
+        abort(http.NOT_FOUND)
+
+    if recip_user.banned:
+        abort(http.NOT_FOUND)
+
+    req = request.json
+    message = req.get('message')
+    if message is None:
+        app.logger.warning("No message provided")
+        abort(http.BAD_REQUEST)
+
+    with db.transaction():
+        msg = Message(data=utils.decode_base64(message), recip=recip_user, sender=g.user)
+    return jsonify({"expires_at": msg.expires_at}), http.CREATED
 
 
 @users.post("/user/<SessionID:sid>/moderator")

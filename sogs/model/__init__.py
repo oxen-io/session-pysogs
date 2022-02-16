@@ -16,3 +16,7 @@ capabilities = {
     'sogs',  # Basic sogs capabilities
     # 'newcap',  # Add here
 }
+
+if config.REQUIRE_BLIND_KEYS:
+    # indicate blinding required if configured to do so
+    capabilities.add('blind')

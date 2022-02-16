@@ -204,9 +204,7 @@ def handle_http_auth():
         )
 
     # Parameter input validation
-
-    # TODO: accept/support blinded keys with some other prefix (maybe "15" or "bb" or "55"?)
-    if len(pk) != 66 or pk[0:2] != "05" or not all(x in string.hexdigits for x in pk):
+    if len(pk) != 66 or pk[0:2] not in ("05", "15") or not all(x in string.hexdigits for x in pk):
         abort_with_reason(
             http.BAD_REQUEST, "Invalid authentication: X-SOGS-Pubkey is not a valid 66-hex digit id"
         )

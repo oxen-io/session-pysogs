@@ -755,6 +755,74 @@ paths:
           $ref: "#/paths/~1room~1%7BroomToken%7D~1file~1%7BfileId%7D/get/responses/403"
         404:
           $ref: "#/paths/~1room~1%7BroomToken%7D~1file~1%7BfileId%7D/get/responses/404"
+  /inbox:
+    get:
+      tags: [Users]
+      summary: get all of the current user's inbox messages
+      parameters:
+        - $ref: "#/components/parameters/queryMessagesLimit"
+      responses:
+        200:
+          description: successful operation, returns all of the user's direct messages.  Returns an empty array if there are none.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DirectMessage"
+
+  /inbox/since/{messageId}:
+    get:
+      tags: [Users]
+      summary: Poll the current user's inbox for messages sent since the given message id.
+      parameters:
+        - $ref: "#/components/parameters/pathMessageId"
+        - $ref: "#/components/parameters/queryMessagesLimit"
+      responses:
+        200:
+          description: One or more new messages found.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DirectMessage"
+        304:
+          description: No direct messages received since the given message id.
+
+  /inbox/{sessionId}:
+    post:
+      tags: [Users]
+      summary: Submit a direct message to another user
+      parameters:
+      - $ref: "#/components/parameters/pathSessionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message, signature]
+              properties:
+                message:
+                  type: string
+                  format: byte
+                  description: "Base64-encoded message data."
+                signature:
+                  type: string
+                  format: byte
+                  description: >
+                    Base64-encoded message data XEd25519 signature, signed by the poster's X25519
+                    key contained in the session ID.
+      responses:
+        201:
+          description: Message was accepted for the given user
+        400:
+          description: Invalid request (i.e. missing or malformed message or signature parameters).
+        404:
+          description: The given session id is not a user known to this sogs (or has been globally banned from the server).
+        406:
+          description: Message signature verification failed.
 
   /user/{sessionId}/ban:
     post:
@@ -1675,6 +1743,42 @@ components:
             An XEd25519 signature of the data contained in `data`, signed using the X25519 pubkey
             contained in the user's Session ID.  This field is omitted when `data` is omitted (i.e.
             for deleted messages.)
+
+    DirectMessage:
+      title: The content of a direct message sent through this server
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: The numeric message id.
+        data:
+          type: string
+          format: byte
+          description: >
+            The direct message data, encoded in base64.
+        signature:
+          type: string
+          format: byte
+          description: >
+            An XEd25519 signature of the data contained in `data`, signed using the X25519 pubkey
+            contained in the user's Session ID.
+        expires_at:
+          type: number
+          format: double
+          description: >
+            Unix timestamp of when the message is scheduled to expire from the server.
+        sender:
+          allOf:
+            - $ref: "#/components/schemas/SessionID"
+            - type: object
+              description: "The session ID of the user who sent this message."
+        recipient:
+          allOf:
+            - $ref: "#/components/schemas/SessionID"
+            - type: object
+              description: "The session ID to which this message was sent."
+
   parameters:
     pathRoomToken:
       name: roomToken
