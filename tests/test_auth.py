@@ -5,7 +5,7 @@ from auth import x_sogs_raw, x_sogs
 import sogs.utils
 
 import json
-from nacl.public import PrivateKey
+from nacl.signing import SigningKey
 
 
 @app.get("/auth_test/whoami")
@@ -42,14 +42,15 @@ def auth_test_auth_required_post():
 
 
 def test_auth_basic(client, db):
-    a = PrivateKey.generate()
-    A = a.public_key
+    a = SigningKey.generate()
     B = server_pubkey
+    session_id = '05' + a.verify_key.to_curve25519_public_key().encode().hex()
 
     # Basic auth:
-    r = client.get("/auth_test/whoami", headers=x_sogs(a, A, B, 'GET', '/auth_test/whoami'))
+    print(x_sogs(a, B, 'GET', '/auth_test/whoami'))
+    r = client.get("/auth_test/whoami", headers=x_sogs(a, B, 'GET', '/auth_test/whoami'))
     assert r.status_code == 200
-    assert r.json == {"user": {"uid": 1, "session_id": '05' + A.encode().hex()}}
+    assert r.json == {"user": {"uid": 1, "session_id": session_id}}
 
     # Auth not required, so should be callable without auth:
     r = client.get("/auth_test/whoami")
@@ -57,48 +58,48 @@ def test_auth_basic(client, db):
     assert r.json == {"user": None}
 
     # Omit b64 padding chars from nonce:
-    hh = x_sogs(a, A, B, 'GET', '/auth_test/whoami')
+    hh = x_sogs(a, B, 'GET', '/auth_test/whoami')
     assert hh['X-SOGS-Nonce'].endswith('=')
     hh['X-SOGS-Nonce'] = hh['X-SOGS-Nonce'].rstrip('=')
     assert not hh['X-SOGS-Nonce'].endswith('=')
     r = client.get("/auth_test/whoami", headers=hh)
     assert r.status_code == 200
-    assert r.json == {"user": {"uid": 1, "session_id": '05' + A.encode().hex()}}
+    assert r.json == {"user": {"uid": 1, "session_id": session_id}}
 
     # Specify nonce in hex:
     r = client.get(
-        "/auth_test/whoami", headers=x_sogs(a, A, B, 'GET', '/auth_test/whoami', b64_nonce=False)
+        "/auth_test/whoami", headers=x_sogs(a, B, 'GET', '/auth_test/whoami', b64_nonce=False)
     )
     assert r.status_code == 200
-    assert r.json == {"user": {"uid": 1, "session_id": '05' + A.encode().hex()}}
+    assert r.json == {"user": {"uid": 1, "session_id": session_id}}
 
     # Barely good timestamp
     r = client.get(
         "/auth_test/whoami",
-        headers=x_sogs(a, A, B, 'GET', '/auth_test/whoami', timestamp_off=86399),
+        headers=x_sogs(a, B, 'GET', '/auth_test/whoami', timestamp_off=86399),
     )
     assert r.status_code == 200
-    assert r.json == {"user": {"uid": 1, "session_id": '05' + A.encode().hex()}}
+    assert r.json == {"user": {"uid": 1, "session_id": session_id}}
 
     r = client.get(
         "/auth_test/whoami",
-        headers=x_sogs(a, A, B, 'GET', '/auth_test/whoami', timestamp_off=-86399),
+        headers=x_sogs(a, B, 'GET', '/auth_test/whoami', timestamp_off=-86399),
     )
     assert r.status_code == 200
-    assert r.json == {"user": {"uid": 1, "session_id": '05' + A.encode().hex()}}
+    assert r.json == {"user": {"uid": 1, "session_id": session_id}}
 
 
 def test_auth_required(client, db):
-    a = PrivateKey.generate()
-    A = a.public_key
+    a = SigningKey.generate()
+    session_id = '05' + a.verify_key.to_curve25519_public_key().encode().hex()
     B = server_pubkey
 
     # Basic auth to auth-required endpoint:
     r = client.get(
-        "/auth_test/auth_required", headers=x_sogs(a, A, B, 'GET', '/auth_test/auth_required')
+        "/auth_test/auth_required", headers=x_sogs(a, B, 'GET', '/auth_test/auth_required')
     )
     assert r.status_code == 200
-    assert r.json == {"user": {"uid": 1, "session_id": '05' + A.encode().hex()}}
+    assert r.json == {"user": {"uid": 1, "session_id": session_id}}
 
     # No auth to required endpoint should fail:
     r = client.get("/auth_test/auth_required")
@@ -116,24 +117,23 @@ def test_auth_required(client, db):
         "/auth_test/auth_required",
         data=body,
         content_type='application/json',
-        headers=x_sogs(a, A, B, 'POST', '/auth_test/auth_required', body),
+        headers=x_sogs(a, B, 'POST', '/auth_test/auth_required', body),
     )
     assert r.status_code == 200
     assert r.json == {
-        "user": {"uid": 1, "session_id": '05' + A.encode().hex()},
+        "user": {"uid": 1, "session_id": session_id},
         "body": [{"hello": "world"}, 42, None],
     }
 
 
 def test_auth_banned(client, global_admin, user, db):
-    a = user.privkey
-    A = a.public_key
+    a = user.ed_key
     B = server_pubkey
 
     r = client.get("/auth_test/whoami")
     assert r.status_code == 200
     assert r.json == {'user': None}
-    r = client.get("/auth_test/whoami", headers=x_sogs(a, A, B, 'GET', '/auth_test/whoami'))
+    r = client.get("/auth_test/whoami", headers=x_sogs(a, B, 'GET', '/auth_test/whoami'))
     assert r.status_code == 200
     assert r.json == {"user": {"uid": 2, "session_id": user.session_id}}
 
@@ -142,53 +142,53 @@ def test_auth_banned(client, global_admin, user, db):
     r = client.get("/auth_test/whoami")
     assert r.status_code == 200
     assert r.json == {'user': None}
-    r = client.get("/auth_test/whoami", headers=x_sogs(a, A, B, 'GET', '/auth_test/whoami'))
+    r = client.get("/auth_test/whoami", headers=x_sogs(a, B, 'GET', '/auth_test/whoami'))
     assert r.status_code == 403
     assert r.data == b'Banned'
     r = client.get(
-        '/auth_test/auth_required', headers=x_sogs(a, A, B, 'GET', '/auth_test/auth_required')
+        '/auth_test/auth_required', headers=x_sogs(a, B, 'GET', '/auth_test/auth_required')
     )
     assert r.status_code == 403
     assert r.data == b'Banned'
     r = client.post(
         '/auth_test/auth_required',
         data=b'[1,2,3]',
-        headers=x_sogs(a, A, B, 'POST', '/auth_test/auth_required', b'[1,2,3]'),
+        headers=x_sogs(a, B, 'POST', '/auth_test/auth_required', b'[1,2,3]'),
     )
     assert r.status_code == 403
     assert r.data == b'Banned'
 
 
 def test_auth_malformed(client, db):
-    a = PrivateKey.generate()
-    A = a.public_key
+    a = SigningKey.generate()
+    session_id = '05' + a.verify_key.to_curve25519_public_key().encode().hex()
     B = server_pubkey
 
     # Flip a bit in the hash:
-    headers, n, ts, hsh = x_sogs_raw(a, A, B, 'GET', '/auth_test/whoami')
-    hsh = hsh[0:10] + bytes((hsh[10] ^ 0b100,)) + hsh[11:]
-    headers['X-SOGS-Hash'] = sogs.utils.encode_base64(hsh)
+    headers, n, ts, sig = x_sogs_raw(a, B, 'GET', '/auth_test/whoami')
+    sig = sig[0:10] + bytes((sig[10] ^ 0b100,)) + sig[11:]
+    headers['X-SOGS-Signature'] = sogs.utils.encode_base64(sig)
 
     r = client.get("/auth_test/whoami", headers=headers)
     assert r.status_code == 401
-    assert r.data == b'Invalid authentication: X-SOGS-Hash authentication failed'
+    assert r.data == b'Invalid authentication: X-SOGS-Signature verification failed'
 
     # Wrong hash size:
-    headers = x_sogs(a, A, B, 'GET', '/auth_test/whoami')
-    headers['X-SOGS-Hash'] = headers['X-SOGS-Hash'][:-4]
+    headers = x_sogs(a, B, 'GET', '/auth_test/whoami')
+    headers['X-SOGS-Signature'] = headers['X-SOGS-Signature'][:-4]
     r = client.get("/auth_test/whoami", headers=headers)
     assert r.status_code == 400
-    assert r.data == b'Invalid authentication: X-SOGS-Hash is not base64[56] or hex[84]'
+    assert r.data == b'Invalid authentication: X-SOGS-Signature is not base64[88]'
 
     # Missing a header
-    headers = x_sogs(a, A, B, 'GET', '/auth_test/whoami')
+    headers = x_sogs(a, B, 'GET', '/auth_test/whoami')
     del headers['X-SOGS-Timestamp']
     r = client.get("/auth_test/whoami", headers=headers)
     assert r.status_code == 400
     assert r.data == b'Invalid authentication headers: missing 1/4 required X-SOGS-* headers'
 
     # Empty header
-    headers = x_sogs(a, A, B, 'GET', '/auth_test/whoami')
+    headers = x_sogs(a, B, 'GET', '/auth_test/whoami')
     headers['X-SOGS-Timestamp'] = ''
     headers['X-SOGS-Nonce'] = ''
     r = client.get("/auth_test/whoami", headers=headers)
@@ -196,19 +196,19 @@ def test_auth_malformed(client, db):
     assert r.data == b'Invalid authentication headers: missing 2/4 required X-SOGS-* headers'
 
     # Wrong path
-    headers = x_sogs(a, A, B, 'GET', '/auth_test/whoareu')
+    headers = x_sogs(a, B, 'GET', '/auth_test/whoareu')
     r = client.get("/auth_test/whoami", headers=headers)
     assert r.status_code == 401
-    assert r.data == b'Invalid authentication: X-SOGS-Hash authentication failed'
+    assert r.data == b'Invalid authentication: X-SOGS-Signature verification failed'
 
     # Malformed headers
-    headers = x_sogs(a, A, B, 'GET', '/auth_test/whoami')
+    headers = x_sogs(a, B, 'GET', '/auth_test/whoami')
     headers['X-SOGS-Timestamp'] = headers['X-SOGS-Timestamp'] + 'a'
     r = client.get("/auth_test/whoami", headers=headers)
     assert r.status_code == 400
     assert r.data == b'Invalid authentication: X-SOGS-Timestamp is not a valid timestamp'
 
-    headers = x_sogs(a, A, B, 'GET', '/auth_test/whoami')
+    headers = x_sogs(a, B, 'GET', '/auth_test/whoami')
     headers['X-SOGS-Nonce'] = headers['X-SOGS-Nonce'] + '='  # Invalid base64 (too much padding)
     r = client.get("/auth_test/whoami", headers=headers)
     assert r.status_code == 400
@@ -217,7 +217,7 @@ def test_auth_malformed(client, db):
         == b'Invalid authentication: X-SOGS-Nonce must be 16 bytes (encoded as base64 or hex)'
     )
 
-    headers = x_sogs(a, A, B, 'GET', '/auth_test/whoami')
+    headers = x_sogs(a, B, 'GET', '/auth_test/whoami')
     headers['X-SOGS-Nonce'] = headers['X-SOGS-Nonce'][:-1]  # Invalid base64 (wrong padding)
     r = client.get("/auth_test/whoami", headers=headers)
     assert r.status_code == 400
@@ -226,7 +226,7 @@ def test_auth_malformed(client, db):
         == b'Invalid authentication: X-SOGS-Nonce must be 16 bytes (encoded as base64 or hex)'
     )
 
-    headers = x_sogs(a, A, B, 'GET', '/auth_test/whoami')
+    headers = x_sogs(a, B, 'GET', '/auth_test/whoami')
     headers['X-SOGS-Nonce'] = headers['X-SOGS-Nonce'][:-6]  # chop off 2 padding + last 4 chars
     r = client.get("/auth_test/whoami", headers=headers)
     assert r.status_code == 400
@@ -235,7 +235,7 @@ def test_auth_malformed(client, db):
         == b'Invalid authentication: X-SOGS-Nonce must be 16 bytes (encoded as base64 or hex)'
     )
 
-    headers = x_sogs(a, A, B, 'GET', '/auth_test/whoami')
+    headers = x_sogs(a, B, 'GET', '/auth_test/whoami')
     headers['X-SOGS-Nonce'] = sogs.utils.decode_base64(headers['X-SOGS-Nonce']).hex()[:-1]
     r = client.get("/auth_test/whoami", headers=headers)
     assert r.status_code == 400
@@ -244,7 +244,7 @@ def test_auth_malformed(client, db):
         == b'Invalid authentication: X-SOGS-Nonce must be 16 bytes (encoded as base64 or hex)'
     )
 
-    headers = x_sogs(a, A, B, 'GET', '/auth_test/whoami')
+    headers = x_sogs(a, B, 'GET', '/auth_test/whoami')
     headers['X-SOGS-Nonce'] = sogs.utils.decode_base64(headers['X-SOGS-Nonce']).hex()[:-2]
     r = client.get("/auth_test/whoami", headers=headers)
     assert r.status_code == 400
@@ -253,7 +253,7 @@ def test_auth_malformed(client, db):
         == b'Invalid authentication: X-SOGS-Nonce must be 16 bytes (encoded as base64 or hex)'
     )
 
-    headers = x_sogs(a, A, B, 'GET', '/auth_test/whoami')
+    headers = x_sogs(a, B, 'GET', '/auth_test/whoami')
     headers['X-SOGS-Nonce'] = sogs.utils.decode_base64(headers['X-SOGS-Nonce']).hex() + 'ff'
     r = client.get("/auth_test/whoami", headers=headers)
     assert r.status_code == 400
@@ -263,11 +263,11 @@ def test_auth_malformed(client, db):
     )
 
     # Attempt to re-use a nonce
-    headers = x_sogs(a, A, B, 'GET', '/auth_test/whoami')
+    headers = x_sogs(a, B, 'GET', '/auth_test/whoami')
 
     r = client.get("/auth_test/whoami", headers=headers)
     assert r.status_code == 200
-    assert r.json == {"user": {"uid": 1, "session_id": '05' + A.encode().hex()}}
+    assert r.json == {"user": {"uid": 1, "session_id": session_id}}
 
     r = client.get("/auth_test/whoami", headers=headers)
     assert r.status_code == 425
@@ -276,22 +276,22 @@ def test_auth_malformed(client, db):
     # Bad timestamps
     r = client.get(
         "/auth_test/whoami",
-        headers=x_sogs(a, A, B, 'GET', '/auth_test/whoami', timestamp_off=86401),
+        headers=x_sogs(a, B, 'GET', '/auth_test/whoami', timestamp_off=86401),
     )
     assert r.status_code == 425
     assert r.data == b'Invalid authentication: X-SOGS-Timestamp is too far from current time'
 
     r = client.get(
         "/auth_test/whoami",
-        headers=x_sogs(a, A, B, 'GET', '/auth_test/whoami', timestamp_off=-86401),
+        headers=x_sogs(a, B, 'GET', '/auth_test/whoami', timestamp_off=-86401),
     )
     assert r.status_code == 425
     assert r.data == b'Invalid authentication: X-SOGS-Timestamp is too far from current time'
 
 
 def test_auth_batch(client, db):
-    a = PrivateKey.generate()
-    A = a.public_key
+    a = SigningKey.generate()
+    session_id = '05' + a.verify_key.to_curve25519_public_key().encode().hex()
     B = server_pubkey
 
     hi = b'["hi", "world"]'
@@ -312,28 +312,28 @@ def test_auth_batch(client, db):
         {
             'code': 200,
             'headers': {'content-type': 'application/json'},
-            'body': {'user': {'uid': 1, 'session_id': '05' + A.encode().hex()}, 'foo': 'bar'},
+            'body': {'user': {'uid': 1, 'session_id': session_id}, 'foo': 'bar'},
         },
         {
             'code': 200,
             'headers': {'content-type': 'application/json'},
-            'body': {'user': {'uid': 1, 'session_id': '05' + A.encode().hex()}},
+            'body': {'user': {'uid': 1, 'session_id': session_id}},
         },
         {
             'code': 200,
             'headers': {'content-type': 'application/json'},
-            'body': {'user': {'uid': 1, 'session_id': '05' + A.encode().hex()}},
+            'body': {'user': {'uid': 1, 'session_id': session_id}},
         },
         {
             'code': 200,
             'headers': {'content-type': 'application/json'},
-            'body': {'user': {'uid': 1, 'session_id': '05' + A.encode().hex()}},
+            'body': {'user': {'uid': 1, 'session_id': session_id}},
         },
         {
             'code': 200,
             'headers': {'content-type': 'application/json'},
             'body': {
-                'user': {'uid': 1, 'session_id': '05' + A.encode().hex()},
+                'user': {'uid': 1, 'session_id': session_id},
                 'body': ['hi', 'world'],
             },
         },
@@ -341,7 +341,7 @@ def test_auth_batch(client, db):
             'code': 200,
             'headers': {'content-type': 'application/json'},
             'body': {
-                'user': {'uid': 1, 'session_id': '05' + A.encode().hex()},
+                'user': {'uid': 1, 'session_id': session_id},
                 'body': {"it's": "you", "main screen": ["turn", "on"]},
             },
         },
@@ -350,24 +350,23 @@ def test_auth_batch(client, db):
     # Auth headers go on the outside of the batch request, and should be preserved for the inner
     # requests:
     body = json.dumps(reqs).encode()
-    headers = x_sogs(a, A, B, 'POST', '/batch', body)
+    headers = x_sogs(a, B, 'POST', '/batch', body)
     r = client.post("/batch", headers=headers, data=body, content_type='application/json')
 
     assert r.status_code == 200
     assert r.json == expected
 
-    headers = x_sogs(a, A, B, 'POST', '/sequence', body)
+    headers = x_sogs(a, B, 'POST', '/sequence', body)
     r = client.post("/sequence", headers=headers, data=body, content_type='application/json')
 
     assert r.status_code == 200
     assert r.json == expected
 
     # Auth headers on the *inner* batch requests should be ignored:
-    a2 = PrivateKey.generate()
-    A2 = a2.public_key
-    inner_h1 = x_sogs(a2, A2, B, 'GET', '/auth_test/whoami')
+    a2 = SigningKey.generate()
+    inner_h1 = x_sogs(a2, B, 'GET', '/auth_test/whoami')
     inner_h1['X-Foo'] = 'bar'
-    inner_h2 = x_sogs(a2, A2, B, 'POST', '/auth_test/auth_required', hi)
+    inner_h2 = x_sogs(a2, B, 'POST', '/auth_test/auth_required', hi)
     reqs = [
         {"method": "GET", "path": "/auth_test/whoami", "headers": inner_h1},
         {"method": "GET", "path": "/auth_test/whoami"},
@@ -379,7 +378,7 @@ def test_auth_batch(client, db):
         },
     ]
     body = json.dumps(reqs).encode()
-    headers = x_sogs(a, A, B, 'POST', '/batch', body)
+    headers = x_sogs(a, B, 'POST', '/batch', body)
     r = client.post("/batch", headers=headers, data=body, content_type='application/json')
     assert r.status_code == 200
     assert r.json == [expected[i] for i in (0, 1, 4)]
@@ -392,11 +391,10 @@ def test_auth_legacy(client, db, admin, user, room):
     raw_token = sogs.utils.make_legacy_token(admin.session_id)
     token = sogs.utils.encode_base64(raw_token)
 
-    a = admin.privkey
-    A = a.public_key
+    a = admin.ed_key
     B = server_pubkey
 
-    a2 = PrivateKey.generate()
+    a2 = SigningKey.generate()
 
     # Test that invalid token with legacy auth is recognized:
     bad_token = sogs.utils.encode_base64(bytes((raw_token[0] ^ 1,)) + raw_token[1:])
@@ -416,7 +414,7 @@ def test_auth_legacy(client, db, admin, user, room):
     assert r.status_code == 200
     assert r.json == {"status_code": 200}
 
-    S2 = '05' + a2.public_key.encode().hex()
+    S2 = '05' + a2.verify_key.to_curve25519_public_key().encode().hex()
     r = client.post(
         "/legacy/block_list",
         headers={"Room": room.token, "Authorization": token},
@@ -437,7 +435,7 @@ def test_auth_legacy(client, db, admin, user, room):
     assert r.json == {"status_code": 200, "banned_members": [user.session_id]}
 
     # Same, but now use X-SOGS-*
-    h = x_sogs(user.privkey, user.privkey.public_key, B, 'GET', '/legacy/block_list')
+    h = x_sogs(user.ed_key, B, 'GET', '/legacy/block_list')
     h['Room'] = room.token
     r = client.get("/legacy/block_list", headers=h)
     assert r.status_code == 200
@@ -445,7 +443,7 @@ def test_auth_legacy(client, db, admin, user, room):
 
     # Now use X-SOGS-* for the second user, but pass an Authentication header for the first user
     # (which should be ignored with X-SOGS-* headers present).
-    h = x_sogs(a2, a2.public_key, B, 'GET', '/legacy/block_list')
+    h = x_sogs(a2, B, 'GET', '/legacy/block_list')
     h['Room'] = room.token
     r = client.get("/legacy/block_list", headers=h)
     assert r.status_code == 200
@@ -471,7 +469,7 @@ def test_auth_legacy(client, db, admin, user, room):
         "/sequence",
         data=body,
         content_type='application/json',
-        headers=x_sogs(a, A, B, 'POST', '/sequence', body),
+        headers=x_sogs(a, B, 'POST', '/sequence', body),
     )
     assert r.status_code == 200
     assert r.json == [
