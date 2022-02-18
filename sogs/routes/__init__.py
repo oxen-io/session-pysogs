@@ -18,11 +18,11 @@ import qrencode
 from PIL.Image import NEAREST
 
 
-app.register_blueprint(legacy_endpoints)
-app.register_blueprint(general_endpoints)
-app.register_blueprint(onion_request_endpoints)
 app.register_blueprint(rooms_endpoints)
 app.register_blueprint(users_endpoints)
+app.register_blueprint(general_endpoints)
+app.register_blueprint(onion_request_endpoints)
+app.register_blueprint(legacy_endpoints)
 
 
 @app.get("/")
