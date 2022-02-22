@@ -5,6 +5,7 @@ import os
 import logging
 import importlib.resources
 import sqlalchemy
+from sqlalchemy_utils import database_exists
 from sqlalchemy.sql.expression import bindparam
 
 HAVE_FILE_ID_HACKS = False
@@ -108,11 +109,14 @@ def insert_and_get_row(insert, _table, _pk, *, dbconn=None, **params):
         return query(f"SELECT * FROM {_table} WHERE {_pk} = :pk", pk=pkval).first()
 
 
-def database_init():
+def database_init(create=True):
     """
     Perform database initialization: constructs the schema, if necessary, and performs any required
     migrations.  This does so using its *own* database connection, and is intended to be called
     during initialization *before* forking happens during uwsgi startup.
+
+    create -- if False then raise an error if the database looks empty.  If unspecified (or True) then
+    the schema will be created if it doesn't exist.
     """
 
     global engine, metadata
@@ -123,6 +127,11 @@ def database_init():
     conn = get_conn()
 
     if 'messages' not in metadata.tables:
+        if not create:
+            raise RuntimeError(
+                "Empty database connection and database initialization disabled; aborting"
+            )
+
         logging.warning("No database detected; creating new database schema")
         if engine.name == "sqlite":
             conn.connection.executescript(importlib.resources.read_text('sogs', 'schema.sqlite'))
@@ -177,26 +186,34 @@ def create_admin_user(dbconn):
 engine, engine_initial_pid, metadata = None, None, None
 
 
-def _init_engine(*args, **kwargs):
+def init_engine(*args, **kwargs):
     """
-    Initializes or reinitializes db.engine.  (Only the test suite should be calling this externally
-    to reinitialize).
+    Initializes db.engine.  This is called automatically during import of this submodule when
+    running as a uwsgi app, but needs to be called manually otherwise before any database-using code
+    is invoked.
 
-    Arguments:
+    This can also be called to reinitialize db.engine, but that usage should be confined to the test
+    suite.
+
+    Keyword arguments:
     sogs_preinit - a callable to invoke after setting up `engine` but before calling
     `database_init()`.
+    sogs_create - optional boolean; if provided and False then we fail if the database doesn't
+    already exist (i.e. to prevent creating it, such as when using the command-line tools from the
+    wrong location).
     """
     global engine, engine_initial_pid, metadata, have_returning
 
     if engine is not None:
         engine.dispose()
 
+    allow_create = kwargs.pop('sogs_create', True)
+    preinit = kwargs.pop('sogs_preinit', None)
+
     if not len(args) and not len(kwargs):
         if config.DB_URL == 'defer-init':
             return
         args = (config.DB_URL,)
-
-    preinit = kwargs.pop('sogs_preinit', None)
 
     exec_opts_args = {}
     if args[0].startswith('postgresql'):
@@ -205,6 +222,10 @@ def _init_engine(*args, **kwargs):
         # SQLite's Python code is seriously broken, so we have to force off autocommit mode and turn
         # on driver-level autocommit (which we do below).
         exec_opts_args['autocommit'] = False
+
+    if not allow_create:
+        if not database_exists(args[0]):
+            raise RuntimeError(f"{args[0]} database does not exist")
 
     engine = sqlalchemy.create_engine(*args, **kwargs).execution_options(**exec_opts_args)
     engine_initial_pid = os.getpid()
@@ -251,10 +272,11 @@ def _init_engine(*args, **kwargs):
     if preinit:
         preinit()
 
-    database_init()
+    database_init(allow_create)
 
 
-_init_engine()
+if config.RUNNING_AS_APP:
+    init_engine()
 
 
 @postfork

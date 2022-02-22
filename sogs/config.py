@@ -36,6 +36,16 @@ REQUIRE_BLIND_KEYS = False
 TEMPLATE_PATH = 'templates'
 STATIC_PATH = 'static'
 
+# Will be true if we're running as a uwsgi app, false otherwise; used where we need to do things
+# only in one case or another (e.g. database initialization only via app mode).
+RUNNING_AS_APP = False
+try:
+    import uwsgi
+
+    RUNNING_AS_APP = True
+except ImportError:
+    pass
+
 
 def load_config():
     if 'SOGS_CONFIG' in os.environ:
