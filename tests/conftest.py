@@ -236,6 +236,29 @@ def global_mod(db):
 
 
 @pytest.fixture
+def banned_user(db):
+    import user
+
+    u = user.User()
+    u.ban(banned_by=SystemUser())
+    return u
+
+
+@pytest.fixture
+def blind_user(db):
+    import user
+
+    return user.User(blinded=True)
+
+
+@pytest.fixture
+def blind_user2(db):
+    import user
+
+    return user.User(blinded=True)
+
+
+@pytest.fixture
 def no_rate_limit():
     """Disables post rate limiting for the test"""
     import sogs.model.room as mroom

@@ -157,9 +157,7 @@ def test_v3_authenticated(room, mod, client):
 
     # Construct an onion request for /room/test-room
     req = {'method': 'GET', 'endpoint': '/room/test-room'}
-    req['headers'] = auth.x_sogs(
-        mod.privkey, mod.privkey.public_key, crypto.server_pubkey, req['method'], req['endpoint']
-    )
+    req['headers'] = auth.x_sogs(mod.ed_key, crypto.server_pubkey, req['method'], req['endpoint'])
     data = build_payload(req, v=3, enc_type="xchacha20")
 
     r = client.post("/loki/v3/lsrpc", data=data)
@@ -191,9 +189,7 @@ def test_v4(room, client):
 
 def test_v4_authenticated(room, mod, client):
     req = {'method': 'GET', 'endpoint': '/room/test-room'}
-    req['headers'] = auth.x_sogs(
-        mod.privkey, mod.privkey.public_key, crypto.server_pubkey, req['method'], req['endpoint']
-    )
+    req['headers'] = auth.x_sogs(mod.ed_key, crypto.server_pubkey, req['method'], req['endpoint'])
     data = build_payload(req, v=4, enc_type="xchacha20")
 
     r = client.post("/oxen/v4/lsrpc", data=data)
@@ -226,12 +222,7 @@ def test_v4_post_body(room, user, client):
     req = {'method': 'POST', 'endpoint': '/test_v4_post_body'}
     content = b'test data'
     req['headers'] = auth.x_sogs(
-        user.privkey,
-        user.privkey.public_key,
-        crypto.server_pubkey,
-        req['method'],
-        req['endpoint'],
-        body=content,
+        user.ed_key, crypto.server_pubkey, req['method'], req['endpoint'], body=content
     )
     req['headers']['content-type'] = 'text/plain'
 
@@ -250,12 +241,7 @@ def test_v4_post_body(room, user, client):
     test_json = {"test": ["json", None], "1": 23}
     content = json.dumps(test_json).encode()
     req['headers'] = auth.x_sogs(
-        user.privkey,
-        user.privkey.public_key,
-        crypto.server_pubkey,
-        req['method'],
-        req['endpoint'],
-        body=content,
+        user.ed_key, crypto.server_pubkey, req['method'], req['endpoint'], body=content
     )
     req['headers']['content-type'] = 'application/json'
     data = build_payload(req, content, v=4, enc_type="xchacha20")
@@ -270,12 +256,7 @@ def test_v4_post_body(room, user, client):
 
     # Now try with json, but with content-type set to something else (this should avoid the json
     req['headers'] = auth.x_sogs(
-        user.privkey,
-        user.privkey.public_key,
-        crypto.server_pubkey,
-        req['method'],
-        req['endpoint'],
-        body=content,
+        user.ed_key, crypto.server_pubkey, req['method'], req['endpoint'], body=content
     )
     req['headers']['content-type'] = 'x-omg/all-your-base'
     data = build_payload(req, content, v=4, enc_type="xchacha20")

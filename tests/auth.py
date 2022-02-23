@@ -1,8 +1,9 @@
-from nacl.public import PublicKey, PrivateKey
+from nacl.signing import SigningKey
+from nacl.public import PublicKey
 from typing import Optional
 import time
-from hashlib import blake2b
-from nacl.bindings import crypto_scalarmult
+from sogs.hashing import blake2b, sha512
+import nacl.bindings as salt
 from nacl.utils import random
 
 import sogs.utils
@@ -14,56 +15,62 @@ def x_sogs_nonce():
 
 
 def x_sogs_raw(
-    a: PrivateKey,
-    A: PublicKey,
+    s: SigningKey,
     B: PublicKey,
     method: str,
     full_path: str,
     body: Optional[bytes] = None,
+    *,
     b64_nonce: bool = True,
-    id_prefix: str = '05',
+    blinded: bool = False,
     timestamp_off: int = 0,
 ):
     """
     Calculates X-SOGS-* headers.
 
-    Returns 4 elements: the headers dict, the nonce bytes, timestamp int, and hash bytes.
+    Returns 4 elements: the headers dict, the nonce bytes, timestamp int, and signature bytes.
 
-    Use x_sogs(...) instead if you don't need the nonce/timestamp/hash values.
+    Use x_sogs(...) instead if you don't need the nonce/timestamp/signature values.
     """
     n = x_sogs_nonce()
     ts = int(time.time()) + timestamp_off
 
-    a_bytes, A_bytes, B_bytes = (x.encode() for x in (a, A, B))
+    if blinded:
+        a = s.to_curve25519_private_key().encode()
+        k = salt.crypto_core_ed25519_scalar_reduce(
+            blake2b(sogs.crypto.server_pubkey_bytes, digest_size=64)
+        )
+        ka = salt.crypto_core_ed25519_scalar_mul(k, a)
+        kA = salt.crypto_scalarmult_ed25519_base_noclamp(ka)
+        pubkey = '15' + kA.hex()
+    else:
+        pubkey = '00' + s.verify_key.encode().hex()
+
+    to_sign = [B.encode(), n, str(ts).encode(), method.encode(), full_path.encode()]
+    if body:
+        to_sign.append(blake2b(body, digest_size=64))
+
+    if blinded:
+        H_rh = sha512(s.encode())[32:]
+        r = salt.crypto_core_ed25519_scalar_reduce(sha512([H_rh, kA, *to_sign]))
+        sig_R = salt.crypto_scalarmult_ed25519_base_noclamp(r)
+        HRAM = salt.crypto_core_ed25519_scalar_reduce(sha512([sig_R, kA, *to_sign]))
+        sig_s = salt.crypto_core_ed25519_scalar_add(
+            r, salt.crypto_core_ed25519_scalar_mul(HRAM, ka)
+        )
+        sig = sig_R + sig_s
+
+    else:
+        sig = s.sign(b''.join(to_sign)).signature
 
     h = {
-        'X-SOGS-Pubkey': id_prefix + A_bytes.hex(),
+        'X-SOGS-Pubkey': pubkey,
         'X-SOGS-Nonce': sogs.utils.encode_base64(n) if b64_nonce else n.hex(),
         'X-SOGS-Timestamp': str(ts),
+        'X-SOGS-Signature': sogs.utils.encode_base64(sig),
     }
 
-    # Deliberately using hashlib (rather than nacl) here to use an independent blake2b
-    # implementation from the sogs code.
-    shared_key = blake2b(
-        crypto_scalarmult(a_bytes, B_bytes) + A_bytes + B_bytes,
-        digest_size=42,
-        salt=n,
-        person=b'sogs.shared_keys',
-    ).digest()
-
-    hasher = blake2b(
-        method.encode() + full_path.encode() + h['X-SOGS-Timestamp'].encode(),
-        digest_size=42,
-        key=shared_key,
-        salt=n,
-        person=b'sogs.auth_header',
-    )
-    if body is not None and len(body):
-        hasher.update(body)
-    hsh = hasher.digest()
-    h['X-SOGS-Hash'] = sogs.utils.encode_base64(hsh)
-
-    return h, n, ts, hsh
+    return h, n, ts, sig
 
 
 def x_sogs(*args, **kwargs):
@@ -71,7 +78,5 @@ def x_sogs(*args, **kwargs):
 
 
 def x_sogs_for(user, *args, **kwargs):
-    a = user.privkey
-    A = a.public_key
     B = sogs.crypto.server_pubkey
-    return x_sogs(a, A, B, *args, **kwargs)
+    return x_sogs(user.ed_key, B, *args, blinded=user.is_blinded, **kwargs)

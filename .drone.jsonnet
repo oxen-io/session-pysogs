@@ -56,7 +56,7 @@ local debian_pipeline(name,
                   'eatmydata ' + apt_get_quiet + ' dist-upgrade -y',
                   'eatmydata ' + apt_get_quiet + ' install --no-install-recommends -y ' + std.join(' ', deps),
                 ] + before_pytest + [
-                  'PYTHONPATH=. python3 -mpytest -vv --color=yes --sql-tracing ' + pytest_opts,
+                  'PYTHONPATH=. python3 -mpytest -vv --color=yes ' + pytest_opts,
                 ]
                 + extra_cmds,
     },
@@ -130,7 +130,7 @@ local debian_pg_pipeline(name, image, pg_tag='bullseye') = debian_pipeline(
         name: '🐍 pytest',
         commands: [
           'echo "Running on ${DRONE_STAGE_MACHINE}"',
-          'PYTHONPATH=. /opt/local/bin/python3 -mpytest -vv --color=yes --sql-tracing',
+          'PYTHONPATH=. /opt/local/bin/python3 -mpytest -vv --color=yes',
         ],
       },
     ],

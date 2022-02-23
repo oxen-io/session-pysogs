@@ -18,6 +18,7 @@ HTTP_SHOW_RECENT = True
 OMQ_LISTEN = 'tcp://*:22028'
 OMQ_INTERNAL = 'ipc://./omq.sock'
 LOG_LEVEL = 'WARNING'
+DM_EXPIRY_DAYS = 15
 UPLOAD_DEFAULT_EXPIRY_DAYS = 15
 UPLOAD_FILENAME_MAX = 60
 UPLOAD_FILENAME_KEEP_PREFIX = 40
@@ -31,6 +32,7 @@ IMPORT_ADJUST_MS = 0
 PROFANITY_FILTER = False
 PROFANITY_SILENT = True
 PROFANITY_CUSTOM = None
+REQUIRE_BLIND_KEYS = False
 TEMPLATE_PATH = 'templates'
 STATIC_PATH = 'static'
 
@@ -94,6 +96,8 @@ def load_config():
             'active_threshold': ('ROOM_DEFAULT_ACTIVE_THRESHOLD', None, float),
             'active_prune_threshold': ('ROOM_ACTIVE_PRUNE_THRESHOLD', None, float),
         },
+        'direct_messages': {'expiry': ('DM_EXPIRY_DAYS', None, float)},
+        'users': {'require_blind_keys': bool_opt('REQUIRE_BLIND_KEYS')},
         'messages': {
             'history_prune_threshold': ('MESSAGE_HISTORY_PRUNE_THRESHOLD', None, float),
             'profanity_filter': bool_opt('PROFANITY_FILTER'),

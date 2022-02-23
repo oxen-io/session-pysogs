@@ -5,9 +5,10 @@ from ..model.user import User
 from ..hashing import blake2b
 
 from flask import request, abort, Response, g
-import string
 import time
-from nacl.bindings import crypto_scalarmult
+from nacl.signing import VerifyKey
+from nacl.exceptions import BadSignatureError
+import nacl.bindings as salt
 import sqlalchemy.exc
 from functools import wraps
 
@@ -16,8 +17,9 @@ from functools import wraps
 # We handle authentication through 4 headers included in the outermost request (e.g. which typically
 # means the onion request):
 #
-# X-SOGS-Pubkey -- the blinded session_id of the user, in its typical hex representation.  This is
-# typically a blinded id starting with "bb" rather than "05".
+# X-SOGS-Pubkey -- Ed25519 pubkey of the user.  If blinded, this starts with "15" and the pubkey is
+# the user's blinded session id on the SOGS.  If *unblinded* this starts with "00", the remainder is
+# an Ed25519 pubkey, and we convert it to an X25519 pubkey to determine the user's 05... session id.
 #
 # X-SOGS-Nonce -- a unique 128-bit (16 byte) request nonce, encoded in either base64 (22 chars (or
 # 24 with optional padding)) or hex (32 characters).  This nonce may not be reused with this pubkey
@@ -26,45 +28,31 @@ from functools import wraps
 # X-SOGS-Timestamp -- unix integer timestamp, expressed in the usual human (base 10) notation.  The
 # timestamp must be with ±24 hours of the SOGS server time when the request is received.
 #
-# X-SOGS-Hash -- base64 encoding of the keyed hash of:
+# X-SOGS-Signature -- Ed25519 signature (passed in base64 encoding) of:
 #
-#       METHOD || PATH || TIMESTAMP || BODY
+#       SERVER_PUBKEY || NONCE || TIMESTAMP || METHOD || PATH || HBODY
 #
-# using a Blake2B 42-byte keyed hash (to be obviously different from things like 32-byte pubkeys and
-# 64-byte signatures, and because 42 encodes cleanly into base64), where the hash is calculated as:
+# where HBODY is 64-byte blake2b hash of the body *if* the request has a non-empty body, and is
+# empty (omitted) otherwise.
 #
-#     a (≡ user x25519 privkey, *not* including 05 Session prefix)
-#     A (≡ user x25519 pubkey)
-#     B (≡ server pubkey)
-#
-#     q = a*B
-#     shared_key = Blake2B(
-#         q || A || B,
-#         digest_size=42,
-#         salt=nonce,
-#         person=b'sogs.shared_keys')
-#     hash = Blake2B(
-#         data=M || P || T || B,
-#         digest_size=42,
-#         key=shared_key,
-#         salt=nonce,
-#         person=b'sogs.auth_header')
+# This value is signed using the blinded or unblinded Ed25519 pubkey given in the -Pubkey header.
 #
 # For example, for a GET request to '/capabilities?required=sogs' to a server with pubkey
 # fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210 the request headers could be:
 #
-# X-SOGS-Pubkey: 050123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+# X-SOGS-Pubkey: 150123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 # X-SOGS-Nonce: IYUVSYbLlTgmnigr/H3Tdg==
 # X-SOGS-Timestamp: 1642079887
-# X-SOGS-Hash: ...
+# X-SOGS-Signature: ...
 #
-# Where ... is the 56-character base64 encoding of the 42-byte value obtained by hashing:
+# Where ... is the 88-character (including 2 padding chars) base64 encoding of the 64-byte value
+# obtained by signing:
 #
-# b'GET/capabilities?required=sogs1642079887'
-#   ^^^###########################^^^^^^^^^^
-#  METHOD    PATH (incl. query)   TIMESTAMP   (empty BODY)
-#
-# using the blake2b hash as described above.
+# b'xxx...xxxYYY...YYY1642079887GET/capabilities?required=sogs'
+#   ^^^^^^^^^#########^^^^^^^^^^###^^^^^^^^^^^^^^^^^^^^^^^^^^^
+#     `- server pubkey, 32B   |  |         |                  |
+#               `- nonce, 16B |  |         |                  |
+#                     TIMESTAMP  METHOD   PATH                `- (no body hash, because no body)
 #
 # Or for a onion POST request with a body:
 #
@@ -76,24 +64,24 @@ from functools import wraps
 #   "X-SOGS-Pubkey": "050123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
 #   "X-SOGS-Nonce": "5f9369b79449a7dfa07d123b697c84f6",  # random, hex encoded
 #   "X-SOGS-Timestamp": "1642080374",
-#   "X-SOGS-Hash": "...",
+#   "X-SOGS-Signature": "...",
 # }}
 #
-# where now the hash field is the base64 encoding of the hash of the value:
+# you would calculate the 64-byte blake2b hash of '{"a":1}' (the onion request inner body), then
+# sign:
 #
-# b'POST/some/endpoint1642080374{"a":1}'
-#   ^^^^##############^^^^^^^^^^#######
-#  METHOD  ENDPOINT   TIMESTAMP  BODY
-#
-# (Note that the hash here is identical whether submitted via direct POST request or wrapped in an
-# onion request; an onion request is described for exposition).
+# b'xxx...xxxYYY...YYY1642080374POST/some/endpointHHH...HHH'
+#   ^^^^^^^^^#########^^^^^^^^^^####^^^^^^^^^^^^^^#########
+#     `- server pubkey, 32B   |  |         |       |
+#              `- nonce, 16B  |  |         |       |
+#                      TIMESTAMP METHOD   PATH    HASH-BODY (64 bytes)
 #
 # For batch requests the X-SOGS-* headers are applied once, on the outermost batch request, *not* on
 # the individual subrequests; the authorization applies to all subrequests.
 #
-# NB: legacy sogs endpoints (that is: endpoint paths without a leading /) will not work with this
-# authentication mechanism; in order to call them you must invoke them with a leading `/legacy/`
-# prefix (e.g. `GET /legacy/rooms`).
+# NB: legacy sogs endpoints (that is: endpoint paths without a leading /) require specifying the
+# path in the signature message as `/legacy/whatever` even if just `whatever` is being used in the
+# onion request "endpoint" parameter).
 
 
 def abort_with_reason(code, msg, warn=True):
@@ -187,11 +175,11 @@ def handle_http_auth():
 
     g.user_reauth = False
 
-    pk, nonce, ts_str, hash_in = (
-        request.headers.get(f"X-SOGS-{h}") for h in ('Pubkey', 'Nonce', 'Timestamp', 'Hash')
+    pk, nonce, ts_str, sig_in = (
+        request.headers.get(f"X-SOGS-{h}") for h in ('Pubkey', 'Nonce', 'Timestamp', 'Signature')
     )
 
-    missing = sum(x is None or x == '' for x in (pk, nonce, ts_str, hash_in))
+    missing = sum(x is None or x == '' for x in (pk, nonce, ts_str, sig_in))
     # If all are missing then we have no user
     if missing == 4:
         g.user = None
@@ -205,12 +193,30 @@ def handle_http_auth():
 
     # Parameter input validation
 
-    # TODO: accept/support blinded keys with some other prefix (maybe "15" or "bb" or "55"?)
-    if len(pk) != 66 or pk[0:2] != "05" or not all(x in string.hexdigits for x in pk):
+    try:
+        pk = utils.decode_hex_or_b64(pk, 33)
+    except Exception:
         abort_with_reason(
             http.BAD_REQUEST, "Invalid authentication: X-SOGS-Pubkey is not a valid 66-hex digit id"
         )
-    A = bytes.fromhex(pk[2:])
+
+    if pk[0] not in (0x00, 0x15):
+        abort_with_reason(
+            http.BAD_REQUEST, "Invalid authentication: X-SOGS-Pubkey must be 00- or 15- prefixed"
+        )
+    blinded_pk = pk[0] == 0x15
+    pk = pk[1:]
+    if not salt.crypto_core_ed25519_is_valid_point(pk):
+        abort_with_reason(
+            http.BAD_REQUEST,
+            "Invalid authentication: given X-SOGS-Signature is not a valid Ed25519 pubkey",
+        )
+    pk = VerifyKey(pk)
+    if blinded_pk:
+        session_id = '15' + pk.encode().hex()
+    else:
+        # TODO: if "blinding required" config option is set then reject the request here
+        session_id = '05' + pk.to_curve25519_public_key().encode().hex()
 
     try:
         nonce = utils.decode_hex_or_b64(nonce, 16)
@@ -221,10 +227,10 @@ def handle_http_auth():
         )
 
     try:
-        hash_in = utils.decode_hex_or_b64(hash_in, 42)
+        sig_in = utils.decode_hex_or_b64(sig_in, 64)
     except Exception:
         abort_with_reason(
-            http.BAD_REQUEST, "Invalid authentication: X-SOGS-Hash is not base64[56] or hex[84]"
+            http.BAD_REQUEST, "Invalid authentication: X-SOGS-Signature is not base64[88]"
         )
 
     try:
@@ -242,7 +248,7 @@ def handle_http_auth():
             http.TOO_EARLY, "Invalid authentication: X-SOGS-Timestamp is too far from current time"
         )
 
-    user = User(session_id=pk, autovivify=True, touch=False)
+    user = User(session_id=session_id, autovivify=True, touch=False)
     if user.banned:
         # If the user is banned don't even bother verifying the signature because we want to reject
         # the request whether or not the signature validation passes.
@@ -253,33 +259,33 @@ def handle_http_auth():
     except sqlalchemy.exc.IntegrityError:
         abort_with_reason(http.TOO_EARLY, "Invalid authentication: X-SOGS-Nonce cannot be reused")
 
-    # Hash validation
+    # Signature validation
 
-    # shared_key is hash of a*B || A || B = b*A || A || B where b/B is the server keypair and A is
-    # the session id pubkey.
-    shared_key = blake2b(
-        crypto_scalarmult(crypto._privkey.encode(), A) + A + crypto.server_pubkey_bytes,
-        digest_size=42,
-        salt=nonce,
-        person=b'sogs.shared_keys',
+    # Signature should be on:
+    #     SERVER_PUBKEY || NONCE || TIMESTAMP || METHOD || PATH || HBODY
+    to_verify = (
+        crypto.server_pubkey_bytes
+        + nonce
+        + ts_str.encode()
+        + request.method.encode()
+        + request.path.encode()
     )
 
-    parts = [request.method.encode() + request.path.encode()]
     # Work around flask deficiency: we can't use request.full_path above because it *adds* a `?`
     # even if there wasn't one in the original request.  So work around it by only appending if
     # there is a query string and, officially, don't accept `?` followed by an empty query string in
     # the auth request data (if you have no query string then don't append the ?).
     if len(request.query_string):
-        parts.append(b'?' + request.query_string)
-    parts.append(ts_str.encode())
-    if len(request.data):
-        parts.append(request.data)
+        to_verify = to_verify + b'?' + request.query_string
 
-    if hash_in != blake2b(
-        parts, digest_size=42, key=shared_key, salt=nonce, person=b'sogs.auth_header'
-    ):
+    if len(request.data):
+        to_verify = to_verify + blake2b(request.data, digest_size=64)
+
+    try:
+        pk.verify(to_verify, sig_in)
+    except BadSignatureError:
         abort_with_reason(
-            http.UNAUTHORIZED, "Invalid authentication: X-SOGS-Hash authentication failed"
+            http.UNAUTHORIZED, "Invalid authentication: X-SOGS-Signature verification failed"
         )
 
     user.touch()

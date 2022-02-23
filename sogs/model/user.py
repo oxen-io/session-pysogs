@@ -230,10 +230,30 @@ class User:
         app.logger.debug(f"{unbanned_by} removed global ban on {self}")
         self.banned = False
 
+    def verify(self, *, message: bytes, sig: bytes):
+        """verify signature signed by this session id
+        return True if the signature is valid otherwise return False
+        """
+        pk = crypto.xed25519_pubkey(bytes.fromhex(self.session_id[2:]))
+        return crypto.verify_sig_from_pk(message, sig, pk)
+
+    @property
+    def is_blinded(self):
+        """True if the user's session id is a derived key"""
+        return self.session_id[0:2] == '15'
+
     @property
     def system_user(self):
-        """True iff this is the special SOGS system user created for internal database tasks"""
+        """True if (and only if) this is the special SOGS system user
+        created for internal database tasks"""
         return self.session_id[0:2] == "ff" and self.session_id[2:] == crypto.server_pubkey_hex
+
+    @property
+    def derived_key(self):
+        """get the derived key for this user"""
+        if self.session_id[0:2] == '15':
+            return self.session_id
+        return crypto.compute_derived_id(self.session_id)
 
 
 class SystemUser(User):

@@ -2,6 +2,9 @@
 OK = 200
 CREATED = 201
 
+# 3xx codes:
+NOT_MODIFIED = 304
+
 # error status codes:
 BAD_REQUEST = 400
 UNAUTHORIZED = 401
