@@ -77,9 +77,9 @@ def parse_batch_req(r):
             abort(http.BAD_REQUEST)
         headers = r['headers']
 
-    has_body = r['method'] in ('POST', 'PUT')
-    if not has_body and r['method'] not in ('GET', 'DELETE'):
-        app.logger.warning(f"Bad batch request: invalid request method {r['method']}")
+    has_body = method in ('POST', 'PUT')
+    if not has_body and method not in ('GET', 'DELETE'):
+        app.logger.warning(f"Bad batch request: invalid request method {method}")
         abort(http.BAD_REQUEST)
 
     if not path.startswith('/'):
@@ -89,11 +89,11 @@ def parse_batch_req(r):
     n_bodies = sum(k in r for k in ('b64', 'json', 'bytes'))
     if has_body:
         if not n_bodies:
-            app.logger.warning(f"Bad batch request: {r['method']} requires one of json/b64/bytes")
+            app.logger.warning(f"Bad batch request: {method} requires one of json/b64/bytes")
             abort(http.BAD_REQUEST)
         elif n_bodies > 1:
             app.logger.warning(
-                f"Bad batch request: {r['method']} cannot have more than one of json/bytes/b64"
+                f"Bad batch request: {method} cannot have more than one of json/bytes/b64"
             )
             abort(http.BAD_REQUEST)
 
