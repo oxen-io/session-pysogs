@@ -3,7 +3,7 @@
 <h1> room directory </h1>
 <ul>
   {% for room in rooms %}
-  <li><a href="{{url_base}}/view/room/{{room.token}}">{{room.token}}</a></li>
+  <li><a href="/r/{{room.token}}">{{room.token}}</a></li>
   {% endfor %}
 </ul>
 
