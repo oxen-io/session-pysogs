@@ -55,7 +55,7 @@ def extract_rooms_or_global(req, admin=True):
 
         try:
             rooms = mroom.get_rooms_with_permission(
-                g.user, tokens=room_tokens, moderator=True, admin=admin
+                g.user, tokens=room_tokens, moderator=True, admin=True if admin else None
             )
         except Exception as e:
             # This is almost certainly a bad room token passed in:
