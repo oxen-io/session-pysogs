@@ -6,8 +6,9 @@ from ..hashing import blake2b
 
 from flask import request, abort, Response, g
 import time
+import nacl
 from nacl.signing import VerifyKey
-from nacl.exceptions import BadSignatureError
+import nacl.exceptions
 import nacl.bindings as salt
 import sqlalchemy.exc
 from functools import wraps
@@ -206,17 +207,25 @@ def handle_http_auth():
         )
     blinded_pk = pk[0] == 0x15
     pk = pk[1:]
+
     if not salt.crypto_core_ed25519_is_valid_point(pk):
         abort_with_reason(
             http.BAD_REQUEST,
-            "Invalid authentication: given X-SOGS-Signature is not a valid Ed25519 pubkey",
+            "Invalid authentication: given X-SOGS-Pubkey is not a valid Ed25519 pubkey",
         )
+
     pk = VerifyKey(pk)
     if blinded_pk:
         session_id = '15' + pk.encode().hex()
     else:
         # TODO: if "blinding required" config option is set then reject the request here
-        session_id = '05' + pk.to_curve25519_public_key().encode().hex()
+        try:
+            session_id = '05' + pk.to_curve25519_public_key().encode().hex()
+        except nacl.exceptions.RuntimeError:
+            abort_with_reason(
+                http.BAD_REQUEST,
+                "Invalid authentication: given X-SOGS-Pubkey is not a valid Ed25519 pubkey",
+            )
 
     try:
         nonce = utils.decode_hex_or_b64(nonce, 16)
@@ -283,7 +292,7 @@ def handle_http_auth():
 
     try:
         pk.verify(to_verify, sig_in)
-    except BadSignatureError:
+    except nacl.exceptions.BadSignatureError:
         abort_with_reason(
             http.UNAUTHORIZED, "Invalid authentication: X-SOGS-Signature verification failed"
         )
