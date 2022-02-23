@@ -6,6 +6,7 @@ import sogs.utils
 
 import json
 from nacl.signing import SigningKey
+import nacl.bindings as salt
 
 
 @app.get("/auth_test/whoami")
@@ -492,3 +493,49 @@ def test_auth_legacy(client, db, admin, user, room):
             'body': {'status_code': 200, 'banned_members': []},
         },
     ]
+
+
+def test_small_subgroups(client, db):
+    # Make some public keys with small subgroup components to make sure sodium rejects them (it
+    # does, everythwere that matters here).
+    a = SigningKey.generate()
+    B = server_pubkey
+    headers = x_sogs(a, B, 'GET', '/auth_test/whoami')
+
+    assert headers['X-SOGS-Pubkey'].startswith('00')
+    A = bytes.fromhex(headers['X-SOGS-Pubkey'][2:])
+
+    assert A == a.verify_key.encode()
+
+    if hasattr(salt, 'crypto_core_ed25519_is_valid_point'):
+        assert salt.crypto_core_ed25519_is_valid_point(A)
+
+    Abad = salt.crypto_core_ed25519_add(
+        A, bytes.fromhex('0000000000000000000000000000000000000000000000000000000000000000')
+    )
+
+    if hasattr(salt, 'crypto_core_ed25519_is_valid_point'):
+        assert not salt.crypto_core_ed25519_is_valid_point(Abad)
+
+    headers['X-SOGS-Pubkey'] = '00' + Abad.hex()
+
+    r = client.get("/auth_test/whoami", headers=headers)
+    assert r.status_code == 400
+    assert r.data == b'Invalid authentication: given X-SOGS-Pubkey is not a valid Ed25519 pubkey'
+
+    # Now try with a blinded id:
+    headers = x_sogs(a, B, 'GET', '/auth_test/whoami', blinded=True)
+    assert headers['X-SOGS-Pubkey'].startswith('15')
+    A = bytes.fromhex(headers['X-SOGS-Pubkey'][2:])
+
+    Abad = salt.crypto_core_ed25519_add(
+        A, bytes.fromhex('c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a')
+    )
+
+    if hasattr(salt, 'crypto_core_ed25519_is_valid_point'):
+        assert not salt.crypto_core_ed25519_is_valid_point(Abad)
+
+    headers['X-SOGS-Pubkey'] = '15' + Abad.hex()
+    r = client.get("/auth_test/whoami", headers=headers)
+    assert r.status_code == 400
+    assert r.data == b'Invalid authentication: given X-SOGS-Pubkey is not a valid Ed25519 pubkey'

@@ -2,6 +2,7 @@ from . import config
 
 import os
 
+import nacl
 from nacl.public import PrivateKey
 from nacl.signing import SigningKey, VerifyKey
 from nacl.encoding import Base64Encoder, HexEncoder
@@ -20,6 +21,10 @@ import hmac
 import functools
 
 import pyonionreq
+
+if [int(v) for v in nacl.__version__.split('.')] < [1, 4]:
+    raise ImportError("SOGS requires nacl v1.4.0+")
+
 
 # generate seed as needed
 if not os.path.exists(config.KEY_FILE):
