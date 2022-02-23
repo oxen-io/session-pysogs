@@ -27,6 +27,10 @@ def extract_rooms_or_global(req, admin=True):
     to).
     """
 
+    if not isinstance(req, dict):
+        app.logger.warning(f"Invalid request: expected a JSON object body, not {type(req)}")
+        abort(http.BAD_REQUEST)
+
     room_tokens, global_ = req.get('rooms'), req.get('global', False)
 
     if room_tokens and not isinstance(room_tokens, list):
