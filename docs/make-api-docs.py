@@ -1,17 +1,49 @@
+#!/usr/bin/env python3
+
 import sogs
 from sogs.web import app
 import inspect
 import re
 import os
+import argparse
+import sys
 
+parser = argparse.ArgumentParser()
+parser.add_argument(
+    "-L",
+    "--markdown-level",
+    type=int,
+    choices=[1, 2, 3, 4],
+    default=1,
+    help="Specify a heading level for the generated markdown; the default is 1, which means the "
+    "top-level headings start with a single `#`, sub-headings start with `##`, etc.  For example, "
+    "3 would start with `###`, sub-headings would be `####`, etc.",
+)
+parser.add_argument(
+    "-o",
+    "--output",
+    type=str,
+    help="Specify output file; specifing a - or omitting outputs to stdout",
+)
+parser.add_argument(
+    "-W",
+    "--overwrite",
+    action="store_true",
+    help="Allowing overwriting `-o` filename if it already exists",
+)
 
-heading_level = 1  # Make this configurable, for easier nesting inside another doc?
+args = parser.parse_args()
 
-h1 = '#' * heading_level
+out_file = False
+if args.output and args.output != '-':
+    if not args.overwrite and os.path.exists(args.output):
+        print(f"{args.output} already exists; remove it first or use --overwrite/-W to overwrite")
+        sys.exit(1)
+    out_file = True
+
+h1 = '#' * args.markdown_level
 h2 = '#' + h1
 h3 = '#' + h2
-
-print(f"{h1} Session Open Group Server API\n")
 
 # Path where we look for extra docs snippets to include for longer content (examples, etc.) that we
 # don't want to embed inside the routes/*.py files.  In here we look for:
@@ -29,14 +61,14 @@ print(f"{h1} Session Open Group Server API\n")
 #
 # In both cases subsections should be started with a single '#' -- we will prefix it with additional
 # '#' for the current header depth as appropriate.
-snippets = os.path.abspath(os.path.dirname(__file__) + '/../docs/snippets/')
+snippets = os.path.abspath(os.path.dirname(__file__) + '/snippets')
 
 
-def read_snippet(markdown, depth=heading_level):
+def read_snippet(markdown, depth=args.markdown_level):
     desc = snippets + '/' + markdown
     if os.path.exists(desc):
         with open(desc) as f:
-            return f.read().replace('\n#', f'\n{"#" * depth}') + "\n\n"
+            return re.sub(r'(?m)^#', f'{"#" * depth}', f.read()) + "\n\n"
     return None
 
 
@@ -71,7 +103,8 @@ for rule in sorted(app.url_map.iter_rules(), key=endpoint_sort_key):
     method = methods[0]
     if len(methods) > 1:
         app.logger.warning(
-            f"Endpoint {ep} ({rule.rule}) has unexpected multiple methods: {methods}; using {method}"
+            f"Endpoint {ep} ({rule.rule}) has unexpected multiple methods: {methods}"
+            f"; using {method}"
         )
 
     handler = app.view_functions[ep]
@@ -84,9 +117,10 @@ for rule in sorted(app.url_map.iter_rules(), key=endpoint_sort_key):
         doc = inspect.cleandoc(handler.__doc__)
 
     # Update header indent to whatever it should be given the nesting that is applied
-    doc.replace('\n#', f'\n{h3}')
+    doc = re.sub(r'(?m)^#', h3, doc)
 
-    url = re.sub(r'<[\w.]+:(\w+)>', r'❮\1❯', rule.rule)
+    # url = re.sub(r'<[\w.]+:(\w+)>', r'❮\1❯', rule.rule)
+    url = re.sub(r'<[\w.]+:(\w+)>', r'*⟪\1⟫*', rule.rule)
 
     blueprint, dot, name = ep.partition('.')
     if dot and blueprint in sections:
@@ -96,16 +130,38 @@ for rule in sorted(app.url_map.iter_rules(), key=endpoint_sort_key):
 
     s.append(f"{h2} {method} {url}\n\n")
 
-    # If we find this heading in the doc string then we put the parameters there; otherwise we put
-    # them at the end:
+    # If we find a URL Parameters heading already in the doc string then we just add the parameters
+    # under it:
     pre, params, doc = doc.partition(f'\n{h3} URL Parameters\n')
-    s.append(pre)
-    s.append("\n")
+    if not rule._converters:
+        if params:
+            s.append("\nNone.\n\n")
+        else:
+            s.append(pre)
 
-    if rule._converters:
-        s.append(f'\n{h3} URL Parameters\n\n')
+    else:
+        if params:
+            s.append(pre)
+        else:
+            # Otherwise we look for a heading starting with `Return` (e.g. Return values) and, if
+            # found, put it before that:
+            retpos = pre.find(f'\n{h3} Return')
+            if retpos != -1:
+                s.append(pre[:retpos])
+                doc = pre[retpos:]
+            else:
+                # Otherwise we'll just stick it at the end
+                s.append(pre)
+
+        s.append(f'\n\n{h3} URL Parameters\n\n')
         for arg in sorted(rule._converters.keys(), key=lambda arg: rule.rule.find(f':{arg}>')):
             converter = rule._converters[arg]
+
+            # If we have following doc that already contains this parameter already then skip it, so
+            # that you can override parameter descriptions in the docstring.
+            if doc and re.search(fr'(?m)^\s*- `{arg}`', doc):
+                continue
+
             s.append(f"- `{arg}`")
             argdoc = converter.__doc__
             if argdoc:
@@ -127,8 +183,6 @@ for rule in sorted(app.url_map.iter_rules(), key=endpoint_sort_key):
                     f"No documentation found for '{arg}' parameter ({type(converter)})"
                 )
                 s.append("\n\n")
-    elif params:
-        s.append("\nNone.\n\n")
 
     if doc:
         s.append(doc)
@@ -136,16 +190,13 @@ for rule in sorted(app.url_map.iter_rules(), key=endpoint_sort_key):
 
     more = read_snippet(f'{ep}.md', depth=3)
     if more:
-        app.logger.critical(f"wtfwtfwtfwtfwtfwtfwtfwtfwtf, {ep}")
         s.append(more)
-    else:
-        app.logger.critical(f"WTF, {snippets}{ep}")
-
 
     s.append("\n\n\n")
 
 
-print(section_list[-1])
+out = open(args.output, 'w') if out_file else sys.stdout
+
 if section_list[-1]:
     # We have some uncategorized entries, so load the .md for it
     other = read_snippet('uncategorized.md')
@@ -159,5 +210,10 @@ if section_list[-1]:
 
 for s in section_list:
     for x in s:
-        print(x, end='')
-    print("\n\n")
+        print(x, end='', file=out)
+    print("\n\n", file=out)
+
+if out_file:
+    out.close()
+
+app.logger.info("API doc created successfully!")

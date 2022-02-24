@@ -1,3 +1,3 @@
-# Rooms!
+# Rooms
 
-Rooms are great, OMG, Rooms are like **brooms** that answered nay to "the b or not the b".
+These endpoints are related to retrieving and setting properties of SOGS discussion rooms.

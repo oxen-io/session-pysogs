@@ -1,0 +1,3 @@
+site_name: SOGS API
+theme: nature
+markdown_extensions: [codehilite]
