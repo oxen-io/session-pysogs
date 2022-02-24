@@ -124,6 +124,36 @@ def require_mod(room, *, admin=False):
         )
 
 
+def accessible_required(f):
+    """Decorator for an endpoint that requires a user have accessible or read permission in the
+    given room.  The function must take a `room` argument by name, as is typically used with flask
+    endpoints with a `<Room:room>` argument."""
+
+    @wraps(f)
+    def required_accessible_wrapper(*args, room, **kwargs):
+        if not room.check_accessible(g.user):
+            abort(http.NOT_FOUND)
+        return f(*args, room=room, **kwargs)
+
+    return required_accessible_wrapper
+
+
+def read_required(f):
+    """Decorator for an endpoint that requires a user have read permission in the given room.  The
+    function must take a `room` argument by name, as is typically used with flask endpoints with a
+    `<Room:room>` argument."""
+
+    @wraps(f)
+    def required_read_wrapper(*args, room, **kwargs):
+        if not room.check_read(g.user):
+            abort_with_reason(
+                http.FORBIDDEN, "This endpoint requires room message 'read' permission"
+            )
+        return f(*args, room=room, **kwargs)
+
+    return required_read_wrapper
+
+
 def mod_required(f):
     """Decorator for an endpoint that requires a user that has moderator permission in the given
     room.  The function must take a `room` argument by name, as is typically used with flask

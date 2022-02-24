@@ -1,19 +1,35 @@
 # Migration code for upgrading from a 0.1.x SOGS database.  The database structure is completely
 # changed, and so this is technically more like an import than a migration.
 
-from . import config
-from . import db
-from . import utils
 import os
 import logging
 import time
-import coloredlogs
-
-logger = logging.getLogger(__name__)
-coloredlogs.install(milliseconds=True, isatty=True, logger=logger, level=config.LOG_LEVEL)
 
 
-def migrate01x(conn):
+def migrate(conn):
+    n_rooms = conn.execute("SELECT COUNT(*) FROM rooms").first()[0]
+
+    # Migration from a v0.1.x database:
+    if n_rooms > 0 or not os.path.exists("database.db"):
+        return False
+
+    logging.warning("No rooms found, but database.db exists; attempting migration")
+
+    try:
+        import_from_0_1_x(conn)
+    except Exception:
+        logging.critical(
+            "database.db exists but migration failed!  Please report this bug!\n\n"
+            "If no migration from 0.1.x is needed then rename or delete database.db to "
+            "start up with a fresh (new) database.\n\n"
+        )
+        raise
+    return True
+
+
+def import_from_0_1_x(conn):
+
+    from .. import config, db, utils
 
     # Do the entire import in one transaction so that if anything fails we leave the db empty (so
     # that retrying will import from scratch).
@@ -29,7 +45,7 @@ def migrate01x(conn):
         with db.sqlite_connect("database.db") as main_db:
             rooms = [(r[0], r[1]) for r in main_db.execute("SELECT id, name FROM main")]
 
-        logger.warning(f"{len(rooms)} rooms to import")
+        logging.warning(f"{len(rooms)} rooms to import")
 
         db.query(
             conn,
@@ -70,12 +86,12 @@ def migrate01x(conn):
         for room_token, room_name in rooms:
             room_db_path = f"rooms/{room_token}.db"
             if not os.path.exists(room_db_path):
-                logger.warning(
+                logging.warning(
                     f"Skipping room {room_token}: database {room_db_path} does not exist"
                 )
                 continue
 
-            logger.info(f"Importing room {room_token} -- {room_name}...")
+            logging.info(f"Importing room {room_token} -- {room_name}...")
 
             room_id = db.insert_and_get_pk(
                 conn,
@@ -252,9 +268,9 @@ def migrate01x(conn):
                     )
                     imported_msgs += 1
                     if imported_msgs % 5000 == 0:
-                        logger.info(f"- ... imported {imported_msgs}/{n_msgs} messages")
+                        logging.info(f"- ... imported {imported_msgs}/{n_msgs} messages")
 
-                logger.info(
+                logging.info(
                     f"- migrated {imported_msgs} messages, {dupe_dels} duplicate deletions ignored"
                 )
 
@@ -324,13 +340,13 @@ def migrate01x(conn):
                     try:
                         size = os.path.getsize(path)
                     except Exception as e:
-                        logger.warning(
+                        logging.warning(
                             f"Error accessing file {path} ({e}); skipping import of this upload"
                         )
                         continue
 
                     if timestamp > 10000000000:
-                        logger.warning(
+                        logging.warning(
                             f"- file {path} has nonsensical timestamp {timestamp}; "
                             "importing it with current time"
                         )
@@ -363,12 +379,12 @@ def migrate01x(conn):
                     imported_files += 1
 
                     if imported_files % 1000 == 0:
-                        logger.info(f"- ... imported {imported_files}/{n_files} files")
+                        logging.info(f"- ... imported {imported_files}/{n_files} files")
 
                 if imported_files > 0:
                     used_file_hacks = True
 
-                logger.info(f"- migrated {imported_files} files")
+                logging.info(f"- migrated {imported_files} files")
 
                 # There's also a potential room image, which is just stored on disk and not
                 # referenced in the database at all because why bother with proper structure when
@@ -415,9 +431,9 @@ def migrate01x(conn):
                     db.query(
                         conn, "UPDATE rooms SET image = :f WHERE id = :r", f=file_id, r=room_id
                     )
-                    logger.info("- migrated room image")
+                    logging.info("- migrated room image")
                 else:
-                    logger.info("- no room image")
+                    logging.info("- no room image")
 
                 # Banned users.  These are just dumped in a table called "block_list" with just a
                 # "public_key" TEXT field containing the session id.
@@ -509,13 +525,13 @@ def migrate01x(conn):
                         imported_active += 1
                     imported_activity += 1
                     if imported_activity % 5000 == 0:
-                        logger.info(
+                        logging.info(
                             "- ... imported {}/{} user activity records ({} active)".format(
                                 imported_activity, n_activity, imported_active
                             )
                         )
 
-                logger.warning(
+                logging.warning(
                     "Imported room {}: "
                     "{} messages, {} files, {} moderators, {} bans, {} users ({} active)".format(
                         room_token,
@@ -537,7 +553,7 @@ def migrate01x(conn):
         if not used_file_hacks:
             db.query(conn, "DROP TABLE file_id_hacks")
 
-    logger.warning(
+    logging.warning(
         "Import finished!  Imported {} messages/{} files in {} rooms".format(
             total_msgs, total_files, total_rooms
         )
@@ -546,4 +562,4 @@ def migrate01x(conn):
     try:
         os.rename("database.db", "old-database.db")
     except Exception as e:
-        logger.warning(f"Failed to rename database.db -> old-database.db: {e}")
+        logging.warning(f"Failed to rename database.db -> old-database.db: {e}")

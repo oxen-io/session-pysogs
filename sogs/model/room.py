@@ -46,6 +46,7 @@ class Room:
         info_updates - counter on room metadata that is automatically incremented whenever room
             metadata (name, description, image, etc.) changes for the room.
         default_read - True if default user permissions includes read permission
+        default_accessible - True if default user permissions include accessible permission
         default_write - True if default user permissions includes write permission
         default_upload - True if default user permissions includes file upload permission
     """
@@ -104,8 +105,8 @@ class Room:
                 'info_updates',
             )
         )
-        self._default_read, self._default_write, self._default_upload = (
-            bool(row[c]) for c in ('read', 'write', 'upload')
+        self._default_read, self._default_accessible, self._default_write, self._default_upload = (
+            bool(row[c]) for c in ('read', 'accessible', 'write', 'upload')
         )
 
         if (
@@ -311,6 +312,16 @@ class Room:
         return self._default_read
 
     @property
+    def default_accessible(self):
+        """
+        Returns True if this room has the publicly accessible (e.g. by a new user) permission set.
+        Note that the the accessible permission only applies when `read` is false: if a user has
+        read permission then they implicitly have accessibility permission even if this field is
+        false.
+        """
+        return self._default_accessible
+
+    @property
     def default_write(self):
         """Returns True if this room is publicly writable (e.g. by a new user)"""
         return self._default_write
@@ -327,6 +338,19 @@ class Room:
         if read != self._default_read:
             with db.transaction():
                 query("UPDATE rooms SET read = :read WHERE id = :r", r=self.id, read=read)
+                self._refresh(perms=True)
+
+    @default_accessible.setter
+    def default_accessible(self, accessible: bool):
+        """Sets the default accessible permission of the room"""
+
+        if accessible != self._default_accessible:
+            with db.transaction():
+                query(
+                    "UPDATE rooms SET accessible = :accessible WHERE id = :r",
+                    r=self.id,
+                    accessible=accessible,
+                )
                 self._refresh(perms=True)
 
     @default_write.setter
@@ -367,6 +391,7 @@ class Room:
         admin=False,
         moderator=False,
         read=False,
+        accessible=False,
         write=False,
         upload=False,
     ):
@@ -382,6 +407,9 @@ class Room:
         - admin -- if true then the user must have admin access to the room
         - moderator -- if true then the user must have moderator (or admin) access to the room
         - read -- if true then the user must have read access
+        - accessible -- if true then the user must have accessible access; note that this permission
+          is satisfied by *either* the `accessible` or `read` database flags (that is: read implies
+          accessible).
         - write -- if true then the user must have write access
         - upload -- if true then the user must have upload access; this should usually be combined
           with write=True.
@@ -392,9 +420,10 @@ class Room:
         """
 
         if user is None:
-            is_banned, can_read, can_write, can_upload, is_mod, is_admin = (
+            is_banned, can_read, can_access, can_write, can_upload, is_mod, is_admin = (
                 False,
                 bool(self.default_read),
+                bool(self.default_accessible),
                 bool(self.default_write),
                 bool(self.default_upload),
                 False,
@@ -404,7 +433,8 @@ class Room:
             if user.id not in self._perm_cache:
                 row = query(
                     """
-                    SELECT banned, read, write, upload, moderator, admin FROM user_permissions
+                    SELECT banned, read, accessible, write, upload, moderator, admin
+                    FROM user_permissions
                     WHERE room = :r AND "user" = :u
                     """,
                     r=self.id,
@@ -412,7 +442,15 @@ class Room:
                 ).first()
                 self._perm_cache[user.id] = [bool(c) for c in row]
 
-            is_banned, can_read, can_write, can_upload, is_mod, is_admin = self._perm_cache[user.id]
+            (
+                is_banned,
+                can_read,
+                can_access,
+                can_write,
+                can_upload,
+                is_mod,
+                is_admin,
+            ) = self._perm_cache[user.id]
 
         if is_admin:
             return True
@@ -424,6 +462,7 @@ class Room:
             return False
         return (
             not is_banned
+            and (not accessible or can_access or can_read)
             and (not read or can_read)
             and (not write or can_write)
             and (not upload or can_upload)
@@ -436,6 +475,9 @@ class Room:
 
     def check_read(self, user: Optional[User] = None):
         return self.check_permission(user, read=True)
+
+    def check_accessible(self, user: Optional[User] = None):
+        return self.check_permission(user, accessible=True)
 
     def check_write(self, user: Optional[User] = None):
         return self.check_permission(user, write=True)
@@ -1118,19 +1160,20 @@ class Room:
 
     def set_permissions(self, user: User, *, mod: User, **perms):
         """
-        Grants or removes read, write, and/or upload permissions to the given user in this room.
-        `mod` must have moderator access in the room.
+        Grants or removes read, accessible, write, and/or upload permissions to the given user in
+        this room.  `mod` must have moderator access in the room.
 
-        Permitted keyword args are: read, write, upload.  Each can be set to True, False, or None to
-        apply an explicit grant, explicit revocation, or return to room defaults, respectively.
-        (That is, None removes the override, if currently present, so that the user permission will
-        use the room default; the others set this user's permission to allowed/disallowed).
+        Permitted keyword args are: read, accessible, write, upload.  Each can be set to True,
+        False, or None to apply an explicit grant, explicit revocation, or return to room defaults,
+        respectively.  (That is, None removes the override, if currently present, so that the user
+        permission will use the room default; the others set this user's permission to
+        allowed/disallowed).
 
         If a permission key is omitted then it will not be changed at all if it already exists, and
         will be NULL if a new permission row is being created.
         """
 
-        perm_types = ('read', 'write', 'upload')
+        perm_types = ('read', 'accessible', 'write', 'upload')
 
         if any(k not in perm_types for k in perms.keys()):
             raise ValueError(f"Room.set_permissions: only {', '.join(perm_types)} may be specified")
@@ -1156,6 +1199,7 @@ class Room:
                 r=self.id,
                 u=user.id,
                 read=perms.get('read'),
+                accessible=perms.get('accessible'),
                 write=perms.get('write'),
                 upload=perms.get('upload'),
             )
@@ -1348,6 +1392,7 @@ def get_rooms_with_permission(
     *,
     tokens: Optional[Union[list, tuple]] = None,
     read: Optional[bool] = None,
+    accessible: Optional[bool] = None,
     write: Optional[bool] = None,
     upload: Optional[bool] = None,
     banned: Optional[bool] = None,
@@ -1363,7 +1408,7 @@ def get_rooms_with_permission(
             omitted, all rooms are returned.  Note that rooms are returned sorted by token, *not* in
             the order specified here; duplicates are not returned; nor are entries for non-existent
             tokens.
-    read/write/upload/banned/moderator/admin:
+    read/accessible/write/upload/banned/moderator/admin:
         Any of these that are specified as non-None must match the user's permissions for the room.
         For example `read=True, write=False` would return all rooms where the user has read-only
         access but not rooms in which the user has both or neither read and write permissions.
@@ -1387,6 +1432,8 @@ def get_rooms_with_permission(
         WHERE "user" = :u {'AND token IN :tokens' if tokens else ''}
             {'' if banned is None else ('AND' if banned else 'AND NOT') + ' perm.banned'}
             {'' if read is None else ('AND' if read else 'AND NOT') + ' perm.read'}
+            {'' if accessible is None else ('AND' if accessible else 'AND NOT') +
+                ' (perm.read OR perm.accessible)'}
             {'' if write is None else ('AND' if write else 'AND NOT') + ' perm.write'}
             {'' if upload is None else ('AND' if upload else 'AND NOT') + ' perm.upload'}
             {'' if moderator is None else ('AND' if moderator else 'AND NOT') + ' perm.moderator'}
@@ -1400,15 +1447,15 @@ def get_rooms_with_permission(
     ]
 
 
-def get_readable_rooms(user: Optional[User] = None):
+def get_accessible_rooms(user: Optional[User] = None):
     """
-    Get a list of rooms that a user can access; if user is None then return all publicly readable
+    Get a list of rooms that a user can access; if user is None then return all publicly accessible
     rooms.
     """
     if user is None:
-        result = query("SELECT * FROM rooms WHERE read ORDER BY token")
+        result = query("SELECT * FROM rooms WHERE (read OR accessible) ORDER BY token")
     else:
-        return get_rooms_with_permission(user, read=True, banned=False)
+        return get_rooms_with_permission(user, accessible=True, banned=False)
     return [Room(row) for row in result]
 
 
