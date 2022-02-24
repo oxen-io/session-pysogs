@@ -27,6 +27,10 @@ def extract_rooms_or_global(req, admin=True):
     to).
     """
 
+    if not isinstance(req, dict):
+        app.logger.warning(f"Invalid request: expected a JSON object body, not {type(req)}")
+        abort(http.BAD_REQUEST)
+
     room_tokens, global_ = req.get('rooms'), req.get('global', False)
 
     if room_tokens and not isinstance(room_tokens, list):
@@ -51,7 +55,7 @@ def extract_rooms_or_global(req, admin=True):
 
         try:
             rooms = mroom.get_rooms_with_permission(
-                g.user, tokens=room_tokens, moderator=True, admin=admin
+                g.user, tokens=room_tokens, moderator=True, admin=True if admin else None
             )
         except Exception as e:
             # This is almost certainly a bad room token passed in:
