@@ -37,7 +37,7 @@ def get_caps():
     return jsonify(res), res_code
 
 
-def parse_batch_req(r):
+def parse_batch_request(req):
     """
     Checks a batch request dict for the required fields:
 
@@ -56,26 +56,26 @@ def parse_batch_req(r):
     dict within the request for json bodies, and `body` will be the *bytes* data (i.e. decoded from
     base64, when using `b64`) for 'b64' or 'bytes' requests.
     """
-    if not isinstance(r, dict):
+    if not isinstance(req, dict):
         app.logger.warning("Invalid batch request: batch request is not a dict")
         abort(http.BAD_REQUEST)
-    if 'method' not in r:
+    if 'method' not in req:
         app.logger.warning("Invalid batch request: batch request has no method")
         abort(http.BAD_REQUEST)
-    if 'path' not in r:
+    if 'path' not in req:
         app.logger.warning("Invalid batch request: batch request has no path")
         abort(http.BAD_REQUEST)
 
-    method, path, headers, json, body = r['method'], r['path'], {}, None, None
+    method, path, headers, json, body = req['method'], req['path'], {}, None, None
 
-    if 'headers' in r:
-        if not isinstance(r['headers'], dict):
+    if 'headers' in req:
+        if not isinstance(req['headers'], dict):
             app.logger.warning("Bad batch request: 'headers' must be a dict")
             abort(http.BAD_REQUEST)
-        if any(not isinstance(k, str) or not isinstance(v, str) for k, v in r['headers'].items()):
+        if any(not isinstance(k, str) or not isinstance(v, str) for k, v in req['headers'].items()):
             app.logger.warning("Bad batch request: 'headers' must contain only str/str pairs")
             abort(http.BAD_REQUEST)
-        headers = r['headers']
+        headers = req['headers']
 
     has_body = method in ('POST', 'PUT')
     if not has_body and method not in ('GET', 'DELETE'):
@@ -86,7 +86,7 @@ def parse_batch_req(r):
         app.logger.warning(f"Bad batch request: path must start with /, got: [{path}]")
         abort(http.BAD_REQUEST)
 
-    n_bodies = sum(k in r for k in ('b64', 'json', 'bytes'))
+    n_bodies = sum(k in req for k in ('b64', 'json', 'bytes'))
     if has_body:
         if not n_bodies:
             app.logger.warning(f"Bad batch request: {method} requires one of json/b64/bytes")
@@ -97,20 +97,20 @@ def parse_batch_req(r):
             )
             abort(http.BAD_REQUEST)
 
-        if 'b64' in r:
+        if 'b64' in req:
             try:
-                body = utils.decode_base64(r['b64'])
+                body = utils.decode_base64(req['b64'])
             except Exception:
                 app.logger.warning("Bad batch request: b64 value is not valid base64")
-        elif 'bytes' in r:
-            body = r['bytes']
+        elif 'bytes' in req:
+            body = req['bytes']
             if not isinstance(body, bytes):
                 body = body.encode()
         else:
-            json = r['json']
+            json = req['json']
 
     elif n_bodies:
-        app.logger.warning(f"Bad batch request: {r['method']} cannot have a json/b64/bytes body")
+        app.logger.warning(f"Bad batch request: {req['method']} cannot have a json/b64/bytes body")
         abort(http.BAD_REQUEST)
 
     return method, path, headers, json, body
@@ -138,7 +138,7 @@ def batch(_sequential=False):
 
     # Expand this into a list first (rather than during iteration below) so that we abort everything
     # if any subrequest is invalid.
-    subreqs = [parse_batch_req(r) for r in subreqs]
+    subreqs = [parse_batch_request(r) for r in subreqs]
 
     response = []
     for method, path, headers, json, body in subreqs:
