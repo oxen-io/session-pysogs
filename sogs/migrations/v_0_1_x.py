@@ -51,7 +51,7 @@ def import_from_0_1_x(conn):
             conn,
             """
             CREATE TABLE IF NOT EXISTS room_import_hacks (
-                room INTEGER PRIMARY KEY NOT NULL REFERENCES rooms(id),
+                room INTEGER PRIMARY KEY NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
                 old_message_id_max INTEGER NOT NULL,
                 message_id_offset INTEGER NOT NULL
             )
@@ -61,7 +61,7 @@ def import_from_0_1_x(conn):
             conn,
             """
             CREATE TABLE IF NOT EXISTS file_id_hacks (
-                room INTEGER NOT NULL REFERENCES rooms(id),
+                room INTEGER NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
                 old_file_id INTEGER NOT NULL,
                 file INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
                 PRIMARY KEY(room, old_file_id)

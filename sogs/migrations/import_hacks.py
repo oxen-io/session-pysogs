@@ -17,6 +17,8 @@ def migrate(conn):
 
     from .. import db
 
+    changed = False
+
     if 'file_id_hacks' in db.metadata.tables:
         # If the table exists but is empty (i.e. because all the attachments expired) then we should
         # drop it.
@@ -24,16 +26,113 @@ def migrate(conn):
         if n_fid_hacks == 0:
             logging.warning("Dropping file_id_hacks old sogs import table (no longer required)")
             db.metadata.tables['file_id_hacks'].drop(db.engine)
+            changed = True
         else:
             logging.warning("Keeping file_id_hacks old sogs import table (still required)")
-            global HAVE_FILE_ID_HACKS
             db.HAVE_FILE_ID_HACKS = True
 
-    try:
+    if 'room_import_hacks' in db.metadata.tables:
         rows = conn.execute(
             "SELECT room, old_message_id_max, message_id_offset FROM room_import_hacks"
         )
         for (room, id_max, offset) in rows:
             db.ROOM_IMPORT_HACKS[room] = (id_max, offset)
-    except Exception:
-        pass
+
+    if not db.HAVE_FILE_ID_HACKS and 'room_import_hacks' not in db.metadata.tables:
+        return changed
+
+    # DB fix: the original import was missing a ON DELETE CASCADE on the rooms foreign key,
+    # which prevents imported room deletion.
+
+    if db.engine.name == 'sqlite':
+        # SQLite can't add a foreign key, so we have to rename, recreate entirely, and copy
+        # everything over.  Ew.
+        if db.HAVE_FILE_ID_HACKS:
+            need_fix = False
+            # Annoyingly, sqlalchemy doesn't pick up foreign key actions when reflecting
+            # sqlite (probably because sqlite doesn't enforce foreign keys by default), so
+            # we have to pragma query the info ourself:
+            for fk in conn.execute('PRAGMA foreign_key_list("file_id_hacks")'):
+                if fk['from'] == 'room' and fk['on_delete'] != 'CASCADE':
+                    need_fix = True
+            if need_fix:
+                logging.warning("Replacing file_id_hacks to add cascading foreign key")
+                conn.execute("ALTER TABLE file_id_hacks RENAME TO old_file_id_hacks")
+                conn.execute(
+                    """
+CREATE TABLE file_id_hacks (
+    room INTEGER NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+    old_file_id INTEGER NOT NULL,
+    file INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+    PRIMARY KEY(room, old_file_id)
+)
+                    """
+                )
+                conn.execute(
+                    """
+                    INSERT INTO file_id_hacks
+                    SELECT room, old_file_id, file FROM old_file_id_hacks
+                    """
+                )
+
+                changed = True
+
+        if 'room_import_hacks' in db.metadata.tables:
+            need_fix = False
+            # Annoyingly, sqlalchemy doesn't pick up foreign key actions when reflecting
+            # sqlite (probably because sqlite doesn't enforce foreign keys by default), so
+            # we have to pragma query the info ourself:
+            for fk in conn.execute('PRAGMA foreign_key_list("room_import_hacks")'):
+                if fk['from'] == 'room' and fk['on_delete'] != 'CASCADE':
+                    need_fix = True
+            if need_fix:
+                logging.warning("Replacing room_import_hacks to add cascading foreign key")
+                conn.execute("ALTER TABLE room_import_hacks RENAME TO old_room_import_hacks")
+                conn.execute(
+                    """
+CREATE TABLE room_import_hacks (
+    room INTEGER PRIMARY KEY NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+    old_message_id_max INTEGER NOT NULL,
+    message_id_offset INTEGER NOT NULL
+)
+                    """
+                )
+                conn.execute(
+                    """
+                    INSERT INTO room_import_hacks
+                    SELECT room, old_message_id_max, message_id_offset
+                        FROM old_room_import_hacks
+                    """
+                )
+
+                changed = True
+
+    else:  # postgresql
+        fix_fid = db.HAVE_FILE_ID_HACKS and any(
+            f.ondelete != 'CASCADE'
+            for f in db.metadata.tables['file_id_hacks'].c['room'].foreign_keys
+        )
+        fix_room = 'room_import_hacks' in db.metadata.tables and any(
+            f.ondelete != 'CASCADE'
+            for f in db.metadata.tables['room_import_hacks'].c['room'].foreign_keys
+        )
+        if fix_fid or fix_room:
+            if fix_fid:
+                conn.execute(
+                    """
+ALTER TABLE file_id_hacks DROP CONSTRAINT file_id_hacks_room_fkey;
+ALTER TABLE file_id_hacks ADD CONSTRAINT
+file_id_hacks_room_fkey FOREIGN KEY (room) REFERENCES rooms(id);
+                    """
+                )
+            if fix_room:
+                conn.execute(
+                    """
+ALTER TABLE room_import_hacks DROP CONSTRAINT room_import_hacks_room_fkey;
+ALTER TABLE room_import_hacks ADD CONSTRAINT
+room_import_hacks_room_fkey FOREIGN KEY (room) REFERENCES rooms(id);
+                    """
+                )
+            changed = True
+
+    return changed

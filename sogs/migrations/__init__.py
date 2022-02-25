@@ -30,11 +30,11 @@ def migrate(conn):
         new_tables,
         new_columns,
         message_details_deleter,
-        import_hacks,
         seqno_etc,
         message_views,
         user_perm_futures,
         room_accessible,
+        import_hacks,
     ):
         changes = False
         with db.transaction(conn):
