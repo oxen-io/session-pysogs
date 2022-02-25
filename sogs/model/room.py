@@ -609,9 +609,9 @@ class Room:
             msg = {x: row[x] for x in ('id', 'session_id', 'posted', 'seqno')}
             data = row['data']
             if data is None:
-                row['data'] = None
+                msg['data'] = None
             else:
-                row['data'] = utils.add_session_message_padding(data, row['data_size'])
+                msg['data'] = utils.add_session_message_padding(data, row['data_size'])
                 msg['signature'] = row['signature']
             if row['edited'] is not None:
                 msg['edited'] = row['edited']
