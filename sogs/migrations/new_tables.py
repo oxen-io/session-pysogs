@@ -34,7 +34,7 @@ CREATE TABLE inbox (
     sender INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     body BLOB NOT NULL,
     posted_at FLOAT DEFAULT ((julianday('now') - 2440587.5)*86400.0),
-    expiry FLOAT DEFAULT ((julianday('now') - 2440587.5 + 1.0)*86400.0) /* now + 24h */
+    expiry FLOAT DEFAULT ((julianday('now') - 2440587.5 + 15.0)*86400.0) /* now + 15 days */
 )
 """,
             """
