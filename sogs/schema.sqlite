@@ -358,4 +358,14 @@ CREATE TABLE user_request_nonces (
 );
 CREATE INDEX user_request_nonces_expiry ON user_request_nonces(expiry);
 
+CREATE TABLE inbox (
+    id INTEGER PRIMARY KEY,
+    recipient INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    sender INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    body BLOB NOT NULL,
+    posted_at FLOAT DEFAULT ((julianday('now') - 2440587.5)*86400.0),
+    expiry FLOAT DEFAULT ((julianday('now') - 2440587.5 + 15.0)*86400.0) /* now + 15 days */
+);
+CREATE INDEX inbox_recipient ON inbox(recipient);
+
 COMMIT;
