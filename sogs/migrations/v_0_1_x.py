@@ -27,6 +27,14 @@ def migrate(conn):
     return True
 
 
+def sqlite_connect_readonly(path):
+    import sqlite3
+
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, isolation_level=None)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
 def import_from_0_1_x(conn):
 
     from .. import config, db, utils
@@ -42,13 +50,12 @@ def import_from_0_1_x(conn):
         #        image_id TEXT -- entirely unused.
         #    )
 
-        with db.sqlite_connect("database.db") as main_db:
+        with sqlite_connect_readonly("database.db") as main_db:
             rooms = [(r[0], r[1]) for r in main_db.execute("SELECT id, name FROM main")]
 
         logging.warning(f"{len(rooms)} rooms to import")
 
         db.query(
-            conn,
             """
             CREATE TABLE IF NOT EXISTS room_import_hacks (
                 room INTEGER PRIMARY KEY NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
@@ -56,9 +63,9 @@ def import_from_0_1_x(conn):
                 message_id_offset INTEGER NOT NULL
             )
             """,
+            dbconn=conn,
         )
         db.query(
-            conn,
             """
             CREATE TABLE IF NOT EXISTS file_id_hacks (
                 room INTEGER NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
@@ -67,18 +74,19 @@ def import_from_0_1_x(conn):
                 PRIMARY KEY(room, old_file_id)
             )
             """,
+            dbconn=conn,
         )
 
         used_room_hacks, used_file_hacks = False, False
 
         def ins_user(session_id):
             return db.query(
-                conn,
                 """
                 INSERT INTO users (session_id, last_active) VALUES (:session_id, 0.0)
                 ON CONFLICT (session_id) DO NOTHING
                 """,
                 session_id=session_id,
+                dbconn=conn,
             )
 
         total_rooms, total_msgs, total_files = 0, 0, 0
@@ -94,14 +102,14 @@ def import_from_0_1_x(conn):
             logging.info(f"Importing room {room_token} -- {room_name}...")
 
             room_id = db.insert_and_get_pk(
-                conn,
                 "INSERT INTO rooms (token, name) VALUES (:token, :name)",
                 "id",
                 token=room_token,
                 name=room_name,
+                dbconn=conn,
             )
 
-            with db.sqlite_connect(room_db_path) as rconn:
+            with sqlite_connect_readonly(room_db_path) as rconn:
 
                 # Messages were stored in this:
                 #
@@ -138,13 +146,13 @@ def import_from_0_1_x(conn):
                 #      actually query messages in the room since id + message_id_offset.
                 #
                 # Deletions doesn't have the same complication because in the new database they use
-                # a monotonic updates field that we can make conform (for imported rows) to the
-                # imported deletion ids.
+                # a monotonic message_sequence field that we can make conform (for imported rows) to
+                # the imported deletion ids.
 
                 id_offset = db.query(
-                    conn, "SELECT COALESCE( MAX(id), 0 ) + 1 FROM messages"
+                    "SELECT COALESCE( MAX(id), 0 ) + 1 FROM messages", dbconn=conn
                 ).first()[0]
-                top_old_id, updated, imported_msgs = -1, 0, 0
+                top_old_id, seqno, imported_msgs = -1, 0, 0
 
                 n_msgs = rconn.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
 
@@ -204,7 +212,6 @@ def import_from_0_1_x(conn):
                             )
 
                         db.query(
-                            conn,
                             """
                             INSERT INTO messages
                                 (id, room, user, posted, data, data_size, signature)
@@ -218,6 +225,7 @@ def import_from_0_1_x(conn):
                             data=data,
                             data_size=data_size,
                             signature=signature,
+                            dbconn=conn,
                         )
 
                     elif (
@@ -230,13 +238,12 @@ def import_from_0_1_x(conn):
                     ):
 
                         # Deleted message; we still need to insert a tombstone for it, and copy the
-                        # deletion id as the "updated" field.  (We do this with a second query
+                        # deletion id as the "seqno" field.  (We do this with a second query
                         # because the first query is going to trigger an automatic update of the
                         # field).
 
-                        updated += 1
+                        seqno += 1
                         db.query(
-                            conn,
                             """
                             INSERT INTO messages (id, room, user, posted)
                             VALUES (:m, :r, (SELECT id FROM users WHERE session_id = :session_id),
@@ -246,6 +253,7 @@ def import_from_0_1_x(conn):
                             r=room_id,
                             session_id=session_id,
                             posted=timestamp,
+                            dbconn=conn,
                         )
 
                     else:
@@ -261,10 +269,10 @@ def import_from_0_1_x(conn):
                         )
 
                     db.query(
-                        conn,
-                        "UPDATE messages SET updated = :u WHERE id = :m",
-                        u=updated,
+                        "UPDATE messages SET seqno = :s WHERE id = :m",
+                        s=seqno,
                         m=id + id_offset,
+                        dbconn=conn,
                     )
                     imported_msgs += 1
                     if imported_msgs % 5000 == 0:
@@ -275,20 +283,20 @@ def import_from_0_1_x(conn):
                 )
 
                 # Old SOGS has a bug where it inserts duplicate deletion tombstones (see above), but
-                # this means that our updated count might not be large enough for existing Session
+                # this means that our seqno count might not be large enough for existing Session
                 # clients to not break: they will be fetching deletion ids > X, but if we have 100
                 # duplicates, the room's update counter would be X-100 and so existing clients
                 # wouldn't actually fetch any new deletions until the counter catches up.  Fix that
-                # up by incrementing the updates counter if necessary.
+                # up by incrementing the message_sequence counter if necessary.
                 top_del_id = rconn.execute("SELECT MAX(id) FROM deleted_messages").fetchone()[0]
                 if top_del_id is None:
                     top_del_id = 0
 
                 db.query(
-                    conn,
-                    "UPDATE rooms SET updates = :updates WHERE id = :r",
-                    updates=max(updated, top_del_id),
+                    "UPDATE rooms SET message_sequence = :ms WHERE id = :r",
+                    ms=max(seqno, top_del_id),
                     r=room_id,
+                    dbconn=conn,
                 )
 
                 # If we have to offset rowids then make sure the hack table exists and insert our
@@ -296,7 +304,6 @@ def import_from_0_1_x(conn):
                 if id_offset != 0:
                     used_room_hacks = True
                     db.query(
-                        conn,
                         """
                         INSERT INTO room_import_hacks (room, old_message_id_max, message_id_offset)
                         VALUES (:r, :old_max, :offset)
@@ -304,6 +311,7 @@ def import_from_0_1_x(conn):
                         r=room_id,
                         old_max=top_old_id,
                         offset=id_offset,
+                        dbconn=conn,
                     )
 
                 # Files were stored in:
@@ -353,7 +361,6 @@ def import_from_0_1_x(conn):
                         timestamp = time.time()
 
                     new_id = db.insert_and_get_pk(
-                        conn,
                         """
                         INSERT INTO files (room, size, uploaded, expiry, path)
                         VALUES (:r, :size, :uploaded, :expiry, :path)
@@ -364,10 +371,10 @@ def import_from_0_1_x(conn):
                         uploaded=timestamp,
                         expiry=timestamp + 86400 * config.UPLOAD_DEFAULT_EXPIRY_DAYS,
                         path=path,
+                        dbconn=conn,
                     )
 
                     db.query(
-                        conn,
                         """
                         INSERT INTO file_id_hacks (room, old_file_id, file)
                         VALUES (:r, :old, :new)
@@ -375,6 +382,7 @@ def import_from_0_1_x(conn):
                         r=room_id,
                         old=file_id,
                         new=new_id,
+                        dbconn=conn,
                     )
                     imported_files += 1
 
@@ -410,15 +418,16 @@ def import_from_0_1_x(conn):
                     os.makedirs(files_dir, exist_ok=True)
 
                     file_id = db.insert_and_get_pk(
-                        conn,
                         """
                         INSERT INTO files (room, size, uploaded, expiry, path)
                         VALUES (:r, :size, :uploaded, NULL, :path)
                         """,
+                        "id",
                         r=room_id,
                         size=os.path.getsize(room_image_path),
                         uploaded=os.path.getmtime(room_image_path),
                         path='tmp',
+                        dbconn=conn,
                     )
 
                     new_path = f"uploads/{room_token}/{file_id}_(imported_room_image)"
@@ -426,10 +435,16 @@ def import_from_0_1_x(conn):
                         os.remove(new_path)
                     os.link(room_image_path, new_path)
                     db.query(
-                        conn, "UPDATE files SET path = :p WHERE id = :f", p=new_path, f=file_id
+                        "UPDATE files SET path = :p WHERE id = :f",
+                        p=new_path,
+                        f=file_id,
+                        dbconn=conn,
                     )
                     db.query(
-                        conn, "UPDATE rooms SET image = :f WHERE id = :r", f=file_id, r=room_id
+                        "UPDATE rooms SET image = :f WHERE id = :r",
+                        f=file_id,
+                        r=room_id,
+                        dbconn=conn,
                     )
                     logging.info("- migrated room image")
                 else:
@@ -442,7 +457,6 @@ def import_from_0_1_x(conn):
                 for (session_id,) in rconn.execute("SELECT public_key FROM block_list"):
                     ins_user(session_id)
                     db.query(
-                        conn,
                         """
                         INSERT INTO user_permission_overrides (room, user, banned)
                             VALUES (:r, (SELECT id FROM users WHERE session_id = :session_id), TRUE)
@@ -450,6 +464,7 @@ def import_from_0_1_x(conn):
                         """,
                         r=room_id,
                         session_id=session_id,
+                        dbconn=conn,
                     )
                     imported_bans += 1
 
@@ -461,7 +476,6 @@ def import_from_0_1_x(conn):
                 for (session_id,) in rconn.execute("SELECT public_key from moderators"):
                     ins_user(session_id)
                     db.query(
-                        conn,
                         """
                         INSERT INTO user_permission_overrides
                             (room, user, read, write, upload, moderator, admin)
@@ -472,6 +486,7 @@ def import_from_0_1_x(conn):
                         """,
                         r=room_id,
                         session_id=session_id,
+                        dbconn=conn,
                     )
                     imported_mods += 1
 
@@ -497,7 +512,6 @@ def import_from_0_1_x(conn):
 
                     ins_user(session_id)
                     db.query(
-                        conn,
                         """
                         INSERT INTO room_users (room, user, last_active)
                             VALUES (:r, (SELECT id FROM users WHERE session_id = :session_id),
@@ -509,9 +523,9 @@ def import_from_0_1_x(conn):
                         r=room_id,
                         session_id=session_id,
                         active=last_active,
+                        dbconn=conn,
                     )
                     db.query(
-                        conn,
                         """
                         UPDATE users
                         SET last_active = :active
@@ -519,6 +533,7 @@ def import_from_0_1_x(conn):
                         """,
                         active=last_active,
                         session_id=session_id,
+                        dbconn=conn,
                     )
 
                     if last_active >= active_cutoff:
@@ -549,9 +564,9 @@ def import_from_0_1_x(conn):
                 total_rooms += 1
 
         if not used_room_hacks:
-            db.query(conn, "DROP TABLE room_import_hacks")
+            db.query("DROP TABLE room_import_hacks", dbconn=conn)
         if not used_file_hacks:
-            db.query(conn, "DROP TABLE file_id_hacks")
+            db.query("DROP TABLE file_id_hacks", dbconn=conn)
 
     logging.warning(
         "Import finished!  Imported {} messages/{} files in {} rooms".format(
