@@ -22,10 +22,6 @@ def migrate(conn):
     if 'seqno' in db.metadata.tables['messages'].c:
         return False
 
-    logging.warning("Applying message_sequence renames")
-    conn.execute("ALTER TABLE rooms RENAME COLUMN updates TO message_sequence")
-    conn.execute("ALTER TABLE messages RENAME COLUMN updated TO seqno")
-
     # We can't insert the required pinned_messages because we don't have the pinned_by user, but
     # that isn't a big deal since we didn't have any endpoints for pinned messsages before this
     # anyway, so we just recreate the whole thing (along with triggers which we also need to
@@ -179,5 +175,16 @@ FROM
         (users.id = user_permission_overrides."user" AND rooms.id = user_permission_overrides.room);
 """  # noqa: E501
         )
+
+    logging.warning("Applying message_sequence renames")
+    conn.execute("ALTER TABLE rooms RENAME COLUMN updates TO message_sequence")
+
+    # The message_views migration will create these for us, and we need to drop them because:
+    # 1) postgresql doesn't rename the view's output columns to match the new table column
+    # 2) sqlite breaks if attempting the rename a column that is referenced in a view-of-a-view
+    conn.execute("DROP VIEW message_metadata")
+    conn.execute("DROP VIEW message_details")
+
+    conn.execute("ALTER TABLE messages RENAME COLUMN updated TO seqno")
 
     return True
