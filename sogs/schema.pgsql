@@ -195,7 +195,7 @@ EXECUTE PROCEDURE trigger_message_details_deleter();
 -- View of `messages` that is useful for manually inspecting table contents by only returning the
 -- length (rather than raw bytes) for data/signature.
 CREATE VIEW message_metadata AS
-SELECT id, room, "user", session_id, posted, edited, seqno, filtered, whisper_to,
+SELECT id, room, "user", session_id, posted, edited, seqno, filtered, whisper_to, whisper_mods,
         length(data) AS data_unpadded, data_size, length(signature) as signature_length
     FROM message_details;
 

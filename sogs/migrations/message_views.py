@@ -5,7 +5,8 @@ def migrate(conn):
     from .. import db
 
     if 'message_metadata' in db.metadata.tables and all(
-        x in db.metadata.tables['message_metadata'].c for x in ('whisper_to', 'filtered', 'seqno')
+        x in db.metadata.tables['message_metadata'].c
+        for x in ('whisper_to', 'whisper_mods', 'filtered', 'seqno')
     ):
         return False
 
@@ -37,7 +38,7 @@ END
         conn.execute(
             """
 CREATE VIEW message_metadata AS
-SELECT id, room, "user", session_id, posted, edited, seqno, filtered, whisper_to,
+SELECT id, room, "user", session_id, posted, edited, seqno, filtered, whisper_to, whisper_mods,
         length(data) AS data_unpadded, data_size, length(signature) as signature_length
     FROM message_details
 """
@@ -72,7 +73,7 @@ EXECUTE PROCEDURE trigger_message_details_deleter();
 -- View of `messages` that is useful for manually inspecting table contents by only returning the
 -- length (rather than raw bytes) for data/signature.
 CREATE VIEW message_metadata AS
-SELECT id, room, "user", session_id, posted, edited, seqno, filtered, whisper_to,
+SELECT id, room, "user", session_id, posted, edited, seqno, filtered, whisper_to, whisper_mods,
         length(data) AS data_unpadded, data_size, length(signature) as signature_length
     FROM message_details;
             """
