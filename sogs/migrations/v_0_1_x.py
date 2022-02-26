@@ -54,9 +54,9 @@ def import_from_0_1_x(conn):
     db.query(
         """
         CREATE TABLE IF NOT EXISTS room_import_hacks (
-            room INTEGER PRIMARY KEY NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
-            old_message_id_max INTEGER NOT NULL,
-            message_id_offset INTEGER NOT NULL
+            room BIGINT PRIMARY KEY NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+            old_message_id_max BIGINT NOT NULL,
+            message_id_offset BIGINT NOT NULL
         )
         """,
         dbconn=conn,
@@ -64,9 +64,9 @@ def import_from_0_1_x(conn):
     db.query(
         """
         CREATE TABLE IF NOT EXISTS file_id_hacks (
-            room INTEGER NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
-            old_file_id INTEGER NOT NULL,
-            file INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+            room BIGINT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+            old_file_id BIGINT NOT NULL,
+            file BIGINT NOT NULL REFERENCES files(id) ON DELETE CASCADE,
             PRIMARY KEY(room, old_file_id)
         )
         """,
@@ -76,23 +76,23 @@ def import_from_0_1_x(conn):
     used_room_hacks, used_file_hacks = False, False
 
     def ins_user(session_id):
-        return db.query(
-            """
-            INSERT INTO users (session_id, last_active) VALUES (:session_id, 0.0)
-            ON CONFLICT (session_id) DO NOTHING
-            """,
-            session_id=session_id,
+        if not db.query(
+            "SELECT COUNT(*) FROM users WHERE session_id = :session_id",
             dbconn=conn,
-        )
+            session_id=session_id,
+        ).first()[0]:
+            db.query(
+                "INSERT INTO users (session_id, last_active) VALUES (:session_id, 0.0)",
+                session_id=session_id,
+                dbconn=conn,
+            )
 
     total_rooms, total_msgs, total_files = 0, 0, 0
 
     for room_token, room_name in rooms:
         room_db_path = f"rooms/{room_token}.db"
         if not os.path.exists(room_db_path):
-            logging.warning(
-                f"Skipping room {room_token}: database {room_db_path} does not exist"
-            )
+            logging.warning(f"Skipping room {room_token}: database {room_db_path} does not exist")
             continue
 
         logging.info(f"Importing room {room_token} -- {room_name}...")
@@ -210,7 +210,7 @@ def import_from_0_1_x(conn):
                     db.query(
                         """
                         INSERT INTO messages
-                            (id, room, user, posted, data, data_size, signature)
+                            (id, room, "user", posted, data, data_size, signature)
                         VALUES (:m, :r, (SELECT id FROM users WHERE session_id = :session_id),
                             :posted, :data, :data_size, :signature)
                         """,
@@ -241,7 +241,7 @@ def import_from_0_1_x(conn):
                     seqno += 1
                     db.query(
                         """
-                        INSERT INTO messages (id, room, user, posted)
+                        INSERT INTO messages (id, room, "user", posted)
                         VALUES (:m, :r, (SELECT id FROM users WHERE session_id = :session_id),
                             :posted)
                         """,
@@ -431,16 +431,10 @@ def import_from_0_1_x(conn):
                     os.remove(new_path)
                 os.link(room_image_path, new_path)
                 db.query(
-                    "UPDATE files SET path = :p WHERE id = :f",
-                    p=new_path,
-                    f=file_id,
-                    dbconn=conn,
+                    "UPDATE files SET path = :p WHERE id = :f", p=new_path, f=file_id, dbconn=conn
                 )
                 db.query(
-                    "UPDATE rooms SET image = :f WHERE id = :r",
-                    f=file_id,
-                    r=room_id,
-                    dbconn=conn,
+                    "UPDATE rooms SET image = :f WHERE id = :r", f=file_id, r=room_id, dbconn=conn
                 )
                 logging.info("- migrated room image")
             else:
@@ -454,9 +448,9 @@ def import_from_0_1_x(conn):
                 ins_user(session_id)
                 db.query(
                     """
-                    INSERT INTO user_permission_overrides (room, user, banned)
+                    INSERT INTO user_permission_overrides (room, "user", banned)
                         VALUES (:r, (SELECT id FROM users WHERE session_id = :session_id), TRUE)
-                    ON CONFLICT (room, user) DO UPDATE SET banned = TRUE
+                    ON CONFLICT (room, "user") DO UPDATE SET banned = TRUE
                     """,
                     r=room_id,
                     session_id=session_id,
@@ -474,10 +468,10 @@ def import_from_0_1_x(conn):
                 db.query(
                     """
                     INSERT INTO user_permission_overrides
-                        (room, user, read, write, upload, moderator, admin)
+                        (room, "user", read, write, upload, moderator, admin)
                     VALUES (:r, (SELECT id FROM users WHERE session_id = :session_id),
                         TRUE, TRUE, TRUE, TRUE, TRUE)
-                    ON CONFLICT (room, user) DO UPDATE SET banned = FALSE,
+                    ON CONFLICT (room, "user") DO UPDATE SET banned = FALSE,
                         read = TRUE, write = TRUE, upload = TRUE, moderator = TRUE, admin = TRUE
                     """,
                     r=room_id,
@@ -509,12 +503,12 @@ def import_from_0_1_x(conn):
                 ins_user(session_id)
                 db.query(
                     """
-                    INSERT INTO room_users (room, user, last_active)
+                    INSERT INTO room_users (room, "user", last_active)
                         VALUES (:r, (SELECT id FROM users WHERE session_id = :session_id),
                             :active)
-                    ON CONFLICT (room, user) DO UPDATE
+                    ON CONFLICT (room, "user") DO UPDATE
                         SET last_active = excluded.last_active
-                        WHERE excluded.last_active > last_active
+                        WHERE excluded.last_active > room_users.last_active
                     """,
                     r=room_id,
                     session_id=session_id,
