@@ -31,6 +31,8 @@ done
 
 first=1
 
+fixed_updates_count=
+
 tags=("$@" "$(git rev-parse HEAD)")
 for tag in "${tags[@]}"; do
     echo "Upgrading to $tag..."
@@ -56,4 +58,18 @@ for tag in "${tags[@]}"; do
     fi
 
     python3 -msogs "${args[@]}"
+
+    if [ -z "$fixed_over_updates" ]; then
+        # 0.2.0 had a bug in one of the room update triggers that would unnecessarily update
+        # `message_sequence` (then named `updates`) on metadata updates, which the import triggered
+        # when setting the image value.  This was fixed before v0.3.0, but if we are testing an
+        # import via such a problematic version then we need to undo the increment so that the final
+        # message_sequence value remains comparable to a version that imported directly into a newer
+        # release.
+        if sed -ne '/^CREATE TRIGGER room_metadata_update/,/^END;/p' sogs/schema.sql* \
+            | grep -q 'SET updates = updates + 1'; then
+            sqlite3 sogs.db 'UPDATE rooms SET updates = updates - 1 WHERE image IS NOT NULL'
+        fi
+        fixed_updates_count=1
+    fi
 done
