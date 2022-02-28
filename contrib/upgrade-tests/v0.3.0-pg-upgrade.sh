@@ -16,7 +16,7 @@ set -o errexit
 
 # Extract the SOGS 0.3.0 postgresql test database:
 if ! [ -f test-sogs-pg-f6dd80c04b.tar.xz ]; then
-    curl -sSOL https://oxen.rocks/test-sogs-pg-f6dd80c04b.tar.xz
+    curl -sSOL https://oxen.rocks/sogs-assets/test-sogs-pg-f6dd80c04b.tar.xz
 fi
 
 tar xf test-sogs-pg-f6dd80c04b.tar.xz

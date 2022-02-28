@@ -16,7 +16,7 @@ set -o errexit
 
 # Extract the SOGS 0.2.0 test database:
 if ! [ -f test-sogs-0-2-0.tar.xz ]; then
-    curl -sSOL https://oxen.rocks/test-sogs-0-2-0.tar.xz
+    curl -sSOL https://oxen.rocks/sogs-assets/test-sogs-0-2-0.tar.xz
 fi
 
 tar xf test-sogs-0-2-0.tar.xz

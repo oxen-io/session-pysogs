@@ -18,7 +18,7 @@ done
 
 # Extract the SOGS 0.1.10 test database:
 if ! [ -f test-sogs-0-1-10.tar.xz ]; then
-    curl -sSOL https://oxen.rocks/test-sogs-0-1-10.tar.xz
+    curl -sSOL https://oxen.rocks/sogs-assets/test-sogs-0-1-10.tar.xz
 fi
 
 tar xf test-sogs-0-1-10.tar.xz
