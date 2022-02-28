@@ -33,3 +33,34 @@ if [ -n "$SOGS_PGSQL" ]; then
 else
     rm -f sogs.db{,-shm,-wal}
 fi
+
+for tag in "$@"; do
+    if ! git rev-parse "$tag" >/dev/null; then
+        echo "'$tag' doesn't look like a valid known git revision or tag!"
+        exit 1
+    fi
+done
+
+
+do_upgrades() {
+    tags=("$@" "$(git rev-parse HEAD)")
+    for tag in "${tags[@]}"; do
+        echo "Upgrading to $tag..."
+        git -c advice.detachedHead=false checkout "$tag"
+
+        args=("-L")
+
+        if [ -n "$first" ]; then
+            first=
+
+            # In 0.2.0 and up until close to 0.3.0, just running any command-line commands will do the
+            # database import and/or upgrade.  Starting in 0.3.0 you have to specify --initialize to make
+            # this happen.
+            if [ -e sogs/__main__.py ] && grep -q '^ *"--initialize",$' sogs/__main__.py; then
+                args+=("--initialize")
+            fi
+        fi
+
+        python3 -msogs "${args[@]}"
+    done
+}
