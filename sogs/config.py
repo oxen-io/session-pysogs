@@ -36,6 +36,16 @@ REQUIRE_BLIND_KEYS = False
 TEMPLATE_PATH = 'templates'
 STATIC_PATH = 'static'
 
+# Will be true if we're running as a uwsgi app, false otherwise; used where we need to do things
+# only in one case or another (e.g. database initialization only via app mode).
+RUNNING_AS_APP = False
+try:
+    import uwsgi  # noqa: F401
+
+    RUNNING_AS_APP = True
+except ImportError:
+    pass
+
 
 def load_config():
     if 'SOGS_CONFIG' in os.environ:
@@ -60,13 +70,18 @@ def load_config():
     if 'log' in cp.sections() and 'level' in cp['log']:
         logger.setLevel(cp['log']['level'])
 
-    path_exists = lambda path: not path or os.path.exists(path)
-    val_or_none = lambda path: path if path else None
+    def path_exists(path):
+        return not path or os.path.exists(path)
+
+    def val_or_none(v):
+        return v or None
 
     truthy = ('y', 'yes', 'Y', 'Yes', 'true', 'True', 'on', 'On', '1')
     falsey = ('n', 'no', 'N', 'No', 'false', 'False', 'off', 'Off', '0')
     booly = truthy + falsey
-    bool_opt = lambda name: (name, lambda x: x in booly, lambda x: x in truthy)
+
+    def bool_opt(name):
+        return (name, lambda x: x in booly, lambda x: x in truthy)
 
     # Map of: section => { param => ('GLOBAL', test lambda, value lambda) }
     # global is the string name of the global variable to set

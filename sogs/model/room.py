@@ -606,9 +606,13 @@ class Room:
             user=user.id if user else None,
             limit=limit,
         ):
-            data = utils.add_session_message_padding(row['data'], row['data_size'])
-            msg = {x: row[x] for x in ('id', 'session_id', 'posted', 'seqno', 'signature')}
-            msg['data'] = data
+            msg = {x: row[x] for x in ('id', 'session_id', 'posted', 'seqno')}
+            data = row['data']
+            if data is None:
+                msg['data'] = None
+            else:
+                msg['data'] = utils.add_session_message_padding(data, row['data_size'])
+                msg['signature'] = row['signature']
             if row['edited'] is not None:
                 msg['edited'] = row['edited']
             if row['whisper_to'] is not None or row['whisper_mods']:

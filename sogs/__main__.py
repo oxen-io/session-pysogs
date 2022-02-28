@@ -25,6 +25,9 @@ Examples:
      # List room info:
     python3 -msogs -L
 
+A sogs.ini will be loaded from the current directory, if one exists.  You can override this by
+specifying a path to the config file to load in the SOGS_CONFIG environment variable.
+
 """,  # noqa: E501
     formatter_class=RawDescriptionHelpFormatter,
 )
@@ -88,8 +91,28 @@ ap.add_argument(
 ap.add_argument(
     "--yes", action='store_true', help="Don't prompt for confirmation for some commands, just do it"
 )
+ap.add_argument(
+    "--initialize",
+    action='store_true',
+    help="Initialize database and private key if they do not exist; advanced use only.  Before"
+    " trying this, make sure the correct sogs.ini config file is being imported via the SOGS_CONFIG"
+    " environment variable.",
+)
 
 args = ap.parse_args()
+
+
+try:
+    if args.initialize:
+        crypto.persist_privkey()
+    db.init_engine(sogs_create=args.initialize)
+except Exception as e:
+    print(
+        f"\nSOGS initialization failed: {e}.\n\n"
+        "Perhaps you need to specify the --initialize argument or specify a SOGS_CONFIG path?\n\n"
+        "Try --help for information.\n"
+    )
+    sys.exit(1)
 
 
 web.appdb = db.get_conn()

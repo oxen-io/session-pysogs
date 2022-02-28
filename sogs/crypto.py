@@ -26,13 +26,35 @@ if [int(v) for v in nacl.__version__.split('.')] < [1, 4]:
     raise ImportError("SOGS requires nacl v1.4.0+")
 
 
-# generate seed as needed
-if not os.path.exists(config.KEY_FILE):
-    with open(os.open(config.KEY_FILE, os.O_CREAT | os.O_WRONLY, 0o400), 'wb') as f:
-        f.write(PrivateKey.generate().encode())
+def persist_privkey():
+    """
+    Writes the current private key to disk if it is ephemeral.  This is done automatically when a
+    private key is generated in uwsgi application mode; for other interfaces it needs to be called
+    manually if the key should be persisted.
 
-with open(config.KEY_FILE, 'rb') as f:
-    _privkey = PrivateKey(f.read())
+    If the key was loaded from disk originally then this does nothing.
+    """
+    global ephemeral_privkey
+    if ephemeral_privkey:
+        with open(os.open(config.KEY_FILE, os.O_CREAT | os.O_WRONLY, 0o400), 'wb') as f:
+            f.write(_privkey.encode())
+        ephemeral_privkey = False
+
+
+ephemeral_privkey = True
+
+# generate seed as needed
+if os.path.exists(config.KEY_FILE):
+    with open(config.KEY_FILE, 'rb') as f:
+        _privkey = PrivateKey(f.read())
+    ephemeral_privkey = False
+else:
+    _privkey = PrivateKey.generate()
+
+    # Only save the key if we're running under uswgi to avoid leaving key_ed25519 files all over the
+    # place wherever sogs is imported.
+    if config.RUNNING_AS_APP:
+        persist_privkey()
 
 _privkey_bytes = _privkey.encode()
 

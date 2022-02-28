@@ -388,7 +388,7 @@ def test_polling(client, room, user, user2, mod, admin, global_mod, global_admin
         "write": True,
         "upload": True,
     }
-    defs = {'default_' + x: True for x in ('read', 'write', 'upload')}
+    defs = {'default_' + x: True for x in ('read', 'accessible', 'write', 'upload')}
 
     r = sogs_get(client, f"/room/test-room/pollInfo/{info_up}", user)
     assert r.status_code == 200

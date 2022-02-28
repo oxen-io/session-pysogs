@@ -13,7 +13,6 @@ def migrate(conn):
 
     conn.execute("ALTER TABLE rooms ADD COLUMN accessible BOOLEAN NOT NULL DEFAULT TRUE")
     conn.execute("ALTER TABLE user_permission_overrides ADD COLUMN accessible BOOLEAN")
-    conn.execute("DROP TRIGGER IF EXISTS user_perms_empty_cleanup")
     conn.execute("DROP VIEW IF EXISTS user_permissions")
 
     sqlite = db.engine.name == "sqlite"
@@ -48,6 +47,7 @@ FROM
 """  # noqa E501
     )
     if sqlite:
+        conn.execute("DROP TRIGGER IF EXISTS user_perms_empty_cleanup")
         conn.execute(
             """
 CREATE TRIGGER user_perms_empty_cleanup AFTER UPDATE ON user_permission_overrides
@@ -62,6 +62,8 @@ END
     else:
         conn.execute(
             """
+DROP TRIGGER IF EXISTS user_perms_empty_cleanup ON user_permission_overrides;
+
 CREATE TRIGGER user_perms_empty_cleanup AFTER UPDATE ON user_permission_overrides
 FOR EACH ROW WHEN (NOT (NEW.banned OR NEW.moderator OR NEW.admin)
     AND COALESCE(NEW.accessible, NEW.read, NEW.write, NEW.upload) IS NULL)

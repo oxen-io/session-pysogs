@@ -8,6 +8,11 @@ from werkzeug.routing import BaseConverter, ValidationError
 
 
 class RoomTokenConverter(BaseConverter):
+    """
+    A room token name consisting of `a`-`z`, `A`-`Z`, `0`-`9`, `_`, and `-` characters.
+    Max length 64.
+    """
+
     regex = r"[\w-]{1,64}"
 
     def to_python(self, value):
@@ -21,7 +26,9 @@ class RoomTokenConverter(BaseConverter):
 
 
 class AnySessionIDConverter(BaseConverter):
-    """url converter that accepts any kind of session id"""
+    """
+    A 66-hex-character Session ID (`05...`) or blinded Session ID (`15...`).
+    """
 
     regex = r"[01]5[0-9a-fA-F]{64}"
 
@@ -30,7 +37,9 @@ class AnySessionIDConverter(BaseConverter):
 
 
 class BlindSessionIDConverter(BaseConverter):
-    """url converter that accepts only blind session ids"""
+    """
+    A 66-hex-character blinded Session ID (`15...`).  Non-blinded Session IDs are not permitted.
+    """
 
     regex = r"15[0-9a-fA-F]{64}"
 
@@ -39,7 +48,9 @@ class BlindSessionIDConverter(BaseConverter):
 
 
 class UnblindedSessionIDConverter(BaseConverter):
-    """url converter that accepts only unblinded session ids"""
+    """
+    A 66-hex character unblinded Session ID (`05...`).  *Blinded* Session IDs are not permitted.
+    """
 
     regex = r"05[0-9a-fA-F]{64}"
 
@@ -49,10 +60,7 @@ class UnblindedSessionIDConverter(BaseConverter):
 
 app.url_map.converters['Room'] = RoomTokenConverter
 app.url_map.converters['BlindSessionID'] = BlindSessionIDConverter
-
-SessionIDConverter = AnySessionIDConverter
-
-if config.REQUIRE_BLIND_KEYS:
-    SessionIDConverter = BlindSessionIDConverter
-
-app.url_map.converters['SessionID'] = SessionIDConverter
+app.url_map.converters['UnblindedSessionID'] = UnblindedSessionIDConverter
+app.url_map.converters['SessionID'] = (
+    BlindSessionIDConverter if config.REQUIRE_BLIND_KEYS else AnySessionIDConverter
+)

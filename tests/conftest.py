@@ -123,7 +123,7 @@ def db(request, pgsql):
 
                 dbapi_connection.autocommit = existing_autocommit
 
-        db_._init_engine(pgsql, echo=trace, sogs_preinit=pg_setup_schema)
+        db_.init_engine(pgsql, echo=trace, sogs_preinit=pg_setup_schema)
 
     else:
         sqlite_uri = f'file:sogs_testdb{db_counter_}?mode=memory&cache=shared'
@@ -136,7 +136,7 @@ def db(request, pgsql):
             web.app.logger.warning(f"connecting to {sqlite_uri}")
             return sqlite3.connect(sqlite_uri, uri=True)
 
-        db_._init_engine("sqlite://", creator=sqlite_connect, echo=trace)
+        db_.init_engine("sqlite://", creator=sqlite_connect, echo=trace)
 
     db_.database_init()
 
