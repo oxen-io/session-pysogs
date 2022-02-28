@@ -62,14 +62,20 @@ def dump_rows(table, extra=None, where=None, order="id", skip=set()):
         tabulate(
             [
                 [
-                    'NULL' if r[i] is None else int(r[i]) if isinstance(r[i], bool) else r[i]
+                    'NULL'
+                    if r[i] is None
+                    else int(r[i])
+                    if isinstance(r[i], bool)
+                    else f"{r[i]:.3f}"
+                    if isinstance(r[i], float)
+                    else r[i]
                     for i in indices
                 ]
                 for r in cur
             ],
             headers=[cols[i] for i in indices],
             tablefmt='psql',
-            floatfmt='.3f',
+            disable_numparse=True,
         )
         + "\n"
     )
@@ -90,7 +96,8 @@ print(dump_rows("pinned_messages", order=("room", "pinned_at")))
 print(
     dump_rows(
         "files",
-        extra=f"uploaded > {time.time()-86400} AS recent_upload, expiry IS NULL AS null_expiry",
+        extra=f"CASE WHEN expiry IS NULL THEN NULL ELSE uploaded > {time.time()-86400} END "
+        "AS recent_upload",
         skip={'uploaded', 'expiry'},
     )
 )
