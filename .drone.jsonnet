@@ -19,6 +19,7 @@ local default_deps = [
   'python3-qrencode',
   'python3-better-profanity',
   'python3-sqlalchemy',
+  'python3-sqlalchemy-utils',
 ];
 
 local apt_get_quiet = 'apt-get -o=Dpkg::Use-Pty=0 -q';
