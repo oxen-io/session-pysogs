@@ -881,7 +881,7 @@ class Room:
                 r[0]
                 for r in query(
                     'SELECT id FROM messages WHERE room = :r AND "user" = :u AND data IS NOT NULL',
-                    room=self.id,
+                    r=self.id,
                     u=poster.id,
                 )
             ]
