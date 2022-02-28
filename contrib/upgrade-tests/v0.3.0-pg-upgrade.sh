@@ -1,0 +1,29 @@
+#!/bin/bash
+
+if ! [ -f contrib/upgrade-tests/common.sh ]; then
+    echo "Wrong path: run from top-level sogs" >&2
+    exit 1
+fi
+
+if [ -z "$SOGS_PGSQL" ]; then
+    echo "Error: must specify pg url via SOGS_PGSQL env variable" >&2
+    exit 1
+fi
+
+. contrib/upgrade-tests/common.sh
+
+set -o errexit
+
+# Extract the SOGS 0.3.0 postgresql test database:
+if ! [ -f test-sogs-pg-f6dd80c04b.tar.xz ]; then
+    curl -sSOL https://oxen.rocks/test-sogs-pg-f6dd80c04b.tar.xz
+fi
+
+tar xf test-sogs-pg-f6dd80c04b.tar.xz
+
+psql -f sogstest.pgsql "$SOGS_URL"
+
+# Update the timestamps to be relatively current (so that files aren't expired)
+echo 'update files set timestamp = timestamp - 1646082000 + extract(epoch from now())' | psql "$SOGS_URL"
+
+do_upgrades "$@"
