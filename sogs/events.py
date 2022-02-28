@@ -33,6 +33,7 @@ def _user_from_conn(conn):
     """
     make a model.User from a connection using its curve pubkey as the session id.
     """
+    # TODO: blinding?
     return model.User(session_id='05' + conn.pubkey.hex())
 
 
@@ -99,7 +100,7 @@ def _collect_bytes(iterable: Iterable[bytes]):
 
 
 @api(name='sub', minargs=1)
-def handle_subscribe(*events, conn=None):
+def subscribe(*events, conn=None):
     """ subscribe connection to many events """
     sub = set()
     for ev in events:
@@ -115,7 +116,7 @@ def handle_subscribe(*events, conn=None):
 
 
 @api(name='unsub', minargs=1)
-def handle_unsubscribe(*events, conn=None):
+def unsubscribe(*events, conn=None):
     """ unsub connection to many events """
     unsub = set()
     for ev in events:
@@ -132,8 +133,8 @@ def handle_unsubscribe(*events, conn=None):
 
 
 @api(name="request", minargs=2)
-def handle_rpc_call(method, path, body=None, *, conn=None):
-    """ make a sub request via zmq """
+def request(method, path, body=None, *, conn=None):
+    """ make an rpc request via zmq """
     ctype = None
     # guess content type
     if body:
@@ -141,7 +142,6 @@ def handle_rpc_call(method, path, body=None, *, conn=None):
             ctype = 'application/json'
         else:
             ctype = 'application/octet-stream'
-
     resp = make_subrequest(
         method.decode('ascii'), path.decode('ascii'), content_type=ctype, body=body
     )
