@@ -51,10 +51,10 @@ if os.path.exists(config.KEY_FILE):
 else:
     _privkey = PrivateKey.generate()
 
-    # If we aren't under uswgi then generate an ephemeral one to avoid leaving key_ed25519 files all
-    # over the place wherever sogs is imported.
+    # Only save the key if we're running under uswgi to avoid leaving key_ed25519 files all over the
+    # place wherever sogs is imported.
     if config.RUNNING_AS_APP:
-        save_privkey()
+        persist_privkey()
 
 _privkey_bytes = _privkey.encode()
 

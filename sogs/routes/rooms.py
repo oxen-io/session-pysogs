@@ -1,4 +1,4 @@
-from .. import config, db, http, utils
+from .. import config, db, http
 from ..model import room as mroom
 from ..web import app
 from . import auth

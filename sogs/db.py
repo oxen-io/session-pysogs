@@ -115,8 +115,8 @@ def database_init(create=True):
     migrations.  This does so using its *own* database connection, and is intended to be called
     during initialization *before* forking happens during uwsgi startup.
 
-    create -- if False then raise an error if the database looks empty.  If unspecified (or True) then
-    the schema will be created if it doesn't exist.
+    create -- if False then raise an error if the database looks empty.  If unspecified (or True)
+    then the schema will be created if it doesn't exist.
     """
 
     global engine, metadata

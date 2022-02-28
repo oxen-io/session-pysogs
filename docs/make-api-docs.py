@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import sogs
 from sogs.web import app
 import inspect
 import re

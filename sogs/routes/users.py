@@ -318,7 +318,8 @@ def set_mod(sid):
     - `admin=true` — Adds admin permissions (and, implicitly, moderator permissions).
     - `admin=true`, `moderator=true` — Same as above (adds admin permission).
     - `admin=false`, `moderator=true` — Removes admin permission, if present, and assigns moderator
-      permission.  This both demotes an admin to a moderator, and promotes a non-moderator to a moderator.
+      permission.  This both demotes an admin to a moderator, and promotes a non-moderator to a
+      moderator.
     - `admin=false`, — Removes admin permission, if present, but leaves moderator permissions alone.
       This effectively "demotes" the user from admin to moderator, but will not promote a
       non-moderator/admin to a moderator.

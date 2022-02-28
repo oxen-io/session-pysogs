@@ -1,6 +1,4 @@
-from .. import config, db, http, utils
-from ..model import room as mroom
-from ..web import app
+from .. import http, utils
 from . import auth
 
 from flask import abort, jsonify, g, Blueprint, request
