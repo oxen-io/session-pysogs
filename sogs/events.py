@@ -64,7 +64,8 @@ _category = omq.add_category('sogs', AuthLevel.basic)
 
 def api(f, *, name=None, minargs=None):
     """ set up a request handler for zmq for a function with name of the endpoint """
-    assert name is not None
+    if name is None:
+        raise ValueError('api endpoint name cannot be none')
 
     def _handle_request(msg):
         try:
