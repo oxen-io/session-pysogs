@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from tabulate import tabulate
+from prettytable import PrettyTable
 import time
 import os
 
@@ -58,27 +58,24 @@ def dump_rows(table, extra=None, where=None, order="id", skip=set()):
     indices = [i for i in range(len(cols)) if cols[i] not in skip]
     indices.sort(key=lambda i: (column_priority.get(cols[i], 100), cols[i]))
 
-    return (
-        tabulate(
+    table = PrettyTable()
+    table.field_names = [cols[i] for i in indices]
+    for r in cur:
+        table.add_row(
             [
-                [
-                    'NULL'
-                    if r[i] is None
-                    else int(r[i])
-                    if isinstance(r[i], bool)
-                    else f"{r[i]:.3f}"
-                    if isinstance(r[i], float)
-                    else r[i]
-                    for i in indices
-                ]
-                for r in cur
-            ],
-            headers=[cols[i] for i in indices],
-            tablefmt='psql',
-            disable_numparse=True,
+                'NULL'
+                if r[i] is None
+                else int(r[i])
+                if isinstance(r[i], bool)
+                else f"{r[i]:.3f}"
+                if isinstance(r[i], float)
+                else r[i]
+                for i in indices
+            ]
         )
-        + "\n"
-    )
+    for c in cols:
+        table.align[c] = 'l' if c in ('token', 'name', 'session_id', 'description', 'path') else 'r'
+    return table.get_string() + "\n"
 
 
 print(dump_rows("rooms", skip={'created'}))

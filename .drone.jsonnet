@@ -82,7 +82,7 @@ local debian_pg_pipeline(name, image, pg_tag='bullseye') = debian_pipeline(
   pytest_opts='--pgsql "postgresql://ci:ci@pg/ci"'
 );
 
-local upgrade_deps = default_deps + ['git', 'curl', 'sqlite3', 'python3-tabulate'];
+local upgrade_deps = default_deps + ['git', 'curl', 'sqlite3', 'python3-prettytable'];
 local upgrade_test(name, from='v0.1.10', intermediates=[], pg=false) = {
   name: name,
   image: docker_base + 'debian-stable',
