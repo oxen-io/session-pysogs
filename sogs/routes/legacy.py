@@ -344,7 +344,7 @@ def handle_legacy_banhammer():
     mod, room = legacy_check_user_room(moderator=True)
     ban = User(session_id=request.json['public_key'], autovivify=True)
 
-    with db.tx():
+    with db.transaction():
         room.ban_user(to_ban=ban, mod=mod)
         room.delete_all_posts(ban, deleter=mod)
 
