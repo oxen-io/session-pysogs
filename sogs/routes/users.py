@@ -83,7 +83,79 @@ def _serialize_message(msg):
         "expires_at": msg.expires_at,
         "message": utils.encode_base64(msg.data),
         "sender": msg.sender.session_id,
+        "recipient": msg.recipient.session_id,
     }
+
+
+def _box(out: bool, *, since=None):
+    """ handle inbox/outbox endpoints common logic """
+    if not g.user.is_blinded:
+        abort(http.FORBIDDEN)
+    limit = utils.get_int_param('limit', 100, min=1, max=256, truncate=True)
+    get = Message.sent if out else Message.to
+    msgs = [_serialize_message(msg) for msg in get(user=g.user, limit=limit, since=since)]
+    if msgs or since is None:
+        return jsonify(msgs)
+    return Response('', status=http.NOT_MODIFIED)
+
+
+@users.get("/outbox")
+@auth.user_required
+def get_outbox():
+    """
+    Retrieves all of the messages we have sent to others via their inbox (up to `limit`).
+
+    # Query Parameters
+
+    The request takes an optional `limit` query parameter indicating the number of messages to
+    return (up to 256).  If omitted, at most 100 messages are returned.
+
+    # Return value
+
+    Returns a JSON array of up to `limit` (default 100) messages, with oldest messages first.  Each
+    element is a JSON object with keys:
+
+    - `id` — the unique integer message id.
+    - `posted_at` — unix timestamp (float) when the message was received by SOGS.
+    - `expires_at` — unix timestamp (float) when SOGS will expire and delete the message.
+    - `message` — the encrypted message body.
+    - `recipient` — the (blinded) Session ID of the recipient of the message.
+
+    # Encryption details
+
+    See [/inbox](#GET-inbox)
+
+    """
+    return _box(True)
+
+
+@users.get("/outbox/since/<int:msgid>")
+@auth.user_required
+def poll_outbox(msgid):
+    """
+    Polls for any DMs sent since the given id.
+
+    # URL Parameters
+
+    - `msgid` — the numeric message ID of the last sent message.  (Newer messages will always
+      have a higher ID).
+
+    # Query Parameters
+
+    The request takes an optional `limit` query parameter indicating the number of messages to
+    return (up to 256).  If omitted, at most 100 messages are returned.
+
+    # Return value
+
+    This method, on success, returns *either* a 200 (OK) status code with a list of 1 or more new
+    messages, or else returns a 304 (Not Modified) response with an empty body to indicate that
+    there are no messages for this user newer than the given ID.
+
+    If there are messages this returns a JSON array of up to `limit` (default 100) messages, with
+    oldest messages first.  Each element is exactly as described in the [all messages](#GET-outbox)
+    endpoint.
+    """
+    return _box(True, since=msgid)
 
 
 @users.get("/inbox")
@@ -175,10 +247,7 @@ def get_inbox():
     This then leaves the receiving client with the true Session ID of the sender, and the message
     body (encoded according to typical Session message protobuf encoding).
     """
-    if not g.user.is_blinded:
-        abort(http.FORBIDDEN)
-    limit = utils.get_int_param('limit', 100, min=1, max=256, truncate=True)
-    return jsonify([_serialize_message(msg) for msg in Message.to(user=g.user, limit=limit)])
+    return _box(False)
 
 
 @users.get("/inbox/since/<int:msgid>")
@@ -207,14 +276,7 @@ def poll_inbox(msgid):
     oldest messages first.  Each element is exactly as described in the [all messages](#GET-inbox)
     endpoint.
     """
-    if not g.user.is_blinded:
-        abort(http.FORBIDDEN)
-
-    limit = utils.get_int_param('limit', 100, min=1, max=256, truncate=True)
-    msgs = [_serialize_message(msg) for msg in Message.to(user=g.user, since=msgid, limit=limit)]
-    if len(msgs) > 0:
-        return jsonify(msgs)
-    return Response('', status=http.NOT_MODIFIED)
+    return _box(False, since=msgid)
 
 
 @users.post("/inbox/<BlindSessionID:sid>")

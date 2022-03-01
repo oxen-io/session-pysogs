@@ -66,7 +66,20 @@ def test_dm_send(client, blind_user, blind_user2):
     r = sogs_get(client, '/inbox', blind_user2)
     assert r.status_code == 200
     assert len(r.json) == 1
+    msg_expected = {
+        'id': 1,
+        'message': post['message'],
+        'sender': blind_user.session_id,
+        'recipient': blind_user2.session_id,
+    }
     data = r.json[0]
     assert -1 < data.pop('posted_at') - time.time() < 1
     assert -1 < data.pop('expires_at') - config.DM_EXPIRY_DAYS * 86400 - time.time() < 1
-    assert data == {'id': 1, 'message': post['message'], 'sender': blind_user.session_id}
+    assert data == msg_expected
+
+    r = sogs_get(client, '/outbox', blind_user)
+    assert len(r.json) == 1
+    data = r.json[0]
+    assert -1 < data.pop('posted_at') - time.time() < 1
+    assert -1 < data.pop('expires_at') - config.DM_EXPIRY_DAYS * 86400 - time.time() < 1
+    assert data == msg_expected
