@@ -1,12 +1,10 @@
-from .. import db, http, utils
+from .. import db, http
 from ..model import room as mroom
-from ..model.exc import NoSuchUser
 from ..model.user import User
-from ..model.message import Message
 from ..web import app
 from . import auth
 
-from flask import abort, jsonify, g, Blueprint, request, Response
+from flask import abort, jsonify, g, Blueprint, request
 
 # User-related routes
 

@@ -1,5 +1,4 @@
 from .. import db, http, utils
-from ..model import room as mroom
 from ..model.exc import NoSuchUser
 from ..model.user import User
 from ..model.message import Message
