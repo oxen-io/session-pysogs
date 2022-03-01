@@ -59,6 +59,23 @@ class Message:
         for row in rows:
             yield Message(row=row)
 
+    @staticmethod
+    def sent(user, since=None, limit=None):
+        """get all messages we sent, returns a generator"""
+        rows = query(
+            f"""
+            SELECT * FROM inbox WHERE sender = :sender
+            {'AND id > :since_id' if since else ''}
+            ORDER BY id
+            {'LIMIT :limit' if limit else ''}
+            """,
+            sender=user.id,
+            since_id=since,
+            limit=limit,
+        )
+        for row in rows:
+            yield Message(row=row)
+
     @property
     def id(self):
         return self._row["id"]
