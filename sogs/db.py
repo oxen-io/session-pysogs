@@ -5,7 +5,6 @@ import os
 import logging
 import importlib.resources
 import sqlalchemy
-from sqlalchemy_utils import database_exists
 from sqlalchemy.sql.expression import bindparam
 
 HAVE_FILE_ID_HACKS = False
@@ -109,14 +108,20 @@ def insert_and_get_row(insert, _table, _pk, *, dbconn=None, **params):
         return query(f"SELECT * FROM {_table} WHERE {_pk} = :pk", pk=pkval).first()
 
 
-def database_init(create=True):
+def database_init(create=None, upgrade=True):
     """
     Perform database initialization: constructs the schema, if necessary, and performs any required
     migrations.  This does so using its *own* database connection, and is intended to be called
     during initialization *before* forking happens during uwsgi startup.
 
-    create -- if False then raise an error if the database looks empty.  If unspecified (or True)
-    then the schema will be created if it doesn't exist.
+    create -- if True then we require that the database tables not already exist and raise an error
+    if they do; if False then we raise an error if the database looks empty.  If None/unspecified
+    then we will automatically create tables if required.
+
+    upgrade -- if True (or omitted) then we allow database upgrades to run, if False then we throw
+    an exception if any database upgrade is required.
+
+    Returns true if database creation or upgrades were performed.
     """
 
     global engine, metadata
@@ -126,8 +131,9 @@ def database_init(create=True):
 
     conn = get_conn()
 
+    created, migrated = False, False
     if 'messages' not in metadata.tables:
-        if not create:
+        if create is not None and not create:
             raise RuntimeError(
                 "Empty database connection and database initialization disabled; aborting"
             )
@@ -144,6 +150,7 @@ def database_init(create=True):
             logging.critical(err)
             raise RuntimeError(err)
 
+        created = True
         metadata.clear()
         metadata.reflect(bind=engine, views=True)
 
@@ -154,15 +161,20 @@ def database_init(create=True):
             )
             logging.critical(msg)
             raise RuntimeError(msg)
+    elif create:
+        raise RuntimeError("Unable to initialize database: tables already exist")
 
     from . import migrations
 
-    if migrations.migrate(conn):
+    migrated = migrations.migrate(conn, check_only=not upgrade and not created)
+    if migrated:
         metadata.clear()
         metadata.reflect(bind=engine, views=True)
 
     # Make sure the system admin users exists
     create_admin_user(conn)
+
+    return created or migrated
 
 
 def create_admin_user(dbconn):
@@ -198,16 +210,15 @@ def init_engine(*args, **kwargs):
     Keyword arguments:
     sogs_preinit - a callable to invoke after setting up `engine` but before calling
     `database_init()`.
-    sogs_create - optional boolean; if provided and False then we fail if the database doesn't
-    already exist (i.e. to prevent creating it, such as when using the command-line tools from the
-    wrong location).
+    sogs_skip_init - optional boolean; if specified and True then database_init() will not be
+    called; the caller must call it manually before any other database functions are used.
     """
     global engine, engine_initial_pid, metadata, have_returning
 
     if engine is not None:
         engine.dispose()
 
-    allow_create = kwargs.pop('sogs_create', True)
+    skip_init = kwargs.pop('sogs_skip_init', False)
     preinit = kwargs.pop('sogs_preinit', None)
 
     if not len(args) and not len(kwargs):
@@ -222,10 +233,6 @@ def init_engine(*args, **kwargs):
         # SQLite's Python code is seriously broken, so we have to force off autocommit mode and turn
         # on driver-level autocommit (which we do below).
         exec_opts_args['autocommit'] = False
-
-    if not allow_create:
-        if not database_exists(args[0]):
-            raise RuntimeError(f"{args[0]} database does not exist")
 
     engine = sqlalchemy.create_engine(*args, **kwargs).execution_options(**exec_opts_args)
     engine_initial_pid = os.getpid()
@@ -272,7 +279,8 @@ def init_engine(*args, **kwargs):
     if preinit:
         preinit()
 
-    database_init(allow_create)
+    if not skip_init:
+        database_init()
 
 
 if config.RUNNING_AS_APP:

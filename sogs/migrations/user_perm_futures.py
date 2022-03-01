@@ -1,7 +1,8 @@
 import logging
+from .exc import DatabaseUpgradeRequired
 
 
-def migrate(conn):
+def migrate(conn, *, check_only):
     """
     Break up user_permission_futures to not be (room,user) unique, and to move ban futures to a
     separate table.
@@ -13,6 +14,8 @@ def migrate(conn):
         return False
 
     logging.warning("Updating user_permission_futures")
+    if check_only:
+        raise DatabaseUpgradeRequired("user_permission_futures/user_ban_futures conversion")
 
     if db.engine.name == 'sqlite':
         # Under sqlite we have to drop and recreate the whole thing.  (Since we didn't have a

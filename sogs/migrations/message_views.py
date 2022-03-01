@@ -1,7 +1,8 @@
 import logging
+from .exc import DatabaseUpgradeRequired
 
 
-def migrate(conn):
+def migrate(conn, *, check_only):
     from .. import db
 
     if 'message_metadata' in db.metadata.tables and all(
@@ -11,6 +12,8 @@ def migrate(conn):
         return False
 
     logging.warning("DB migration: recreating message_metadata/message_details views")
+    if check_only:
+        raise DatabaseUpgradeRequired("message views need to be recreated")
 
     conn.execute("DROP VIEW IF EXISTS message_metadata")
     conn.execute("DROP VIEW IF EXISTS message_details")

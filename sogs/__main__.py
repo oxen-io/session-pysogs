@@ -3,10 +3,7 @@ import atexit
 import re
 import sys
 
-from . import config, crypto, db, web
-from .model.room import Room, get_rooms
-from .model.user import User, SystemUser, get_all_global_moderators
-from .model.exc import AlreadyExists, NoSuchRoom
+from . import __version__ as version
 
 ap = AP(
     epilog="""
@@ -34,7 +31,7 @@ specifying a path to the config file to load in the SOGS_CONFIG environment vari
 
 ap.add_argument('--version', '-V', action='version', version=f'PySOGS {version}')
 
-actions = ap.add_mutually_exclusive_group()
+actions = ap.add_mutually_exclusive_group(required=True)
 
 actions.add_argument('--add-room', help="Add a room with the given token", metavar='TOKEN')
 ap.add_argument(
@@ -93,29 +90,69 @@ ap.add_argument(
 ap.add_argument(
     "--yes", action='store_true', help="Don't prompt for confirmation for some commands, just do it"
 )
-ap.add_argument(
+actions.add_argument(
     "--initialize",
     action='store_true',
-    help="Initialize database and private key if they do not exist; advanced use only.  Before"
-    " trying this, make sure the correct sogs.ini config file is being imported via the SOGS_CONFIG"
-    " environment variable.",
+    help="Initialize database and private key if they do not exist; advanced use only.",
+)
+actions.add_argument(
+    "--upgrade",
+    "-U",
+    action="store_true",
+    help="Perform any required database upgrades.  If database upgrades are required then other "
+    "commands will exit with an error message until this flag is used.  Note that this is "
+    "normally not required: database upgrades are performed automatically during sogs daemon "
+    "startup.",
+)
+actions.add_argument(
+    "--check-upgrades",
+    action="store_true",
+    help="Check whether database upgrades are required then exit.  The exit code is 0 if no "
+    "upgrades are needed, 5 if required upgrades were detected.",
 )
 
 args = ap.parse_args()
 
+from . import config, crypto, db
+from .migrations.exc import DatabaseUpgradeRequired
+from sqlalchemy_utils import database_exists
 
+db_updated = False
 try:
+    if not args.initialize and not database_exists(config.DB_URL):
+        raise RuntimeError(f"{config.DB_URL} database does not exist")
+
     if args.initialize:
         crypto.persist_privkey()
-    db.init_engine(sogs_create=args.initialize)
+
+    db.init_engine(sogs_skip_init=True)
+
+    db_updated = db.database_init(create=args.initialize, upgrade=args.upgrade)
+
+except DatabaseUpgradeRequired as e:
+    print(
+        f"Database upgrades are required: {e}\n\n"
+        "You can attempt the upgrade using the --upgrade flag; see --help for details."
+    )
+    sys.exit(5)
+
 except Exception as e:
     print(
-        f"\nSOGS initialization failed: {e}.\n\n"
-        "Perhaps you need to specify the --initialize argument or specify a SOGS_CONFIG path?\n\n"
-        "Try --help for information.\n"
+        f"""
+
+SOGS initialization failed: {e}.
+
+
+Perhaps you need to specify a SOGS_CONFIG path or use one of the --upgrade/--initialize options?
+Try --help for additional information.
+"""
     )
     sys.exit(1)
 
+from . import web
+from .model.room import Room, get_rooms
+from .model.user import User, SystemUser, get_all_global_moderators
+from .model.exc import AlreadyExists, NoSuchRoom
 
 web.appdb = db.get_conn()
 
@@ -164,7 +201,16 @@ Moderators: {admins} admins ({len(ha)} hidden), {mods} moderators ({len(hm)} hid
         print()
 
 
-if args.add_room:
+if args.initialize:
+    print("Database schema created.")
+
+elif args.upgrade:
+    print("Database successfully upgraded." if db_updated else "No database upgrades required.")
+
+elif args.check_upgrades:
+    print("No database upgrades required.")
+
+elif args.add_room:
     if not re.fullmatch(r'[\w-]{1,64}', args.add_room):
         print(
             "Error: room tokens may only contain a-z, A-Z, 0-9, _, and - characters",
