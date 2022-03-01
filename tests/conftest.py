@@ -67,7 +67,7 @@ def pgsql(request):
             conn.commit()
 
             pgsql_w_schema = pgsql + ('&' if '?' in pgsql else '?')
-            pgsql_w_schema += 'options=--search_path%3Dsogs_tests'
+            pgsql_w_schema += 'options=--search_path%3Dsogs_tests%2Cpublic'
 
             yield pgsql_w_schema
 
@@ -118,7 +118,7 @@ def db(request, pgsql):
                     cursor.execute("DROP SCHEMA IF EXISTS sogs_tests CASCADE")
                     first = False
                 cursor.execute("CREATE SCHEMA IF NOT EXISTS sogs_tests")
-                cursor.execute("SET search_path TO sogs_tests")
+                cursor.execute("SET search_path TO sogs_tests, public")
                 cursor.close()
 
                 dbapi_connection.autocommit = existing_autocommit

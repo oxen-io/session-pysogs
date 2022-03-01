@@ -24,6 +24,20 @@ local default_deps = [
 
 local apt_get_quiet = 'apt-get -o=Dpkg::Use-Pty=0 -q';
 
+local setup_commands(deps=default_deps) = [
+  'echo "Running on ${DRONE_STAGE_MACHINE}"',
+  'echo "man-db man-db/auto-update boolean false" | debconf-set-selections',
+  apt_get_quiet + ' update',
+  apt_get_quiet + ' install -y eatmydata',
+  'eatmydata ' + apt_get_quiet + ' install --no-install-recommends -y lsb-release',
+  'cp contrib/deb.oxen.io.gpg /etc/apt/trusted.gpg.d',
+  'echo deb http://deb.oxen.io $$(lsb_release -sc) main >/etc/apt/sources.list.d/oxen.list',
+  'eatmydata ' + apt_get_quiet + ' update',
+  'eatmydata ' + apt_get_quiet + ' dist-upgrade -y',
+  'eatmydata ' + apt_get_quiet + ' install --no-install-recommends -y ' + std.join(' ', deps),
+];
+
+
 // Regular build on a debian-like system:
 local debian_pipeline(name,
                       image,
@@ -45,18 +59,7 @@ local debian_pipeline(name,
       image: image,
       pull: 'always',
       [if allow_fail then 'failure']: 'ignore',
-      commands: [
-                  'echo "Running on ${DRONE_STAGE_MACHINE}"',
-                  'echo "man-db man-db/auto-update boolean false" | debconf-set-selections',
-                  apt_get_quiet + ' update',
-                  apt_get_quiet + ' install -y eatmydata',
-                  'eatmydata ' + apt_get_quiet + ' install --no-install-recommends -y lsb-release',
-                  'cp contrib/deb.oxen.io.gpg /etc/apt/trusted.gpg.d',
-                  'echo deb http://deb.oxen.io $$(lsb_release -sc) main >/etc/apt/sources.list.d/oxen.list',
-                  'eatmydata ' + apt_get_quiet + ' update',
-                  'eatmydata ' + apt_get_quiet + ' dist-upgrade -y',
-                  'eatmydata ' + apt_get_quiet + ' install --no-install-recommends -y ' + std.join(' ', deps),
-                ] + before_pytest + [
+      commands: setup_commands(deps) + before_pytest + [
                   'PYTHONPATH=. python3 -mpytest -vv --color=yes ' + pytest_opts,
                 ]
                 + extra_cmds,
@@ -65,18 +68,34 @@ local debian_pipeline(name,
   services: services,
 };
 
+local pg_deps = ['python3-psycopg2', 'postgresql-client'];
+local pg_service =
+  { name: 'pg', image: 'postgres:bullseye', environment: { POSTGRES_USER: 'ci', POSTGRES_PASSWORD: 'ci' } };
+local pg_wait = 'for i in $(seq 0 30); do if pg_isready -d ci -h pg -U ci -t 1; then break; elif [ "$i" = 30 ]; then echo "Timeout waiting for postgresql" >&2; exit 1; fi; sleep 1; done';
+
 local debian_pg_pipeline(name, image, pg_tag='bullseye') = debian_pipeline(
   name,
   image,
-  deps=default_deps + ['python3-psycopg2', 'postgresql-client'],
-  services=[
-    { name: 'pg', image: 'postgres:bullseye', environment: { POSTGRES_USER: 'ci', POSTGRES_PASSWORD: 'ci' } },
-  ],
-  before_pytest=[
-    'for i in $(seq 0 30); do if pg_isready -d ci -h pg -U ci -t 1; then break; fi; if [ "$i" = 30 ]; then echo "Timeout waiting for postgresql" >&2; exit 1; fi; sleep 1; done',
-  ],
+  deps=default_deps + pg_deps,
+  services=[pg_service],
+  before_pytest=[pg_wait],
   pytest_opts='--pgsql "postgresql://ci:ci@pg/ci"'
 );
+
+local upgrade_deps = default_deps + ['git', 'curl', 'sqlite3', 'python3-prettytable'];
+local upgrade_test(name, from='v0.1.10', intermediates=[], pg=false) = {
+  name: name,
+  image: docker_base + 'debian-stable',
+  commands: setup_commands(deps=upgrade_deps + if pg then pg_deps else [])
+            + [if pg then pg_wait]
+            + [
+              './contrib/upgrade-tests/' + from + '-upgrade.sh --delete-my-crap ' + std.join(' ', intermediates),
+              './contrib/upgrade-tests/dump-db.py >upgraded-db.txt',
+              'diff --color -su contrib/upgrade-tests/' + from + '-expected.txt upgraded-db.txt',
+            ],
+
+  environment: if pg then { SOGS_PGSQL: 'postgresql://ci:ci@pg/ci' } else {},
+};
 
 
 [
@@ -119,6 +138,20 @@ local debian_pg_pipeline(name, image, pg_tag='bullseye') = debian_pipeline(
   // ARM builds (ARM64 and armhf)
   debian_pipeline('Debian sid (ARM64)', docker_base + 'debian-sid', arch='arm64'),
   debian_pipeline('Debian stable (armhf)', docker_base + 'debian-stable/arm32v7', arch='arm64'),
+
+  // Import tests:
+  {
+    name: 'Upgrades',
+    kind: 'pipeline',
+    type: 'docker',
+    platform: { arch: 'amd64' },
+    services: [pg_service],
+    steps: [
+      upgrade_test('sqlite3: 0.1.10→now'),
+      upgrade_test('sqlite3: 0.1.10→0.2.0→now', intermediates=['43380beaa2']),
+      upgrade_test('postgres: 0.1.10→now', pg=true),
+    ],
+  },
 
   // Macos:
   {
