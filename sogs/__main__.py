@@ -32,6 +32,8 @@ specifying a path to the config file to load in the SOGS_CONFIG environment vari
     formatter_class=RawDescriptionHelpFormatter,
 )
 
+ap.add_argument('--version', '-V', action='version', version=f'PySOGS {version}')
+
 actions = ap.add_mutually_exclusive_group()
 
 actions.add_argument('--add-room', help="Add a room with the given token", metavar='TOKEN')
