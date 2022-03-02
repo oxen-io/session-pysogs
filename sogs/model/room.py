@@ -1264,7 +1264,7 @@ class Room:
                 old_fid=file_id,
             ).first()
 
-        if row:
+        if row and row['expiry'] > time.time():
             return File(row)
         return None
 
@@ -1293,7 +1293,7 @@ class Room:
         if not self.check_upload(uploader):
             raise BadPermission()
 
-        files_dir = "uploads/" + self.token
+        files_dir = os.path.join(config.UPLOAD_PATH, self.token)
         os.makedirs(files_dir, exist_ok=True)
 
         if filename is not None:

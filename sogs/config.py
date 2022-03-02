@@ -35,6 +35,7 @@ PROFANITY_CUSTOM = None
 REQUIRE_BLIND_KEYS = False
 TEMPLATE_PATH = 'templates'
 STATIC_PATH = 'static'
+UPLOAD_PATH = 'uploads'
 
 # Will be true if we're running as a uwsgi app, false otherwise; used where we need to do things
 # only in one case or another (e.g. database initialization only via app mode).
@@ -106,6 +107,7 @@ def load_config():
         'files': {
             'expiry': ('UPLOAD_DEFAULT_EXPIRY_DAYS', None, float),
             'max_size': ('UPLOAD_FILE_MAX_SIZE', None, int),
+            'uploads_dir': ('UPLOAD_PATH', path_exists, val_or_none),
         },
         'rooms': {
             'active_threshold': ('ROOM_DEFAULT_ACTIVE_THRESHOLD', None, float),

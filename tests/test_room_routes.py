@@ -5,8 +5,11 @@ from sogs.model.file import File
 from sogs import utils
 import sogs.config
 import werkzeug.exceptions as wexc
-from util import pad64
-from request import sogs_get, sogs_post, sogs_put, sogs_delete
+from werkzeug.http import parse_options_header
+from util import pad64, hours, days
+from request import sogs_get, sogs_post, sogs_put, sogs_post_raw, sogs_delete
+from nacl.utils import random
+from os import path
 
 
 def test_list(client, room, room2, user, user2, admin, mod, global_mod, global_admin):
@@ -1043,22 +1046,60 @@ def test_edits(client, room, user, user2, mod, global_admin):
     assert r.json == []
 
 
-def test_owned_files():
-    # FIXME - stub.  Need to:
+def _make_file_upload(filename):
+    return random(1024), {"Content-Disposition": ('attachment', {'filename': filename})}
 
+
+def test_owned_files(client, room, user, admin):
     # - upload a file via new endpoints
+    filedata, headers = _make_file_upload('fug-1.jpeg')
+    r = sogs_post_raw(client, f'/room/{room.token}/file', filedata, user, extra_headers=headers)
+    assert r.status_code == 201
+    assert 'id' in r.json
+    f1 = File(id=r.json.get('id'))
     # - verify that the file expiry is 1h from now (±1s)
+    assert f1.expiry == hours(1)
     # - add a post that references the file
+    d, s = (utils.encode_base64(x) for x in (b"post data", pad64("fugg")))
+    post_info = {'data': d, 'signature': s, 'files': [f1.id]}
+    r = sogs_post(client, f'/room/{room.token}/message', post_info, user)
+    assert r.status_code == 201
+    assert 'id' in r.json
+    post_id = r.json.get('id')
     # - verify that the file expiry is 15 days from now (±1s)
+    f1 = File(id=f1.id)
+    assert f1.expiry == days(15)
     # - upload another file
+    filedata, headers = _make_file_upload('fug-2.jpeg')
+    r = sogs_post_raw(client, f'/room/{room.token}/file', filedata, user, extra_headers=headers)
+    assert r.status_code == 201
+    assert 'id' in r.json
+    f2 = File(id=r.json.get('id'))
     # - verify the new file exp is ~1h
+    assert f2.expiry == hours(1)
     # - edit the post with the edit referencing both files
+    d, s = (utils.encode_base64(x) for x in (b"better post data", pad64("fugg")))
+    new_post_info = {'data': d, 'signature': s, 'files': [f2.id]}
+    r = sogs_put(client, f'/room/{room.token}/message/{post_id}', new_post_info, user)
+    assert r.status_code == 200
     # - verify the new file exp is ~15 days
+    f2 = File(id=f2.id)
+    assert f2.expiry == days(15)
     # - verify that the old file exp hasn't changed
+    f1 = File(id=f1.id)
+    assert f1.expiry == days(15)
     # - pin the post
+    room.pin(post_id, admin)
     # - verify that expiry of both files is now NULL
+    f1 = File(id=f1.id)
+    f2 = File(id=f2.id)
+    assert f1.expiry is None and f2.expiry is None
     # - unpin the post
+    room.unpin(post_id, admin)
     # - verify that expiry of both is reset to 15d
+    f1 = File(id=f1.id)
+    f2 = File(id=f2.id)
+    assert (f1.expiry, f2.expiry) == (days(15), days(15))
 
     # - make another post that references one of the first post's file
     # - make sure the first post associated message hasn't changed (i.e. no stealing owned uploads)
@@ -1113,4 +1154,137 @@ def test_remove_self_post_banned_user(client, room, user, mod):
     id = _make_dummy_post(room, user)
     room.ban_user(user, mod=mod)
     r = sogs_delete(client, f'/room/{room.token}/message/{id}', user)
+    assert r.status_code == 403
+
+
+def _file_upload(client, room, user, *, unsafe=False, utf=False, filename):
+
+    url_post = f"/room/{room.token}/file"
+    file_content = random(1024)
+    r = sogs_post_raw(
+        client,
+        url_post,
+        file_content,
+        user,
+        extra_headers={"Content-Disposition": ('attachment', {'filename': filename})},
+    )
+    assert r.status_code == 201
+    assert 'id' in r.json
+    id = r.json.get('id')
+    assert id is not None
+    assert id != 0
+    if unsafe:
+        filename = 'unsafe'
+    r = sogs_get(client, f'/room/{room.token}/file/{id}/{filename}', user)
+    assert r.status_code == 200
+    assert r.data == file_content
+    expected = ('attachment', {'filename': filename})
+    assert parse_options_header(r.headers.get('content-disposition')) == expected
+    f = File(id=id)
+    if not (unsafe or utf):
+        assert path.split(f.path)[-1] == f'{id}_{filename}'
+
+
+def test_file_upload(client, room, user):
+    _file_upload(client, room, user, filename='normal.txt')
+
+
+def test_file_upload_fuzz(client, room, user):
+    for _ in range(128):
+        _file_upload(
+            client,
+            room,
+            user,
+            filename=random(16).replace(b'\n', b'').replace(b'\r', b''),
+            unsafe=True,
+        )
+
+
+def test_file_upload_unsafe(client, room, user):
+    _file_upload(client, room, user, filename='ass,asss---ass../../../asd', unsafe=True)
+    _file_upload(client, room, user, filename='/dev/null', unsafe=True)
+    _file_upload(client, room, user, filename='/proc/self/exe', unsafe=True)
+    _file_upload(client, room, user, filename='%0a%0d%%%%', unsafe=True)
+
+
+def test_file_upload_emoji(client, room, user):
+    _file_upload(client, room, user, filename='🎉.txt', utf=True)
+
+
+def test_file_upload_emoji_extra(client, room, user):
+    _file_upload(client, room, user, filename='🎉.🎉', utf=True)
+
+
+def test_file_upload_emoji_unsafe(client, room, user):
+    _file_upload(client, room, user, filename='🎉.🎉---../../../asd', unsafe=True, utf=True)
+    _file_upload(client, room, user, filename='%00🎉.🎉---../../../asd', unsafe=True, utf=True)
+
+
+def test_file_upload_banned_user(client, room, banned_user):
+    url_post = f"/room/{room.token}/file"
+    r = sogs_post_raw(
+        client,
+        url_post,
+        random(1024),
+        banned_user,
+    )
+    assert r.status_code == 403
+
+
+def test_file_not_found(client, room, user, banned_user):
+    filename = 'bogus.exe'
+    url_get = f'/room/{room.token}/file/99999/{filename}'
+    r = sogs_get(client, url_get, user)
+    assert r.status_code == 404
+    r = sogs_get(client, url_get, banned_user)
+    assert r.status_code == 403
+
+
+def test_file_read_false(client, room, user, mod):
+    filename = 'bogus.XD'
+    url_post = f"/room/{room.token}/file"
+    file_content = random(1024)
+    r = sogs_post_raw(
+        client,
+        url_post,
+        file_content,
+        user,
+        extra_headers={"Content-Disposition": ('attachment', {'filename': filename})},
+    )
+    assert r.status_code == 201
+    assert 'id' in r.json
+    id = r.json['id']
+    assert id
+    room.set_permissions(user, mod=mod, read=False)
+    r = sogs_get(client, f'/room/{room.token}/file/{id}/{filename}', user)
+    assert r.status_code == 403
+
+
+def test_file_write_false(client, room, user, mod):
+    room.set_permissions(user, mod=mod, write=False)
+    filename = 'bogus.XD'
+    url_post = f"/room/{room.token}/file"
+    file_content = random(1024)
+    r = sogs_post_raw(
+        client,
+        url_post,
+        file_content,
+        user,
+        extra_headers={"Content-Disposition": ('attachment', {'filename': filename})},
+    )
+    assert r.status_code == 403
+
+
+def test_file_upload_false(client, room, user, mod):
+    room.set_permissions(user, mod=mod, upload=False)
+    filename = 'bogus.XD'
+    url_post = f"/room/{room.token}/file"
+    file_content = random(1024)
+    r = sogs_post_raw(
+        client,
+        url_post,
+        file_content,
+        user,
+        extra_headers={"Content-Disposition": ('attachment', {'filename': filename})},
+    )
     assert r.status_code == 403

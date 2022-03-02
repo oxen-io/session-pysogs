@@ -3,7 +3,9 @@ from ..model import room as mroom
 from ..web import app
 from . import auth
 
-from flask import abort, jsonify, g, Blueprint, request
+from flask import abort, jsonify, g, Blueprint, request, make_response, send_file
+from werkzeug.http import http_date, parse_options_header
+from os import path
 
 # Room-related routes, excluding retrieving/posting messages
 
@@ -337,3 +339,54 @@ def poll_room_info(room, info_updated):
             result['global_admin'] = True
 
     return jsonify(result)
+
+
+@rooms.post("/room/<Room:room>/file")
+@auth.user_required
+def upload_file(room):
+    """ upload a file to a room """
+
+    if not room.check_upload(g.user):
+        abort(http.FORBIDDEN)
+
+    filename = None
+    # parse filename, this is god awful
+    for k, v in request.headers:
+        if k.lower() == 'content-disposition':
+            cd = parse_options_header(v)
+            if len(cd) == 2 and 'filename' in cd[1]:
+                filename = cd[1]['filename']
+
+    if not filename:
+        abort(http.BAD_REQUEST)
+
+    # 1 hour lifetime before link to post
+    id = room.upload_file(request.data, g.user, filename=filename, lifetime=3600.0)
+    resp = make_response(jsonify({"id": id}))
+    resp.status_code = http.CREATED
+    return resp
+
+
+@rooms.get("/room/<Room:room>/file/<int:fileId>/<filename>")
+@auth.read_required
+def serve_file(room, fileId, filename):
+    """
+    serves a file uploaded to a room
+    """
+    room_file = room.get_file(fileId)
+    if not room_file:
+        abort(http.NOT_FOUND)
+
+    resp = make_response(
+        send_file(
+            path.join(path.abspath(path.curdir), room_file.path),
+            as_attachment=True,
+            attachment_filename=filename,
+        )
+    )
+
+    resp.headers["Date"] = http_date(room_file.uploaded)
+    if room_file.expiry:
+        resp.headers["Expires"] = http_date(room_file.expiry)
+
+    return resp
