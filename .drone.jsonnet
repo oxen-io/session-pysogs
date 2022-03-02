@@ -93,12 +93,12 @@ local upgrade_test(name, from='v0.1.10', intermediates=[], pg=false, pg_convert=
             + [
               './contrib/upgrade-tests/' + from + '-upgrade.sh --delete-my-crap ' + std.join(' ', intermediates),
               './contrib/upgrade-tests/dump-db.py >upgraded-db.txt',
-              'diff --color=always -su contrib/upgrade-tests/' + from + '-expected.txt upgraded-db.txt',
+              'diff --color=always -sub contrib/upgrade-tests/' + from + '-expected.txt upgraded-db.txt',
             ] + (if pg_convert then [
                    'eatmydata pip3 install psycopg',
                    'PYTHONPATH=. ./contrib/pg-import.py sogs.db postgresql://ci:ci@pg/ci --drop-tables --commit',
                    'SOGS_PGSQL=postgresql://ci:ci@pg/ci ./contrib/upgrade-tests/dump-db.py >converted-db.txt',
-                   'diff --color=always -su contrib/upgrade-tests/' + from + '-expected.txt converted-db.txt',
+                   'diff --color=always -sub contrib/upgrade-tests/' + from + '-expected.txt converted-db.txt',
                  ] else []),
 
   environment: if pg then { SOGS_PGSQL: 'postgresql://ci:ci@pg/ci' } else {},
@@ -148,15 +148,25 @@ local upgrade_test(name, from='v0.1.10', intermediates=[], pg=false, pg_convert=
 
   // Import tests:
   {
-    name: 'Upgrades',
+    name: 'Upgrades (sqlite)',
+    kind: 'pipeline',
+    type: 'docker',
+    platform: { arch: 'amd64' },
+    steps: [
+      upgrade_test('sqlite3: 0.1.10→now'),
+      upgrade_test('sqlite3: 0.1.10→0.2.0→now', intermediates=['43380beaa2']),
+      upgrade_test('sqlite3: 0.2.0→now', from='v0.2.0'),
+    ],
+  },
+  {
+    name: 'Upgrades (pg)',
     kind: 'pipeline',
     type: 'docker',
     platform: { arch: 'amd64' },
     services: [pg_service],
     steps: [
-      upgrade_test('sqlite3: 0.1.10→now'),
-      upgrade_test('sqlite3: 0.1.10→0.2.0→now', intermediates=['43380beaa2']),
       upgrade_test('postgres: 0.1.10→now', pg=true),
+      upgrade_test('postgres: 0.3.0→now', from='v0.3.0-pg', pg=true),
       upgrade_test('sqlite3-pg: 0.1.10→now→pg', pg_convert=true),
     ],
   },

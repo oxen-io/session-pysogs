@@ -21,9 +21,13 @@ fi
 
 tar xf test-sogs-pg-f6dd80c04b.tar.xz
 
-psql -f sogstest.pgsql "$SOGS_URL"
+psql -f sogstest.pgsql "$SOGS_PGSQL"
 
 # Update the timestamps to be relatively current (so that files aren't expired)
-echo 'update files set timestamp = timestamp - 1646082000 + extract(epoch from now())' | psql "$SOGS_URL"
+psql "$SOGS_PGSQL" <<SQL
+UPDATE files SET uploaded = uploaded - 1646082000 + extract(epoch from now()),
+    expiry = expiry - 1646082000 + extract(epoch from now())
+WHERE expiry IS NOT NULL
+SQL
 
 do_upgrades "$@"

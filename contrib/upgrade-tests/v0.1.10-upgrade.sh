@@ -31,4 +31,5 @@ done
 
 sogs_key_conv=1
 sogs_fix_updates_count=1
+sogs_need_initialize=1
 do_upgrades "$@"
