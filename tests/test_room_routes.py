@@ -6,7 +6,7 @@ from sogs import utils
 import sogs.config
 import werkzeug.exceptions as wexc
 from util import pad64
-from request import sogs_get, sogs_post, sogs_put
+from request import sogs_get, sogs_post, sogs_put, sogs_delete
 
 
 def test_list(client, room, room2, user, user2, admin, mod, global_mod, global_admin):
@@ -1072,3 +1072,45 @@ def test_owned_files():
     # - verify that both attachments are now expired
 
     pass
+
+
+def _make_dummy_post(room, user):
+    msg = room.add_post(user, b'data', b'a' * 64)
+    return msg.get('id')
+
+
+def test_remove_message(client, room, mod, user):
+    id = _make_dummy_post(room, user)
+    r = sogs_delete(client, f'/room/{room.token}/message/{id}', mod)
+    assert r.status_code == 200
+
+
+def test_remove_self_message(client, room, user):
+    id = _make_dummy_post(room, user)
+    r = sogs_delete(client, f'/room/{room.token}/message/{id}', user)
+    assert r.status_code == 200
+
+
+def test_remove_message_not_allowed(client, room, user, user2):
+    id = _make_dummy_post(room, user)
+    with pytest.raises(wexc.Forbidden):
+        sogs_delete(client, f'/room/{room.token}/message/{id}', user2)
+
+
+def test_remove_post_non_existing(client, room, user, mod):
+    r = sogs_delete(client, f'/room/{room.token}/message/10000', user)
+    assert r.status_code == 404
+    r = sogs_delete(client, f'/room/{room.token}/message/10000', mod)
+    assert r.status_code == 404
+
+
+def test_remove_post_non_existing_banned_user(client, room, banned_user):
+    r = sogs_delete(client, f'/room/{room.token}/message/10000', banned_user)
+    assert r.status_code == 403
+
+
+def test_remove_self_post_banned_user(client, room, user, mod):
+    id = _make_dummy_post(room, user)
+    room.ban_user(user, mod=mod)
+    r = sogs_delete(client, f'/room/{room.token}/message/{id}', user)
+    assert r.status_code == 403

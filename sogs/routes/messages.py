@@ -307,6 +307,34 @@ def edit_message(room, msg_id):
     return jsonify({})
 
 
+@messages.delete("/room/<Room:room>/message/<int:msg_id>")
+@auth.user_required
+def remove_message(room, msg_id):
+    """
+    Remove a message by its message id
+
+    # URL Parameters
+
+    - `msg_id` — The message ID of a post in this room that should be deleted.
+
+    # Return value
+
+    On success returns a 200 status code and returns an empty JSON object as response.
+
+    # Error status codes
+
+    - 403 Forbidden — returned if the invoking user does not have admin permission in this room.
+
+    - 404 Not Found — returned if the given post was not found in this room.
+
+    """
+    if not room.check_permission(g.user, write=True):
+        abort(http.FORBIDDEN)
+    if not room.delete_posts([msg_id], deleter=g.user):
+        abort(http.NOT_FOUND)
+    return jsonify({})
+
+
 @messages.post("/room/<Room:room>/pin/<int:msg_id>")
 def message_pin(room, msg_id):
     """
