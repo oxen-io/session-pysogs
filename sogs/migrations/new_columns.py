@@ -1,7 +1,8 @@
 import logging
+from .exc import DatabaseUpgradeRequired
 
 
-def migrate(conn):
+def migrate(conn, *, check_only):
     """
     New columns that might need to be added that don't require more complex migrations beyond simply
     adding the column.
@@ -23,6 +24,8 @@ def migrate(conn):
         for name, definition in cols.items():
             if name not in db.metadata.tables[table].c:
                 logging.warning(f"DB migration: Adding new column {table}.{name}")
+                if check_only:
+                    raise DatabaseUpgradeRequired(f"new column {table}.{name}")
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
                 added = True
 

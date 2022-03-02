@@ -4,9 +4,10 @@
 import os
 import logging
 import time
+from .exc import DatabaseUpgradeRequired
 
 
-def migrate(conn):
+def migrate(conn, *, check_only):
     n_rooms = conn.execute("SELECT COUNT(*) FROM rooms").first()[0]
 
     # Migration from a v0.1.x database:
@@ -14,6 +15,8 @@ def migrate(conn):
         return False
 
     logging.warning("No rooms found, but database.db exists; attempting migration")
+    if check_only:
+        raise DatabaseUpgradeRequired("v0.1.x import")
 
     try:
         import_from_0_1_x(conn)

@@ -1,7 +1,8 @@
 import logging
+from .exc import DatabaseUpgradeRequired
 
 
-def migrate(conn):
+def migrate(conn, *, check_only):
     """
     The 0.1.x migration sets up a file_id_hacks table to map old ids to new ids; if it's present and
     non-empty then we enable "hack" mode.  (This should empty out over 15 days as attachments
@@ -22,8 +23,7 @@ def migrate(conn):
     if 'file_id_hacks' in db.metadata.tables:
         # If the table exists but is empty (i.e. because all the attachments expired) then we should
         # drop it.
-        n_fid_hacks = conn.execute("SELECT COUNT(*) FROM file_id_hacks").first()[0]
-        if n_fid_hacks == 0:
+        if not check_only and conn.execute("SELECT COUNT(*) FROM file_id_hacks").first()[0] == 0:
             logging.warning("Dropping file_id_hacks old sogs import table (no longer required)")
             db.metadata.tables['file_id_hacks'].drop(db.engine)
             changed = True
@@ -57,6 +57,8 @@ def migrate(conn):
                     need_fix = True
             if need_fix:
                 logging.warning("Replacing file_id_hacks to add cascading foreign key")
+                if check_only:
+                    raise DatabaseUpgradeRequired("file_id_hacks")
                 conn.execute("ALTER TABLE file_id_hacks RENAME TO old_file_id_hacks")
                 conn.execute(
                     """
@@ -87,6 +89,8 @@ CREATE TABLE file_id_hacks (
                     need_fix = True
             if need_fix:
                 logging.warning("Replacing room_import_hacks to add cascading foreign key")
+                if check_only:
+                    raise DatabaseUpgradeRequired("room_import_hacks")
                 conn.execute("ALTER TABLE room_import_hacks RENAME TO old_room_import_hacks")
                 conn.execute(
                     """
@@ -117,6 +121,8 @@ CREATE TABLE room_import_hacks (
             for f in db.metadata.tables['room_import_hacks'].c['room'].foreign_keys
         )
         if fix_fid or fix_room:
+            if check_only:
+                raise DatabaseUpgradeRequired("v0.1.x import hacks tables")
             if fix_fid:
                 conn.execute(
                     """

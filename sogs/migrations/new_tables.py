@@ -1,4 +1,5 @@
 import logging
+from .exc import DatabaseUpgradeRequired
 
 
 # { table_name => { 'sqlite': ['query1', 'query2'], 'pgsql': "query1; query2" } }
@@ -56,7 +57,7 @@ CREATE INDEX inbox_recipient ON inbox(recipient);
 }
 
 
-def migrate(conn):
+def migrate(conn, *, check_only):
     """Adds new tables that don't have any special migration requirement beyond creation"""
 
     from .. import db
@@ -68,6 +69,8 @@ def migrate(conn):
             continue
 
         logging.warning(f"DB migration: Adding new table {table}")
+        if check_only:
+            raise DatabaseUpgradeRequired(f"new table {table}")
 
         if db.engine.name == 'sqlite':
             for query in v['sqlite']:

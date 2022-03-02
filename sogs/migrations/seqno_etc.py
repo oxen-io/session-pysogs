@@ -1,7 +1,8 @@
 import logging
+from .exc import DatabaseUpgradeRequired
 
 
-def migrate(conn):
+def migrate(conn, *, check_only):
     """
     Rename rooms.updates/messages.updated to rooms.message_sequence/messages.seqno for better
     disambiguation with rooms.info_updates.
@@ -21,6 +22,9 @@ def migrate(conn):
 
     if 'seqno' in db.metadata.tables['messages'].c:
         return False
+
+    if check_only:
+        raise DatabaseUpgradeRequired("sequence column renames & pinned_messages table")
 
     # We can't insert the required pinned_messages because we don't have the pinned_by user, but
     # that isn't a big deal since we didn't have any endpoints for pinned messsages before this
@@ -78,38 +82,6 @@ END
 """
         )
 
-        logging.warning("Fixing user_permissions view")
-        conn.execute("DROP VIEW IF EXISTS user_permissions")
-        conn.execute(
-            """
-CREATE VIEW user_permissions AS
-SELECT
-    rooms.id AS room,
-    users.id AS user,
-    users.session_id,
-    CASE WHEN users.banned THEN TRUE ELSE COALESCE(user_permission_overrides.banned, FALSE) END AS banned,
-    CASE WHEN users.moderator THEN TRUE ELSE COALESCE(user_permission_overrides.read, rooms.read) END AS read,
-    CASE WHEN users.moderator THEN TRUE ELSE COALESCE(user_permission_overrides.write, rooms.write) END AS write,
-    CASE WHEN users.moderator THEN TRUE ELSE COALESCE(user_permission_overrides.upload, rooms.upload) END AS upload,
-    CASE WHEN users.moderator THEN TRUE ELSE COALESCE(user_permission_overrides.moderator, FALSE) END AS moderator,
-    CASE WHEN users.admin THEN TRUE ELSE COALESCE(user_permission_overrides.admin, FALSE) END AS admin,
-    -- room_moderator will be TRUE if the user is specifically listed as a moderator of the room
-    COALESCE(user_permission_overrides.moderator OR user_permission_overrides.admin, FALSE) AS room_moderator,
-    -- global_moderator will be TRUE if the user is a global moderator/admin (note that this is
-    -- *not* exclusive of room_moderator: a moderator/admin could be listed in both).
-    COALESCE(users.moderator OR users.admin, FALSE) as global_moderator,
-    -- visible_mod will be TRUE if this mod is a publicly viewable moderator of the room
-    CASE
-        WHEN user_permission_overrides.moderator OR user_permission_overrides.admin THEN user_permission_overrides.visible_mod
-        WHEN users.moderator OR users.admin THEN users.visible_mod
-        ELSE FALSE
-    END AS visible_mod
-FROM
-    users JOIN rooms LEFT OUTER JOIN user_permission_overrides ON
-        users.id = user_permission_overrides.user AND rooms.id = user_permission_overrides.room
-"""  # noqa: E501
-        )
-
     else:  # postgresql
         logging.warning("Recreating pinned_messages table")
         conn.execute(
@@ -145,37 +117,6 @@ EXECUTE PROCEDURE trigger_room_metadata_info_update_old();
 """
         )
 
-        logging.warning("Fixing user_permissions view")
-        conn.execute(
-            """
-CREATE OR REPLACE VIEW user_permissions AS
-SELECT
-    rooms.id AS room,
-    users.id AS "user",
-    users.session_id,
-    CASE WHEN users.banned THEN TRUE ELSE COALESCE(user_permission_overrides.banned, FALSE) END AS banned,
-    CASE WHEN users.moderator THEN TRUE ELSE COALESCE(user_permission_overrides.read, rooms.read) END AS read,
-    CASE WHEN users.moderator THEN TRUE ELSE COALESCE(user_permission_overrides.write, rooms.write) END AS write,
-    CASE WHEN users.moderator THEN TRUE ELSE COALESCE(user_permission_overrides.upload, rooms.upload) END AS upload,
-    CASE WHEN users.moderator THEN TRUE ELSE COALESCE(user_permission_overrides.moderator, FALSE) END AS moderator,
-    CASE WHEN users.admin THEN TRUE ELSE COALESCE(user_permission_overrides.admin, FALSE) END AS admin,
-    -- room_moderator will be TRUE if the user is specifically listed as a moderator of the room
-    COALESCE(user_permission_overrides.moderator OR user_permission_overrides.admin, FALSE) AS room_moderator,
-    -- global_moderator will be TRUE if the user is a global moderator/admin (note that this is
-    -- *not* exclusive of room_moderator: a moderator/admin could be listed in both).
-    COALESCE(users.moderator OR users.admin, FALSE) as global_moderator,
-    -- visible_mod will be TRUE if this mod is a publicly viewable moderator of the room
-    CASE
-        WHEN user_permission_overrides.moderator OR user_permission_overrides.admin THEN user_permission_overrides.visible_mod
-        WHEN users.moderator OR users.admin THEN users.visible_mod
-        ELSE FALSE
-    END AS visible_mod
-FROM
-    users CROSS JOIN rooms LEFT OUTER JOIN user_permission_overrides ON
-        (users.id = user_permission_overrides."user" AND rooms.id = user_permission_overrides.room);
-"""  # noqa: E501
-        )
-
     logging.warning("Applying message_sequence renames")
     conn.execute("ALTER TABLE rooms RENAME COLUMN updates TO message_sequence")
 
@@ -186,5 +127,9 @@ FROM
     conn.execute("DROP VIEW message_details")
 
     conn.execute("ALTER TABLE messages RENAME COLUMN updated TO seqno")
+
+    # Gets recreated in the user_permissions migration:
+    logging.warning("Dropping user_permissions view")
+    conn.execute("DROP VIEW IF EXISTS user_permissions")
 
     return True
