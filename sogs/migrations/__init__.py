@@ -4,6 +4,7 @@ import coloredlogs
 from .. import config
 
 from . import (
+    file_message,
     import_hacks,
     message_details_deleter,
     message_views,
@@ -42,6 +43,7 @@ def migrate(conn, *, check_only=False):
         user_perm_futures,
         room_accessible,
         user_permissions,
+        file_message,
         import_hacks,
     ):
         changes = False

@@ -648,6 +648,32 @@ class Room:
                     raise PostRejected("filtration rejected message")
         return False
 
+    def _own_files(self, msg_id: int, files: List[int], user):
+        """
+        Associated any of the given file ids with the given message id.  Only files that are recent,
+        expiring, unowned uploads by the same user are actually updated.
+        """
+        return db.query(
+            """
+            UPDATE files SET
+                message = :m,
+                expiry = :exp
+            WHERE id IN :ids
+                AND room = :r
+                AND uploader = :u
+                AND message IS NULL
+                AND uploaded >= :recent
+                AND expiry IS NOT NULL
+            """,
+            m=msg_id,
+            exp=time.time() + config.UPLOAD_DEFAULT_EXPIRY_DAYS * 86400.0,
+            ids=files,
+            r=self.id,
+            u=user.id,
+            recent=time.time() - 3600,
+            bind_expanding=['ids'],
+        )
+
     def add_post(
         self,
         user: User,
@@ -656,6 +682,7 @@ class Room:
         *,
         whisper_to: Optional[Union[User, str]] = None,
         whisper_mods: bool = False,
+        files: List[int] = [],
     ):
         """
         Adds a post to the room.  The user must have write permissions.
@@ -718,6 +745,11 @@ class Room:
                 whisper=whisper_to.id if whisper_to else None,
                 whisper_mods=whisper_mods,
             )
+
+            if files:
+                # Take ownership of any uploaded files attached to the post:
+                self._own_files(msg_id, files, user)
+
             assert msg_id is not None
             row = query("SELECT posted, seqno FROM messages WHERE id = :m", m=msg_id).first()
             msg = {
@@ -737,7 +769,7 @@ class Room:
         send_mule("message_posted", msg['id'])
         return msg
 
-    def edit_post(self, user: User, msg_id: int, data: bytes, sig: bytes):
+    def edit_post(self, user: User, msg_id: int, data: bytes, sig: bytes, *, files: List[int] = []):
         """
         Edits a post in the room.  The post must exist, must have been authored by the same user,
         and must not be deleted.  The user must *currently* have write permission (i.e. if they lose
@@ -792,6 +824,10 @@ class Room:
                 data_size=data_size,
                 sig=sig,
             )
+
+            if files:
+                # If the edit includes new attachments then own them:
+                self._own_files(msg_id, files, user)
 
         send_mule("message_edited", msg_id)
 
@@ -1363,7 +1399,23 @@ class Room:
             app.logger.warning("Unable to unpin all messages from {self}: {admin} is not an admin")
             raise BadPermission()
 
-        count = query("DELETE FROM pinned_messages WHERE room = :r", r=self.id).rowcount
+        with db.transaction():
+            unpinned_files = [
+                r[0]
+                for r in query(
+                    """
+                    SELECT id FROM files
+                    WHERE message IN (SELECT message FROM pinned_messages WHERE room = :r)
+                    """,
+                    r=self.id,
+                )
+            ]
+
+            count = query("DELETE FROM pinned_messages WHERE room = :r", r=self.id).rowcount
+
+            if unpinned_files:
+                File.reset_expiries(unpinned_files)
+
         if count != 0:
             self._pinned = None
         return count
@@ -1378,9 +1430,21 @@ class Room:
             app.logger.warning("Unable to unpin message from {self}: {admin} is not an admin")
             raise BadPermission()
 
-        count = query(
-            "DELETE FROM pinned_messages WHERE room = :r AND message = :m", r=self.id, m=msg_id
-        ).rowcount
+        with db.transaction():
+            unpinned_files = [
+                r[0]
+                for r in query(
+                    "SELECT id FROM files WHERE room = :r AND message = :m", r=self.id, m=msg_id
+                )
+            ]
+
+            count = query(
+                "DELETE FROM pinned_messages WHERE room = :r AND message = :m", r=self.id, m=msg_id
+            ).rowcount
+
+            if unpinned_files:
+                File.reset_expiries(unpinned_files)
+
         if count != 0:
             self._pinned = None
         return count
