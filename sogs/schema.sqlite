@@ -89,20 +89,11 @@ CREATE TABLE pinned_messages (
 );
 
 
--- Trigger to handle required updates after a message gets deleted (in the SOGS context: that is,
--- has data set to NULL)
-CREATE TRIGGER messages_after_delete AFTER UPDATE OF data ON messages
-FOR EACH ROW WHEN NEW.data IS NULL AND OLD.data IS NOT NULL
-BEGIN
-    -- Unpin if we deleted a pinned message:
-    DELETE FROM pinned_messages WHERE message = OLD.id;
-END;
-
-
 CREATE TABLE files (
     id INTEGER NOT NULL PRIMARY KEY,
     room INTEGER REFERENCES rooms(id) ON DELETE SET NULL,
     uploader INTEGER REFERENCES users(id),
+    message INTEGER REFERENCES messages(id) ON DELETE SET NULL,
     size INTEGER NOT NULL,
     uploaded FLOAT NOT NULL DEFAULT ((julianday('now') - 2440587.5)*86400.0), /* unix epoch */
     expiry FLOAT DEFAULT ((julianday('now') - 2440587.5 + 15.0)*86400.0), /* unix epoch */
@@ -111,6 +102,7 @@ CREATE TABLE files (
 );
 CREATE INDEX files_room ON files(room);
 CREATE INDEX files_expiry ON files(expiry);
+CREATE INDEX files_message ON files(message);
 -- When we delete a room all its files will have room set to NULL but we *also* need to mark them
 -- for immediate expiry so that the file pruner finds them to clean them up at the next cleanup
 -- check.
@@ -119,6 +111,20 @@ FOR EACH ROW WHEN NEW.room IS NULL
 BEGIN
     UPDATE files SET expiry = 0.0 WHERE id = NEW.id;
 END;
+
+
+-- Trigger to handle required updates after a message gets deleted (in the SOGS context: that is,
+-- has data set to NULL)
+CREATE TRIGGER messages_after_delete AFTER UPDATE OF data ON messages
+FOR EACH ROW WHEN NEW.data IS NULL AND OLD.data IS NOT NULL
+BEGIN
+    -- Unpin if we deleted a pinned message:
+    DELETE FROM pinned_messages WHERE message = OLD.id;
+    -- Expire the post's attachments immediately:
+    UPDATE files SET expiry = 0.0 WHERE message = OLD.id;
+END;
+
+
 
 CREATE TABLE users (
     id INTEGER NOT NULL PRIMARY KEY,
@@ -277,16 +283,19 @@ CREATE TRIGGER room_metadata_pinned_add AFTER INSERT ON pinned_messages
 FOR EACH ROW
 BEGIN
     UPDATE rooms SET info_updates = info_updates + 1 WHERE id = NEW.room;
+    UPDATE files SET expiry = NULL WHERE message = NEW.message;
 END;
 CREATE TRIGGER room_metadata_pinned_update AFTER UPDATE ON pinned_messages
 FOR EACH ROW
 BEGIN
     UPDATE rooms SET info_updates = info_updates + 1 WHERE id = NEW.room;
+    UPDATE files SET expiry = NULL WHERE message = NEW.message;
 END;
 CREATE TRIGGER room_metadata_pinned_remove AFTER DELETE ON pinned_messages
 FOR EACH ROW
 BEGIN
     UPDATE rooms SET info_updates = info_updates + 1 WHERE id = OLD.room;
+    UPDATE files SET expiry = uploaded + 15.0 * 86400.0 WHERE message = OLD.message;
 END;
 
 

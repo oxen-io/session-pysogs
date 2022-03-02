@@ -1041,3 +1041,34 @@ def test_edits(client, room, user, user2, mod, global_admin):
     url_get = "/room/test-room/messages/since/4"
     r = sogs_get(client, url_get, user)
     assert r.json == []
+
+
+def test_owned_files():
+    # FIXME - stub.  Need to:
+
+    # - upload a file via new endpoints
+    # - verify that the file expiry is 1h from now (±1s)
+    # - add a post that references the file
+    # - verify that the file expiry is 15 days from now (±1s)
+    # - upload another file
+    # - verify the new file exp is ~1h
+    # - edit the post with the edit referencing both files
+    # - verify the new file exp is ~15 days
+    # - verify that the old file exp hasn't changed
+    # - pin the post
+    # - verify that expiry of both files is now NULL
+    # - unpin the post
+    # - verify that expiry of both is reset to 15d
+
+    # - make another post that references one of the first post's file
+    # - make sure the first post associated message hasn't changed (i.e. no stealing owned uploads)
+
+    # - upload a file and set it as the room image
+    # - verify that the uploaded file expiry and message are both NULL
+    # - make a post referencing the pinned ID
+    # - verify that the pinned image expiry and message are still both NULL
+
+    # - delete the first post
+    # - verify that both attachments are now expired
+
+    pass

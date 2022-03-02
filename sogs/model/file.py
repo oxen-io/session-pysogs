@@ -2,6 +2,7 @@ from ..db import query
 from .. import config, utils
 from .exc import NoSuchFile, NoSuchUser
 import time
+from typing import List
 
 
 class File:
@@ -120,3 +121,12 @@ class File:
         )
         query("UPDATE files SET expiry = :when WHERE id = :f", when=expiry, f=self.id)
         self.expiry = expiry
+
+    @staticmethod
+    def reset_expiries(file_ids: List[int]):
+        query(
+            "UPDATE files SET expiry = uploaded + :exp WHERE id IN :ids",
+            exp=config.UPLOAD_DEFAULT_EXPIRY_DAYS * 86400.0,
+            ids=file_ids,
+            bind_expanding=['ids'],
+        )
