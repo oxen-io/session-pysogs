@@ -441,7 +441,10 @@ def test_polling(client, room, user, user2, mod, admin, global_mod, global_admin
             filename='tiny.png',
         )
     )
-    room.image = img
+
+    r = sogs_put(client, f'/room/{room.token}', {'image': img.id}, admin)
+    assert r.status_code == 200
+    assert r.json == dict()
 
     r = sogs_get(client, f"/room/test-room/pollInfo/{info_up}", user)
     assert r.status_code == 200

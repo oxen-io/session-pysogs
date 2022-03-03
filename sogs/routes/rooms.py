@@ -197,6 +197,7 @@ def update_room(room):
       update the room's default read, access, write, and upload permissions for ordinary users (i.e.
       users who do not have any other user-specific permission applied).  See the description of
       Access permissions in the (room information)[#get-roomroom] endpoint for details.
+    - `image` — The file id of an image that was uploaded to use as the room icon.
 
     # Return value
 
@@ -233,6 +234,14 @@ def update_room(room):
         read, accessible, write, upload = (
             req.get('default_' + x) for x in ('read', 'accessible', 'write', 'upload')
         )
+        if 'image' in req:
+            img = req.get('image')
+            if not isinstance(img, int):
+                app.logger.warning(f"Room update: invalid image: {type(id)} is not an integer")
+                abort(http.BAD_REQUEST)
+            room.image = img
+            did = True
+
         for val in (read, accessible, write, upload):
             if not (val is None or isinstance(val, bool) or isinstance(val, int)):
                 app.logger.warning(
