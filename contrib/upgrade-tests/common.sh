@@ -43,7 +43,6 @@ done
 
 
 do_upgrades() {
-    first=1
     tags=("$@" "$(git rev-parse HEAD)")
     for tag in "${tags[@]}"; do
         echo "Upgrading to $tag..."
@@ -57,8 +56,8 @@ do_upgrades() {
             args=("-L")
         fi
 
-        if [ -n "$first" ]; then
-            first=
+        if [ -n "$sogs_need_initialize" ]; then
+            sogs_need_initialize=
 
             if [ -n "$sogs_key_conv" ]; then
                 python3 -msogs.key_convert
