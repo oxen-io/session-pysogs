@@ -102,7 +102,9 @@ def bencode_consume_string(body: memoryview) -> Tuple[memoryview, memoryview]:
 
 
 def server_url(room):
-    return '{}/r/{}?public_key={}'.format(config.URL_BASE, room or '', crypto.server_pubkey_hex)
+    # TODO: Once Session supports it, prefix this with /r/ so that SOGS pseudo-URLs for Session
+    # coincide with the web viewer URL.
+    return '{}/{}?public_key={}'.format(config.URL_BASE, room or '', crypto.server_pubkey_hex)
 
 
 SIGNATURE_SIZE = 64
