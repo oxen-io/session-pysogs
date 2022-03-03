@@ -61,17 +61,23 @@ def test_dm_send_to_banned_user(client, blind_user, blind_user2):
 
 def test_dm_send(client, blind_user, blind_user2):
     post = make_post(b'bep', sender=blind_user, to=blind_user2)
-    r = sogs_post(client, f'/inbox/{blind_user2.session_id}', post, blind_user)
-    assert r.status_code == 201
-    r = sogs_get(client, '/inbox', blind_user2)
-    assert r.status_code == 200
-    assert len(r.json) == 1
     msg_expected = {
         'id': 1,
         'message': post['message'],
         'sender': blind_user.session_id,
         'recipient': blind_user2.session_id,
     }
+
+    r = sogs_post(client, f'/inbox/{blind_user2.session_id}', post, blind_user)
+    assert r.status_code == 201
+    data = r.json
+    assert -1 < data.pop('posted_at') - time.time() < 1
+    assert -1 < data.pop('expires_at') - config.DM_EXPIRY_DAYS * 86400 - time.time() < 1
+    assert data == {k: v for k, v in msg_expected.items() if k != 'message'}
+
+    r = sogs_get(client, '/inbox', blind_user2)
+    assert r.status_code == 200
+    assert len(r.json) == 1
     data = r.json[0]
     assert -1 < data.pop('posted_at') - time.time() < 1
     assert -1 < data.pop('expires_at') - config.DM_EXPIRY_DAYS * 86400 - time.time() < 1

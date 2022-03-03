@@ -10,19 +10,21 @@ from flask import abort, jsonify, g, Blueprint, request, Response
 dm = Blueprint('dm', __name__)
 
 
-def _serialize_message(msg):
-    return {
+def _serialize_message(msg, include_message=True):
+    m = {
         "id": msg.id,
         "posted_at": msg.posted_at,
         "expires_at": msg.expires_at,
-        "message": utils.encode_base64(msg.data),
         "sender": msg.sender.session_id,
         "recipient": msg.recipient.session_id,
     }
+    if include_message:
+        m["message"] = utils.encode_base64(msg.data)
+    return m
 
 
 def _box(out: bool, *, since=None):
-    """ handle inbox/outbox endpoints common logic """
+    """handle inbox/outbox endpoints common logic"""
     if not g.user.is_blinded:
         abort(http.FORBIDDEN)
     limit = utils.get_int_param('limit', 100, min=1, max=256, truncate=True)
@@ -83,8 +85,8 @@ def send_inbox(sid):
     # Return value
 
     On successful deposit of the message a 201 (Created) status code is returned.  The body will be
-    a JSON object containing an `expires_at` key indicating the unix timestamp of when the message
-    expires.
+    a JSON object containing the message details as would be returned by retrieving the message,
+    except that it omits the encrypted message body.
 
     # Error status codes
 
@@ -109,4 +111,4 @@ def send_inbox(sid):
 
     with db.transaction():
         msg = Message(data=utils.decode_base64(message), recip=recip_user, sender=g.user)
-    return jsonify({"expires_at": msg.expires_at}), http.CREATED
+    return jsonify(_serialize_message(msg, include_message=False)), http.CREATED
