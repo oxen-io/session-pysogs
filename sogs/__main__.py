@@ -252,7 +252,7 @@ elif args.add_moderators:
         print("Error: --rooms is required when using --add-moderators", file=sys.stderr)
         sys.exit(1)
     for a in args.add_moderators:
-        if not re.fullmatch(r'05[A-Fa-f0-9]{64}', a):
+        if not re.fullmatch(r'[01]5[A-Fa-f0-9]{64}', a):
             print(f"Error: '{a}' is not a valid session id", file=sys.stderr)
             sys.exit(1)
     if len(args.rooms) > 1 and ('*' in args.rooms or '+' in args.rooms):
@@ -302,7 +302,7 @@ elif args.delete_moderators:
         print("Error: --rooms is required when using --delete-moderators", file=sys.stderr)
         sys.exit(1)
     for a in args.delete_moderators:
-        if not re.fullmatch(r'05[A-Fa-f0-9]{64}', a):
+        if not re.fullmatch(r'[01]5[A-Fa-f0-9]{64}', a):
             print(f"Error: '{a}' is not a valid session id", file=sys.stderr)
             sys.exit(1)
     if len(args.rooms) > 1 and ('*' in args.rooms or '+' in args.rooms):
