@@ -1449,6 +1449,10 @@ class Room:
             self._pinned = None
         return count
 
+    @property
+    def url(self):
+        return utils.server_url(self.token)
+
 
 def get_rooms():
     """Get a list of all rooms; does not check permissions."""

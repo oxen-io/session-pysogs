@@ -2,15 +2,16 @@
 
 {% block body %}
 <center>
-  <img src="/view/{{room}}/invite.png" style="margin: 2em" />
-  <pre>{{room_url}}</pre>
+  <img src="invite.png" style="margin: 2em" />
+  <pre>{{room.url}}</pre>
 </center>
 {% if show_recent %}
   <ul id="messages">
     <li>loading...</li>
   </ul>
   <script>
-    window.view_room = "{{room}}";
+    window.view_room = "{{room.token}}";
+    window.poll_room_url = "/room/{{room.token}}/messages/recent";
   </script>
   <script src="/static/protobuf.min.js"></script>
   <script src="/static/view_room.js"></script>
