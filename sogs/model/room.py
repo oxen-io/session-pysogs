@@ -1264,7 +1264,7 @@ class Room:
                 old_fid=file_id,
             ).first()
 
-        if row and row['expiry'] > time.time():
+        if row and row['expiry'] is None or row['expiry'] > time.time():
             return File(row)
         return None
 
