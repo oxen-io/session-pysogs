@@ -3,9 +3,10 @@ from ..model import room as mroom
 from ..web import app
 from . import auth
 
-from flask import abort, jsonify, g, Blueprint, request, make_response, send_file
+from flask import abort, jsonify, g, Blueprint, request, make_response, Response
 from werkzeug.http import http_date, parse_options_header
-from os import path
+from os import path, fstat
+import urllib.parse
 
 # Room-related routes, excluding retrieving/posting messages
 
@@ -384,16 +385,20 @@ def serve_file(room, fileId, filename=None):
     if not room_file:
         abort(http.NOT_FOUND)
 
-    resp = make_response(
-        send_file(
-            path.join(path.abspath(path.curdir), room_file.path),
-            as_attachment=True,
-            attachment_filename=room_file.filename,
+    f = open(path.join(path.abspath(path.curdir), room_file.path), 'rb')
+
+    headers = {
+        'Date': http_date(room_file.uploaded),
+        'Content-Length': fstat(f.fileno()).st_size,
+        'Content-Disposition': 'attachment',
+    }
+    if room_file.filename:
+        headers['Content-Disposition'] = "attachment; filename*=UTF-8''{}".format(
+            urllib.parse.quote(room_file.filename.encode('utf-8'))
         )
-    )
-
-    resp.headers["Date"] = http_date(room_file.uploaded)
     if room_file.expiry:
-        resp.headers["Expires"] = http_date(room_file.expiry)
+        headers["Expires"] = http_date(room_file.expiry)
 
-    return resp
+    return Response(
+        response=f, status=200, content_type='application/octet-stream', headers=headers
+    )
