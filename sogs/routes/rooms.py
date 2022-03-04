@@ -366,9 +366,6 @@ def upload_file(room):
             if len(cd) == 2 and 'filename' in cd[1]:
                 filename = cd[1]['filename']
 
-    if not filename:
-        abort(http.BAD_REQUEST)
-
     # 1 hour lifetime before link to post
     id = room.upload_file(request.data, g.user, filename=filename, lifetime=3600.0)
     resp = make_response(jsonify({"id": id}))
@@ -376,9 +373,10 @@ def upload_file(room):
     return resp
 
 
+@rooms.get("/room/<Room:room>/file/<int:fileId>")
 @rooms.get("/room/<Room:room>/file/<int:fileId>/<filename>")
 @auth.read_required
-def serve_file(room, fileId, filename):
+def serve_file(room, fileId, filename=None):
     """
     serves a file uploaded to a room
     """
@@ -390,7 +388,7 @@ def serve_file(room, fileId, filename):
         send_file(
             path.join(path.abspath(path.curdir), room_file.path),
             as_attachment=True,
-            attachment_filename=filename,
+            attachment_filename=room_file.filename,
         )
     )
 

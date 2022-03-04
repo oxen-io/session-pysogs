@@ -18,7 +18,8 @@ class File:
         expiry - unix timestamp when the file expires.  None for non-expiring files.
         path - the path of this file on disk, relative to the base data directory.
         filename - the suggested filename provided by the user.  None for there is no suggestion
-            (this will always be the case for files uploaded by legacy Session clients).
+            (this will always be the case for files uploaded by legacy Session clients, and
+            sometimes by newer Session clients, e.g. when uploading from a paste).
     """
 
     def __init__(self, row=None, *, id=None):
