@@ -1,5 +1,4 @@
 from ..web import app
-from .. import http
 
 from flask import request, g
 from io import BytesIO
@@ -85,7 +84,7 @@ def make_subrequest(
         g.user_reauth = user_reauth
         with app.request_context(subreq_env):
             response = app.full_dispatch_request()
-        if response.status_code != http.OK:
+        if response.status_code >= 400:
             app.logger.warning(
                 f"Sub-request for {method} {path} returned status {response.status_code}"
             )
