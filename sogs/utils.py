@@ -88,7 +88,6 @@ def bencode_consume_string(body: memoryview) -> Tuple[memoryview, memoryview]:
     Raises ValueError on parse failure.
     """
     pos = 0
-    print(f"body: {body.tobytes()}")
     while pos < len(body) and 0x30 <= body[pos] <= 0x39:  # 1+ digits
         pos += 1
     if pos == 0 or pos >= len(body) or body[pos] != 0x3A:  # 0x3a == ':'
