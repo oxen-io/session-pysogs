@@ -274,7 +274,7 @@ class Room:
             if self.image:
                 self.image.set_expiry()
 
-            query("UPDATE rooms SET image = :f WHERE id = :r", r=self.id, f=file.id)
+            query("UPDATE rooms SET image = :f, message = NULL WHERE id = :r", r=self.id, f=file.id)
 
             self._fetch_image_id, self._image = None, file
 
