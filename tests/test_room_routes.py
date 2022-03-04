@@ -1176,9 +1176,7 @@ def _file_upload(client, room, user, *, unsafe=False, utf=False, filename):
     id = r.json.get('id')
     assert id is not None
     assert id != 0
-    if unsafe:
-        filename = 'unsafe'
-    r = sogs_get(client, f'/room/{room.token}/file/{id}/{filename}', user)
+    r = sogs_get(client, f'/room/{room.token}/file/{id}', user)
     assert r.status_code == 200
     assert r.data == file_content
     expected = ('attachment', {'filename': filename})
@@ -1198,7 +1196,7 @@ def test_file_upload_fuzz(client, room, user):
             client,
             room,
             user,
-            filename=random(16).replace(b'\n', b'').replace(b'\r', b''),
+            filename=random(16).replace(b'\n', b'').replace(b'\r', b'').decode('latin1'),
             unsafe=True,
         )
 

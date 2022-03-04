@@ -1296,8 +1296,9 @@ class Room:
         files_dir = os.path.join(config.UPLOAD_PATH, self.token)
         os.makedirs(files_dir, exist_ok=True)
 
-        if filename is not None:
-            filename = re.sub(config.UPLOAD_FILENAME_BAD, "_", filename)
+        upload_filename = (
+            None if filename is None else re.sub(config.UPLOAD_FILENAME_BAD, "_", filename)
+        )
 
         file_id, file_path = None, None
 
@@ -1323,17 +1324,17 @@ class Room:
                     filename=filename,
                 )
 
-                if filename is None:
-                    filename = '(unnamed)'
+                if upload_filename is None:
+                    upload_filename = '(unnamed)'
 
-                if len(filename) > config.UPLOAD_FILENAME_MAX:
-                    filename = (
-                        filename[: config.UPLOAD_FILENAME_KEEP_PREFIX]
+                if len(upload_filename) > config.UPLOAD_FILENAME_MAX:
+                    upload_filename = (
+                        upload_filename[: config.UPLOAD_FILENAME_KEEP_PREFIX]
                         + "..."
-                        + filename[-config.UPLOAD_FILENAME_KEEP_SUFFIX :]
+                        + upload_filename[-config.UPLOAD_FILENAME_KEEP_SUFFIX :]
                     )
 
-                file_path = f"{files_dir}/{file_id}_{filename}"
+                file_path = f"{files_dir}/{file_id}_{upload_filename}"
 
                 with open(file_path, 'wb') as f:
                     f.write(content)
