@@ -274,7 +274,7 @@ class Room:
             if self.image:
                 self.image.set_expiry()
 
-            query("UPDATE rooms SET image = :f, message = NULL WHERE id = :r", r=self.id, f=file.id)
+            query("UPDATE rooms SET image = :f WHERE id = :r", r=self.id, f=file.id)
 
             self._fetch_image_id, self._image = None, file
 
@@ -1263,10 +1263,10 @@ class Room:
                 r=self.id,
                 old_fid=file_id,
             ).first()
-
-        if row and row['expiry'] is None or row['expiry'] > time.time():
+        if not row:
+            return
+        if row['expiry'] is None or row['expiry'] > time.time():
             return File(row)
-        return None
 
     def upload_file(
         self,
