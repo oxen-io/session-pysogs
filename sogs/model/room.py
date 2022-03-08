@@ -934,7 +934,7 @@ class Room:
             # Set up files for deletion, but don't wipe out the room image in case the target was
             # the one who uploaded it:
             image = self.image
-            omit_id = image.id if image.uploader == poster.id else None
+            omit_id = image.id if image and image.uploader == poster.id else None
 
             # TODO: Eventually we can drop this: once uploads have to be properly associated with
             # posts then the post deletion should trigger automatic expiry of post attachments.

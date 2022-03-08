@@ -1,5 +1,5 @@
 from .. import config, db, http
-from ..model import room as mroom, exc
+from ..model import room as mroom, exc, user as muser
 from ..web import app
 from . import auth
 
@@ -542,3 +542,28 @@ def serve_file_with_ignored_filename(room, fileId, filename):
 
     """
     return serve_file(room=room, fileId=fileId)
+
+
+@rooms.delete("/room/<Room:room>/all/<SessionID:sid>")
+def delete_all_posts(room, sid):
+    """
+    Deletes all posts from a room made by a user
+
+    # URL Parameters
+
+    - `sid` — the session id of the user to ban
+
+    # Return value
+
+    An empty json object is returned.
+
+    # Error status codes
+
+    - 403 Forbidden — if the invoking user does not have access to the room.
+    - 404 Not Found — if the user we are deleting posts from made no posts in this room.
+    """
+    user = muser.User(session_id=sid, autovivify=False)
+    deleted, _ = room.delete_all_posts(user, deleter=g.user)
+    if not deleted:
+        abort(http.NOT_FOUND)
+    return jsonify({})

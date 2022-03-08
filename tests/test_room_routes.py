@@ -1377,3 +1377,43 @@ def test_file_upload_false(client, room, user, mod):
         extra_headers={"Content-Disposition": ('attachment', {'filename': filename})},
     )
     assert r.status_code == 403
+
+
+def test_remove_all_posts_from_room(client, room, user, mod, no_rate_limit):
+    for _ in range(256):
+        _make_dummy_post(room, user)
+    assert len(room.get_messages_for(user, recent=True)) == 256
+    r = sogs_delete(client, f'/room/{room.token}/all/{user.session_id}', mod)
+    assert r.status_code == 200
+    assert len(room.get_messages_for(user, recent=True)) == 0
+    assert room.check_unbanned(user)
+
+
+def test_remove_all_posts_from_room_not_allowed(client, room, user, user2, no_rate_limit):
+    for _ in range(256):
+        _make_dummy_post(room, user)
+    assert len(room.get_messages_for(user, recent=True)) == 256
+    with pytest.raises(wexc.Forbidden):
+        sogs_delete(client, f'/room/{room.token}/all/{user.session_id}', user2)
+    assert len(room.get_messages_for(user, recent=True)) == 256
+    assert room.check_unbanned(user) and room.check_unbanned(user2)
+
+
+def test_remove_all_posts_from_room_not_allowed_for_user(client, room, mod, user, no_rate_limit):
+    for _ in range(256):
+        _make_dummy_post(room, mod)
+    with pytest.raises(wexc.Forbidden):
+        sogs_delete(client, f'/room/{room.token}/all/{mod.session_id}', user)
+    assert len(room.get_messages_for(user, recent=True)) == 256
+    assert room.check_unbanned(user) and room.check_unbanned(mod)
+
+
+def test_remove_all_self_posts_from_room(client, room, mod, user, no_rate_limit):
+    for u in (user, mod):
+        for _ in range(256):
+            _make_dummy_post(room, u)
+        assert len(room.get_messages_for(u, recent=True)) == 256
+        r = sogs_delete(client, f'/room/{room.token}/all/{u.session_id}', u)
+        assert r.status_code == 200
+        assert len(room.get_messages_for(u, recent=True)) == 0
+        assert room.check_unbanned(u)
