@@ -1065,7 +1065,7 @@ def _make_file_upload(filename):
     return random(1024), {"Content-Disposition": ('attachment', {'filename': filename})}
 
 
-def test_owned_files(client, room, user, admin):
+def test_owned_files(client, room, room2, user, admin):
     # - upload a file via new endpoints
     filedata, headers = _make_file_upload('fug-1.jpeg')
     r = sogs_post_raw(client, f'/room/{room.token}/file', filedata, user, extra_headers=headers)
@@ -1125,8 +1125,14 @@ def test_owned_files(client, room, user, admin):
     filedata, headers = _make_file_upload('another.png')
     r = sogs_post_raw(client, f'/room/{room.token}/file', filedata, user, extra_headers=headers)
     assert r.status_code == 201
+    f3 = File(id=r.json['id'])
+    assert f3.expiry == from_now.hours(1)
     d, s = (utils.encode_base64(x) for x in (b"more post data", pad64("fsdf")))
-    post_info = {'data': d, 'signature': s, 'files': [f1.id, r.json['id']]}
+    post_info = {'data': d, 'signature': s, 'files': [f1.id, f3.id]}
+    r = sogs_put(client, f'/room/{room.token}/message/{post_id}', post_info, user)
+    assert r.status_code == 200
+    f3 = File(id=f3.id)
+    assert f3.expiry == from_now.days(15)
 
     # - make sure the first post associated message hasn't changed (i.e. no stealing owned uploads)
     f1a = File(id=f1.id)
@@ -1148,6 +1154,8 @@ def test_owned_files(client, room, user, admin):
     # - make a post referencing the room image ID
     d, s = (utils.encode_base64(x) for x in (b"post xyz", pad64("z")))
     post_info = {'data': d, 'signature': s, 'files': [room_img]}
+    r = sogs_put(client, f'/room/{room.token}/message/{post_id}', post_info, user)
+    assert r.status_code == 200
 
     # - verify that the pinned image expiry and message are still both NULL
     f_room = File(id=f_room.id)
@@ -1165,12 +1173,34 @@ def test_owned_files(client, room, user, admin):
 
     from sogs.cleanup import cleanup
 
-    assert cleanup() == (2, 0, 0, 0, 0)
+    # Cleanup should remove 3 attachments: the two originals plus the one we added via an edit:
+    assert cleanup() == (3, 0, 0, 0, 0)
 
     with pytest.raises(sogs.model.exc.NoSuchFile):
         f1 = File(id=f1.id)
     with pytest.raises(sogs.model.exc.NoSuchFile):
         f2 = File(id=f2.id)
+
+
+def test_no_file_crosspost(client, room, room2, user, global_admin):
+    # Disallow cross-room references (i.e. a post attaching a file uploaded to another room)
+    filedata, headers = _make_file_upload('room2-file.jpg')
+    r = sogs_post_raw(client, f'/room/{room2.token}/file', filedata, user, extra_headers=headers)
+    assert r.status_code == 201
+    f = File(id=r.json['id'])
+    d, s = (utils.encode_base64(x) for x in (b"room1 post", pad64("sig123")))
+    post_info = {'data': d, 'signature': s, 'files': [f.id]}
+    r = sogs_post(client, f'/room/{room.token}/message', post_info, user)
+    assert r.status_code == 201
+
+    f = File(id=f.id)
+    # The file isn't for a post in room 1, so shouldn't have been associated:
+    assert f.post_id is None
+    assert f.expiry == from_now.hours(1)
+
+    # Disallow setting the room image to some foreign room's upload
+    r = sogs_put(client, f'/room/{room.token}', {'image': f.id}, global_admin)
+    assert r.status_code == 406
 
 
 def _make_dummy_post(room, user):

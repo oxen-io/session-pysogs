@@ -269,6 +269,9 @@ class Room:
             if not isinstance(file, File):
                 file = File(id=file)
 
+            if file.room_id != self.id:
+                raise NoSuchFile(file.room_id)
+
             file.set_expiry(forever=True)
 
             if self.image:

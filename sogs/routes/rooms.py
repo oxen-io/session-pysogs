@@ -1,5 +1,5 @@
 from .. import config, db, http
-from ..model import room as mroom
+from ..model import room as mroom, exc
 from ..web import app
 from . import auth
 
@@ -198,7 +198,7 @@ def update_room(room):
       update the room's default read, access, write, and upload permissions for ordinary users (i.e.
       users who do not have any other user-specific permission applied).  See the description of
       Access permissions in the (room information)[#get-roomroom] endpoint for details.
-    - `image` — The file id of an image that was uploaded to use as the room icon.
+    - `image` — The file id of an image that was uploaded in this room to use as the room icon.
 
     # Return value
 
@@ -207,6 +207,9 @@ def update_room(room):
     # Error status codes
 
     - 403 Forbidden — if the invoking user does not have administrator access to the room.
+
+    - 406 Not Acceptable — if the given data is not acceptable.  Currently this response occurs if a
+      given `image` is invalid (i.e. does not exist, or is not uploaded to this room).
     """
 
     req = request.json
@@ -240,7 +243,11 @@ def update_room(room):
             if not isinstance(img, int):
                 app.logger.warning(f"Room update: invalid image: {type(id)} is not an integer")
                 abort(http.BAD_REQUEST)
-            room.image = img
+            try:
+                room.image = img
+            except exc.NoSuchFile as e:
+                app.logger.warning(f"Room image update invalid: {e}")
+                abort(http.NOT_ACCEPTABLE)
             did = True
 
         for val in (read, accessible, write, upload):
