@@ -934,20 +934,19 @@ class Room:
             # Set up files for deletion, but don't wipe out the room image in case the target was
             # the one who uploaded it:
             image = self.image
-            omit_id = image.id if image.uploader == poster.id else None
+            omit_id = image.id if image and image.uploader == poster.id else None
 
             # TODO: Eventually we can drop this: once uploads have to be properly associated with
             # posts then the post deletion should trigger automatic expiry of post attachments.
 
-            # Don't actually delete right now but set room to NULL so that the images aren't
-            # retrievable, and set expiry to now so that they'll be picked up by the next db
-            # cleanup.
+            # Don't actually delete right now but just expire them so that the next db cleanup will
+            # perform the deletion (and since they are expired, they won't be accessible in the
+            # meantime).
             result = query(
                 f"""
-                UPDATE files SET room = NULL, expiry = :now WHERE room = :r AND uploader = :u
+                UPDATE files SET expiry = 0.0 WHERE room = :r AND uploader = :u
                     {'AND id != :omit' if omit_id else ''}
                 """,
-                now=time.time(),
                 r=self.id,
                 u=poster.id,
                 omit=omit_id,
