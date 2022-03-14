@@ -435,19 +435,28 @@ def test_polling(client, room, user, user2, mod, admin, global_mod, global_admin
     assert 'details' not in sogs_get(client, f"/room/test-room/pollInfo/{info_up}", user).json
 
     # Setting room image
-    img = File(
-        id=room.upload_file(
-            content=b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02'
-            b'\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDAT\x08\xd7c\x90\x8dp\x04\x00\x01L\x00\xb7\xb1'
-            b'o\xa7\\\x00\x00\x00\x00IEND\xaeB`\x82',
-            uploader=mod,
-            filename='tiny.png',
-        )
+    tiny_png = (
+        b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00'
+        b'\x90wS\xde\x00\x00\x00\x0cIDAT\x08\xd7c\x90\x8dp\x04\x00\x01L\x00\xb7\xb1o\xa7\\\x00\x00'
+        b'\x00\x00IEND\xaeB`\x82'
     )
+    r = sogs_post_raw(
+        client,
+        f'/room/{room.token}/file',
+        tiny_png,
+        mod,
+        extra_headers={"Content-Disposition": ('attachment', {'filename': 'tiny.png'})},
+    )
+    assert r.status_code == 201
+    assert r.json == {'id': 1}
 
+    img = File(id=r.json['id'])
+    assert img.expiry == from_now.hours(1)
     r = sogs_put(client, f'/room/{room.token}', {'image': img.id}, admin)
     assert r.status_code == 200
     assert r.json == dict()
+    img = File(id=img.id)
+    assert img.expiry is None
 
     r = sogs_get(client, f"/room/test-room/pollInfo/{info_up}", user)
     assert r.status_code == 200
