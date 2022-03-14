@@ -13,6 +13,7 @@ class File:
         id - the numeric file id, i.e. primary key
         room - the Room that this file belongs to (only retrieved on demand).
         uploader - the User that uploaded this file (only retrieved on demand).
+        post_id - the id of the post to which this file is attached, None if unattached.
         size - the size (in bytes) of this file
         uploaded - unix timestamp when the file was uploaded
         expiry - unix timestamp when the file expires.  None for non-expiring files.
@@ -38,6 +39,7 @@ class File:
             self.id,
             self._fetch_room_id,
             self._fetch_uploader_id,
+            self.post_id,
             self.size,
             self.uploaded,
             self.expiry,
@@ -45,10 +47,20 @@ class File:
             self.path,
         ) = (
             row[c]
-            for c in ('id', 'room', 'uploader', 'size', 'uploaded', 'expiry', 'filename', 'path')
+            for c in (
+                'id',
+                'room',
+                'uploader',
+                'message',
+                'size',
+                'uploaded',
+                'expiry',
+                'filename',
+                'path',
+            )
         )
-        self._uploader = None
         self._room = None
+        self._uploader = None
 
     @property
     def room(self):
