@@ -73,7 +73,7 @@ class File:
         Accesses the id of the room to which this file was uploaded.  Equivalent to .room.id, except
         that we don't fetch/cache the Room row.
         """
-        return self._fetch_room_id if self._room is None else self._fetch_room_id
+        return self._fetch_room_id if self._room is None else self._room.id
 
     @property
     def uploader(self):
