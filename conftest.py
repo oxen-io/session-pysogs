@@ -12,6 +12,9 @@ import sogs.omq  # noqa: E402
 
 import sqlalchemy  # noqa: E402
 
+import atexit, shutil, tempfile  # noqa: E402 E401
+
+_tempdirs = set()
 
 sogs.omq.test_suite = True
 
@@ -91,7 +94,9 @@ def db(request, pgsql):
     value is the db module itself (so typically you don't import it at all but instead get it
     through this fixture, which also creates an empty db for you).
     """
-
+    d = tempfile.mkdtemp(prefix='tmp_pysogs')
+    _tempdirs.add(d)
+    config.UPLOAD_PATH = d
     trace = request.config.getoption("--sql-tracing")
 
     from sogs import db as db_
@@ -270,3 +275,5 @@ def no_rate_limit():
 
 
 web.app.config.update({'TESTING': True})
+
+atexit.register(lambda: [shutil.rmtree(d) for d in _tempdirs])

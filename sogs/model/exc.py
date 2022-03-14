@@ -18,7 +18,7 @@ class NoSuchRoom(NotFound):
 
 
 class NoSuchFile(NotFound):
-    """Thrown when trying to construct a File from a token that doesn't exist"""
+    """Thrown when trying to construct a File from an id that doesn't exist"""
 
     def __init__(self, id):
         self.id = id

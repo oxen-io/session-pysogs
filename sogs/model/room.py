@@ -269,6 +269,9 @@ class Room:
             if not isinstance(file, File):
                 file = File(id=file)
 
+            if file.room_id != self.id:
+                raise NoSuchFile(file.room_id)
+
             file.set_expiry(forever=True)
 
             if self.image:
@@ -1263,10 +1266,10 @@ class Room:
                 r=self.id,
                 old_fid=file_id,
             ).first()
-
-        if row:
+        if not row:
+            return
+        if row['expiry'] is None or row['expiry'] > time.time():
             return File(row)
-        return None
 
     def upload_file(
         self,
@@ -1293,11 +1296,18 @@ class Room:
         if not self.check_upload(uploader):
             raise BadPermission()
 
-        files_dir = "uploads/" + self.token
+        files_dir = os.path.join(config.UPLOAD_PATH, self.token)
         os.makedirs(files_dir, exist_ok=True)
 
-        if filename is not None:
-            filename = re.sub(config.UPLOAD_FILENAME_BAD, "_", filename)
+        if filename is None:
+            upload_filename = None
+        else:
+            # nulls and / are prohibited characters on pretty much any system, so substitute them
+            # out for a REPLACEMENT CHARACTER (U+FFFD) if in the given filename.
+            filename = filename.replace('\0', '\uFFFD').replace('/', '\uFFFD')
+
+            # For the actual filename we write to disk we heavily sanitize:
+            upload_filename = re.sub(config.UPLOAD_FILENAME_BAD, "_", filename)
 
         file_id, file_path = None, None
 
@@ -1323,17 +1333,17 @@ class Room:
                     filename=filename,
                 )
 
-                if filename is None:
-                    filename = '(unnamed)'
+                if upload_filename is None:
+                    upload_filename = '(unnamed)'
 
-                if len(filename) > config.UPLOAD_FILENAME_MAX:
-                    filename = (
-                        filename[: config.UPLOAD_FILENAME_KEEP_PREFIX]
+                if len(upload_filename) > config.UPLOAD_FILENAME_MAX:
+                    upload_filename = (
+                        upload_filename[: config.UPLOAD_FILENAME_KEEP_PREFIX]
                         + "..."
-                        + filename[-config.UPLOAD_FILENAME_KEEP_SUFFIX :]
+                        + upload_filename[-config.UPLOAD_FILENAME_KEEP_SUFFIX :]
                     )
 
-                file_path = f"{files_dir}/{file_id}_{filename}"
+                file_path = f"{files_dir}/{file_id}_{upload_filename}"
 
                 with open(file_path, 'wb') as f:
                     f.write(content)

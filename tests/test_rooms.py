@@ -3,6 +3,7 @@ import time
 import sogs.model.exc as exc
 from sogs.model.room import Room, get_rooms
 from sogs.model.file import File
+from sogs import config
 from util import pad64
 
 
@@ -456,7 +457,7 @@ def test_upload(room, user):
     assert now - 1 < file.expiry - 30 < now + 1
     assert os.path.isfile(file.path)
     assert os.path.getsize(file.path) == file.size
-    assert file.path == f'uploads/test-room/{file.id}_abc.txt'
+    assert file.path == f'{config.UPLOAD_PATH}/{room.token}/{file.id}_abc.txt'
     assert file.filename == 'abc.txt'
 
     # Legacy upload, with no filename:
@@ -469,7 +470,7 @@ def test_upload(room, user):
     assert now - 1 < file.expiry - 15 * 86400 < now + 1
     assert os.path.isfile(file.path)
     assert os.path.getsize(file.path) == file.size
-    assert file.path == f'uploads/test-room/{file.id}_(unnamed)'
+    assert file.path == f'{config.UPLOAD_PATH}/{room.token}/{file.id}_(unnamed)'
     assert file.filename is None
 
 
@@ -486,7 +487,7 @@ def test_upload_expiry(room, user):
     assert now - 2 < file.expiry < now
     assert os.path.isfile(file.path)
     assert os.path.getsize(file.path) == file.size
-    assert file.path == f'uploads/test-room/{file.id}_abc.txt'
+    assert file.path == f'{config.UPLOAD_PATH}/{room.token}/{file.id}_abc.txt'
 
     from sogs.cleanup import cleanup
 
