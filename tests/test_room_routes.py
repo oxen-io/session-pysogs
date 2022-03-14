@@ -1209,7 +1209,8 @@ def test_file_upload(client, room, user):
 def test_file_upload_fuzz(client, room, user):
     rng = Random(42)
     for _ in range(500):
-        _file_upload(client, room, user, filename=rng.randbytes(32).decode('latin1'), unsafe=True)
+        filename = bytes(rng.getrandbits(8) for _ in range(32)).decode('latin1')
+        _file_upload(client, room, user, filename=filename, unsafe=True)
 
 
 def test_file_upload_backslashes(client, room, user):
