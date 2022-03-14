@@ -31,17 +31,19 @@ class FuzzyTime:
         return f"<fuzzy-time: {self.delta(0)}>"
 
 
-def seconds(n):
-    return FuzzyTime(n)
+class from_now:
+    @staticmethod
+    def seconds(n):
+        return FuzzyTime(n)
 
+    @staticmethod
+    def minutes(n):
+        return from_now.seconds(60) * n
 
-def minutes(n):
-    return seconds(n) * 60
+    @staticmethod
+    def hours(n):
+        return from_now.minutes(60) * n
 
-
-def hours(n):
-    return minutes(n) * 60
-
-
-def days(n):
-    return hours(24) * n
+    @staticmethod
+    def days(n):
+        return from_now.hours(24) * n

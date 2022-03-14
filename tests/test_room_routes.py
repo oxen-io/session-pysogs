@@ -6,7 +6,7 @@ from sogs import utils
 import sogs.config
 import werkzeug.exceptions as wexc
 from werkzeug.http import parse_options_header
-from util import pad64, hours, days
+from util import pad64, from_now
 from request import sogs_get, sogs_post, sogs_put, sogs_post_raw, sogs_delete
 from nacl.utils import random
 from os import path
@@ -1064,7 +1064,7 @@ def test_owned_files(client, room, user, admin):
     assert 'id' in r.json
     f1 = File(id=r.json.get('id'))
     # - verify that the file expiry is 1h from now (±1s)
-    assert f1.expiry == hours(1)
+    assert f1.expiry == from_now.hours(1)
     # - add a post that references the file
     d, s = (utils.encode_base64(x) for x in (b"post data", pad64("fugg")))
     post_info = {'data': d, 'signature': s, 'files': [f1.id]}
@@ -1074,7 +1074,7 @@ def test_owned_files(client, room, user, admin):
     post_id = r.json.get('id')
     # - verify that the file expiry is 15 days from now (±1s)
     f1 = File(id=f1.id)
-    assert f1.expiry == days(15)
+    assert f1.expiry == from_now.days(15)
     # - upload another file
     filedata, headers = _make_file_upload('fug-2.jpeg')
     r = sogs_post_raw(client, f'/room/{room.token}/file', filedata, user, extra_headers=headers)
@@ -1082,7 +1082,7 @@ def test_owned_files(client, room, user, admin):
     assert 'id' in r.json
     f2 = File(id=r.json.get('id'))
     # - verify the new file exp is ~1h
-    assert f2.expiry == hours(1)
+    assert f2.expiry == from_now.hours(1)
     # - edit the post with the edit referencing both files
     d, s = (utils.encode_base64(x) for x in (b"better post data", pad64("fugg")))
     new_post_info = {'data': d, 'signature': s, 'files': [f2.id]}
@@ -1090,10 +1090,10 @@ def test_owned_files(client, room, user, admin):
     assert r.status_code == 200
     # - verify the new file exp is ~15 days
     f2 = File(id=f2.id)
-    assert f2.expiry == days(15)
+    assert f2.expiry == from_now.days(15)
     # - verify that the old file exp hasn't changed
     f1 = File(id=f1.id)
-    assert f1.expiry == days(15)
+    assert f1.expiry == from_now.days(15)
     # - pin the post
     room.pin(post_id, admin)
     # - verify that expiry of both files is now NULL
@@ -1105,7 +1105,7 @@ def test_owned_files(client, room, user, admin):
     # - verify that expiry of both is reset to 15d
     f1 = File(id=f1.id)
     f2 = File(id=f2.id)
-    assert (f1.expiry, f2.expiry) == (days(15), days(15))
+    assert (f1.expiry, f2.expiry) == (from_now.days(15), from_now.days(15))
 
     # - make another post that references one of the first post's file
     # - make sure the first post associated message hasn't changed (i.e. no stealing owned uploads)
