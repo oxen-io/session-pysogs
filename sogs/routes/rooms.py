@@ -354,7 +354,70 @@ def poll_room_info(room, info_updated):
 @rooms.post("/room/<Room:room>/file")
 @auth.user_required
 def upload_file(room):
-    """ upload a file to a room """
+    """
+    Uploads a file to a room.
+
+    Takes the request as binary in the body and takes other properties (specifically the suggested
+    filename) via submitted headers.
+
+    The user must have upload and posting permissions for the room.  The file will have a default
+    lifetime of 1 hour, which is extended to 15 days (by default) when a post referencing the
+    uploaded file is posted or edited.
+
+    # URL Parameters
+
+    # Body
+
+    The body of the request is the raw bytes that make up the attachment body.
+
+    # Header parameters
+
+    ## Content-Type
+
+    This should be set to application/octet-stream.  If the client has a strong reason to use
+    another content type then it may do so, but it is acceptable to always use
+    `application/octet-stream`.
+
+    ## Content-Disposition
+
+    The attachment filename should be provided via the `Content-Disposition` header of the request,
+    encoded as URI-encoded UTF-8 as per RFC 5987.  Specifically, it should be formatted as:
+
+        Content-Disposition: attachment; filename*=UTF-8''filename.txt
+
+    where `filename.txt` is a utf-8 byte sequence with any bytes not in the following list encoded
+    using %xx URI-style encoding.
+
+    Non-encoded ascii characters: A-Z, a-z, 0-9, !, #, $, &, +, -, ., ^, _, `, |, ~.  All other
+    characters shall be represented as their utf-8 byte sequence.
+
+    For instance, a file named `my 🎂.txt` (🎂 = U+1F382, with utf-8 representation 0xF0 0x9F 0x8E
+    0x82) should specify the filename in the header as:
+
+        Content-Disposition: attachment; filename*=UTF-8''my%20%f0%9f%8e%82.txt
+
+    Filenames are not required as they are not always available (such as when uploading a pasted
+    image) but should be used when possible.
+
+    The filename, if provided, will be provided in the same format in the download header for the
+    file.
+
+    # Error status codes
+
+    - 403 Forbidden — Returned if the current user does not have permission to post messages or
+      upload files to the room.
+
+    - 404 Not Found — Returned if the room does not exist, or is configured as inaccessible (and
+      this user doesn't have access).
+
+    # Return value
+
+    On successful upload this endpoint returns a 201 (Created) status code (*not* 200), with a JSON
+    body containing an object with key:
+
+    - `id` — the numeric id of the upload.  If the id is not referenced via a subsequent new post,
+      post edit, or room image request within one hour then the attachment will be deleted.
+    """
 
     if not room.check_upload(g.user):
         abort(http.FORBIDDEN)
@@ -375,11 +438,58 @@ def upload_file(room):
 
 
 @rooms.get("/room/<Room:room>/file/<int:fileId>")
-@rooms.get("/room/<Room:room>/file/<int:fileId>/<filename>")
 @auth.read_required
-def serve_file(room, fileId, filename=None):
+def serve_file(room, fileId):
     """
-    serves a file uploaded to a room
+    Retrieves a file uploaded to the room.
+
+    Retrieves a file via its numeric id from the room, returning the file content directly as the
+    binary response body.  The file's suggested filename (as provided by the uploader) is provided
+    in the Content-Disposition header, if available.
+
+    # URL Parameters
+
+    - `fileId` — The id of the attachment to download.
+
+    # Return value
+
+    On success the file content is returned as bytes in the response body.  Additional information
+    is provided via response headers:
+
+    ## Content-Length
+
+    The size (in bytes) of the attachment.
+
+    ## Content-Type
+
+    Always `application-octet-stream` (even if the uploader specified something else).
+
+    ## Content-Disposition
+
+    This specifies the suggested filename as provided by the uploader, if present.  The filename is
+    encoded using standard RFC 5987 encoding, for example:
+
+        Content-Disposition: attachment; filename*=UTF-8''filename.txt
+
+    See [the upload endpoint](#post-roomroomfile) for filename encoding details.  If the attachment
+    was uploaded without a filename then this header will not include the filename component, i.e.:
+
+        Content-Disposition: attachment
+
+    ## Date
+
+    The timestamp at which this file was uploaded, as a standard HTTP date.
+
+    ## Expires
+
+    The timestamp at which this file is currently scheduled to expire, as a standard HTTP date.
+
+    # Error status codes
+
+    - 403 Forbidden — Returned if the current user does not have permission to read messages in the
+      room, e.g. because they are banned or the room permissions otherwise restrict access.
+
+    - 404 Not Found — Returned if the attachment does not exist in this room (or has expired).
     """
     room_file = room.get_file(fileId)
     if not room_file:
@@ -402,3 +512,26 @@ def serve_file(room, fileId, filename=None):
     return Response(
         response=f, status=200, content_type='application/octet-stream', headers=headers
     )
+
+
+@rooms.get("/room/<Room:room>/file/<int:fileId>/<filename>")
+@auth.read_required
+def serve_file_with_ignored_filename(room, fileId, filename):
+    """
+    Convenience endpoint for downloading file with a filename appended to the URL.
+
+    This endpoint is exactly identical to the version of the endpoint without a filename: the
+    suffixed filename in the request is simply ignored.  This alias is provided only to make it
+    slightly more convenient to construct a URL containing a known filename, such as when using
+    command-line tools for debugging.
+
+    Most clients should simply use the non-suffixed endpoint instead.
+
+    # URL Parameters
+
+    - `fileId` — The id of the attachment to download.
+
+    - `filename` — Arbitrary filename of the attachment; this value is entirely ignored by SOGS.
+
+    """
+    return serve_file(room=room, fileId=fileId)
