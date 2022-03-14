@@ -1296,9 +1296,15 @@ class Room:
         files_dir = os.path.join(config.UPLOAD_PATH, self.token)
         os.makedirs(files_dir, exist_ok=True)
 
-        upload_filename = (
-            None if filename is None else re.sub(config.UPLOAD_FILENAME_BAD, "_", filename)
-        )
+        if filename is None:
+            upload_filename = None
+        else:
+            # nulls and / are prohibited characters on pretty much any system, so substitute them
+            # out for a REPLACEMENT CHARACTER (U+FFFD) if in the given filename.
+            filename = filename.replace('\0', '\uFFFD').replace('/', '\uFFFD')
+
+            # For the actual filename we write to disk we heavily sanitize:
+            upload_filename = re.sub(config.UPLOAD_FILENAME_BAD, "_", filename)
 
         file_id, file_path = None, None
 

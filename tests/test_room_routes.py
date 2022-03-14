@@ -10,6 +10,9 @@ from util import pad64, hours, days
 from request import sogs_get, sogs_post, sogs_put, sogs_post_raw, sogs_delete
 from nacl.utils import random
 from os import path
+from random import Random
+import urllib
+import re
 
 
 def test_list(client, room, room2, user, user2, admin, mod, global_mod, global_admin):
@@ -1164,12 +1167,13 @@ def _file_upload(client, room, user, *, unsafe=False, utf=False, filename):
 
     url_post = f"/room/{room.token}/file"
     file_content = random(1024)
+    filename_escaped = urllib.parse.quote(filename.encode('utf-8'))
     r = sogs_post_raw(
         client,
         url_post,
         file_content,
         user,
-        extra_headers={"Content-Disposition": ('attachment', {'filename': filename})},
+        extra_headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename_escaped}"},
     )
     assert r.status_code == 201
     assert 'id' in r.json
@@ -1179,11 +1183,14 @@ def _file_upload(client, room, user, *, unsafe=False, utf=False, filename):
     r = sogs_get(client, f'/room/{room.token}/file/{id}', user)
     assert r.status_code == 200
     assert r.data == file_content
-    expected = ('attachment', {'filename': filename})
+    expected = ('attachment', {'filename': filename.replace('\0', '\ufffd').replace('/', '\ufffd')})
     assert parse_options_header(r.headers.get('content-disposition')) == expected
     f = File(id=id)
-    if not (unsafe or utf):
-        assert path.split(f.path)[-1] == f'{id}_{filename}'
+    if unsafe or utf:
+        exp_path = f'{id}_' + re.sub(sogs.config.UPLOAD_FILENAME_BAD, "_", filename)
+    else:
+        exp_path = f'{id}_{filename}'
+    assert path.split(f.path)[-1] == exp_path
 
 
 def test_file_upload(client, room, user):
@@ -1191,14 +1198,17 @@ def test_file_upload(client, room, user):
 
 
 def test_file_upload_fuzz(client, room, user):
-    for _ in range(128):
-        _file_upload(
-            client,
-            room,
-            user,
-            filename=random(16).replace(b'\n', b'').replace(b'\r', b'').decode('latin1'),
-            unsafe=True,
-        )
+    rng = Random(42)
+    for _ in range(500):
+        _file_upload(client, room, user, filename=rng.randbytes(32).decode('latin1'), unsafe=True)
+
+
+def test_file_upload_backslashes(client, room, user):
+    # When the filename *begins* with 1 or more backslashes then for some reason they all get
+    # doubled up by the test client, but later backslashes don't.  We switched to produce the
+    # UTF-8 encoded filename header ourself; this test is to make sure this doesn't reoccur.
+    _file_upload(client, room, user, filename='\\abc', unsafe=True)
+    _file_upload(client, room, user, filename='\\\\abc', unsafe=True)
 
 
 def test_file_upload_unsafe(client, room, user):
@@ -1223,12 +1233,7 @@ def test_file_upload_emoji_unsafe(client, room, user):
 
 def test_file_upload_banned_user(client, room, banned_user):
     url_post = f"/room/{room.token}/file"
-    r = sogs_post_raw(
-        client,
-        url_post,
-        random(1024),
-        banned_user,
-    )
+    r = sogs_post_raw(client, url_post, random(1024), banned_user)
     assert r.status_code == 403
 
 
