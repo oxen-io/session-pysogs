@@ -1084,6 +1084,9 @@ def test_owned_files(client, room, user, admin):
     # - verify that the file expiry is 15 days from now (±1s)
     f1 = File(id=f1.id)
     assert f1.expiry == from_now.days(15)
+    # - verify that the file is correctly associated with the post
+    assert f1.post_id == post_id
+
     # - upload another file
     filedata, headers = _make_file_upload('fug-2.jpeg')
     r = sogs_post_raw(client, f'/room/{room.token}/file', filedata, user, extra_headers=headers)
@@ -1100,6 +1103,8 @@ def test_owned_files(client, room, user, admin):
     # - verify the new file exp is ~15 days
     f2 = File(id=f2.id)
     assert f2.expiry == from_now.days(15)
+    # - verify that the second file is correctly associated with the post
+    assert f2.post_id == post_id
     # - verify that the old file exp hasn't changed
     f1 = File(id=f1.id)
     assert f1.expiry == from_now.days(15)
@@ -1117,17 +1122,55 @@ def test_owned_files(client, room, user, admin):
     assert (f1.expiry, f2.expiry) == (from_now.days(15), from_now.days(15))
 
     # - make another post that references one of the first post's file
+    filedata, headers = _make_file_upload('another.png')
+    r = sogs_post_raw(client, f'/room/{room.token}/file', filedata, user, extra_headers=headers)
+    assert r.status_code == 201
+    d, s = (utils.encode_base64(x) for x in (b"more post data", pad64("fsdf")))
+    post_info = {'data': d, 'signature': s, 'files': [f1.id, r.json['id']]}
+
     # - make sure the first post associated message hasn't changed (i.e. no stealing owned uploads)
+    f1a = File(id=f1.id)
+    assert f1a.expiry == f1.expiry and f1a.post_id == post_id
 
     # - upload a file and set it as the room image
+    filedata, headers = _make_file_upload('room-image.png')
+    r = sogs_post_raw(client, f'/room/{room.token}/file', filedata, user, extra_headers=headers)
+    room_img = r.json['id']
+    assert r.status_code == 201
+    r = sogs_put(client, f'/room/{room.token}', {'image': room_img}, admin)
+    assert r.status_code == 200
+
     # - verify that the uploaded file expiry and message are both NULL
-    # - make a post referencing the pinned ID
+    f_room = File(id=room_img)
+    assert f_room.post_id is None
+    assert f_room.expiry is None
+
+    # - make a post referencing the room image ID
+    d, s = (utils.encode_base64(x) for x in (b"post xyz", pad64("z")))
+    post_info = {'data': d, 'signature': s, 'files': [room_img]}
+
     # - verify that the pinned image expiry and message are still both NULL
+    f_room = File(id=f_room.id)
+    assert f_room.post_id is None
+    assert f_room.expiry is None
 
     # - delete the first post
-    # - verify that both attachments are now expired
+    r = sogs_delete(client, f'/room/{room.token}/message/{post_id}', user)
+    assert r.status_code == 200
 
-    pass
+    # - verify that both attachments are now expired
+    f1 = File(id=f1.id)
+    f2 = File(id=f2.id)
+    assert (f1.expiry, f2.expiry) == (0.0, 0.0)
+
+    from sogs.cleanup import cleanup
+
+    assert cleanup() == (2, 0, 0, 0, 0)
+
+    with pytest.raises(sogs.model.exc.NoSuchFile):
+        f1 = File(id=f1.id)
+    with pytest.raises(sogs.model.exc.NoSuchFile):
+        f2 = File(id=f2.id)
 
 
 def _make_dummy_post(room, user):
