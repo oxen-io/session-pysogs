@@ -60,7 +60,7 @@ local debian_pipeline(name,
       pull: 'always',
       [if allow_fail then 'failure']: 'ignore',
       commands: setup_commands(deps) + before_pytest + [
-                  'PYTHONPATH=. python3 -mpytest -vv --color=yes ' + pytest_opts,
+                  'pytest-3 -vv --color=yes ' + pytest_opts,
                 ]
                 + extra_cmds,
     },
