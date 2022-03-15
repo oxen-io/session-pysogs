@@ -9,7 +9,7 @@ import time
 import nacl
 from nacl.signing import VerifyKey
 import nacl.exceptions
-import nacl.bindings as salt
+import nacl.bindings as sodium
 import sqlalchemy.exc
 from functools import wraps
 
@@ -238,7 +238,7 @@ def handle_http_auth():
     blinded_pk = pk[0] == 0x15
     pk = pk[1:]
 
-    if not salt.crypto_core_ed25519_is_valid_point(pk):
+    if not sodium.crypto_core_ed25519_is_valid_point(pk):
         abort_with_reason(
             http.BAD_REQUEST,
             "Invalid authentication: given X-SOGS-Pubkey is not a valid Ed25519 pubkey",

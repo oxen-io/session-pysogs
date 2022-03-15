@@ -6,7 +6,7 @@ import sogs.utils
 
 import json
 from nacl.signing import SigningKey
-import nacl.bindings as salt
+import nacl.bindings as sodium
 
 
 @app.get("/auth_test/whoami")
@@ -507,15 +507,15 @@ def test_small_subgroups(client, db):
 
     assert A == a.verify_key.encode()
 
-    if hasattr(salt, 'crypto_core_ed25519_is_valid_point'):
-        assert salt.crypto_core_ed25519_is_valid_point(A)
+    if hasattr(sodium, 'crypto_core_ed25519_is_valid_point'):
+        assert sodium.crypto_core_ed25519_is_valid_point(A)
 
-    Abad = salt.crypto_core_ed25519_add(
+    Abad = sodium.crypto_core_ed25519_add(
         A, bytes.fromhex('0000000000000000000000000000000000000000000000000000000000000000')
     )
 
-    if hasattr(salt, 'crypto_core_ed25519_is_valid_point'):
-        assert not salt.crypto_core_ed25519_is_valid_point(Abad)
+    if hasattr(sodium, 'crypto_core_ed25519_is_valid_point'):
+        assert not sodium.crypto_core_ed25519_is_valid_point(Abad)
 
     headers['X-SOGS-Pubkey'] = '00' + Abad.hex()
 
@@ -528,12 +528,12 @@ def test_small_subgroups(client, db):
     assert headers['X-SOGS-Pubkey'].startswith('15')
     A = bytes.fromhex(headers['X-SOGS-Pubkey'][2:])
 
-    Abad = salt.crypto_core_ed25519_add(
+    Abad = sodium.crypto_core_ed25519_add(
         A, bytes.fromhex('c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a')
     )
 
-    if hasattr(salt, 'crypto_core_ed25519_is_valid_point'):
-        assert not salt.crypto_core_ed25519_is_valid_point(Abad)
+    if hasattr(sodium, 'crypto_core_ed25519_is_valid_point'):
+        assert not sodium.crypto_core_ed25519_is_valid_point(Abad)
 
     headers['X-SOGS-Pubkey'] = '15' + Abad.hex()
     r = client.get("/auth_test/whoami", headers=headers)
