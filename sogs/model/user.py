@@ -36,7 +36,7 @@ class User:
         returning it.
         """
         self._touched = False
-        self._refresh(row=row, id=id, session_id=session_id)
+        self._refresh(row=row, id=id, session_id=session_id, autovivify=autovivify)
 
         if touch:
             self._touch()
