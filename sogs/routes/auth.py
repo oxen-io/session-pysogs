@@ -1,6 +1,6 @@
 from ..web import app
 from ..db import query
-from .. import crypto, http, utils
+from .. import config, crypto, http, utils
 from ..model.user import User
 from ..hashing import blake2b
 
@@ -247,8 +247,11 @@ def handle_http_auth():
     pk = VerifyKey(pk)
     if blinded_pk:
         session_id = '15' + pk.encode().hex()
+    elif config.REQUIRE_BLIND_KEYS:
+        abort_with_reason(
+            http.BAD_REQUEST, "Invalid authentication: this server requires the use of blinded ids"
+        )
     else:
-        # TODO: if "blinding required" config option is set then reject the request here
         try:
             session_id = '05' + pk.to_curve25519_public_key().encode().hex()
         except nacl.exceptions.RuntimeError:
