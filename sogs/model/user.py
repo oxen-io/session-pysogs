@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .. import crypto, db
+from .. import crypto, db, config
 from ..db import query
 from ..web import app
 from .exc import NoSuchUser, BadPermission
@@ -28,9 +28,10 @@ class User:
         """
         Constructs a user from a pre-retrieved row *or* a session id or user primary key value.
 
-        autovivify - if True and we are given a session_id that doesn't exist, create a default user
-        row and use it to populate the object.  This is the default behaviour.  If False and the
-        session_id doesn't exist then a NoSuchUser is raised if the session id doesn't exist.
+        autovivify - if True and we are given a session_id that doesn't exist, either consider
+        importing from a pre-blinding user (if needed) or create a default user row and use it to
+        populate the object.  This is the default behaviour.  If False and the session_id doesn't
+        exist then a NoSuchUser is raised if the session id doesn't exist.
 
         touch - if True (default is False) then update the last_activity time of this user before
         returning it.
@@ -56,11 +57,15 @@ class User:
             row = query("SELECT * FROM users WHERE session_id = :s", s=session_id).first()
 
             if not row and autovivify:
-                with db.transaction():
-                    query("INSERT INTO users (session_id) VALUES (:s)", s=session_id)
-                    row = query("SELECT * FROM users WHERE session_id = :s", s=session_id).first()
-                # No need to re-touch this user since we just created them:
-                self._touched = True
+                if config.REQUIRE_BLIND_KEYS:
+                    row = self._import_blinded(session_id)
+
+                if not row:
+                    row = db.insert_and_get_row(
+                        "INSERT INTO users (session_id) VALUES (:s)", "users", "id", s=session_id
+                    )
+                    # No need to re-touch this user since we just created them:
+                    self._touched = True
 
         elif id is not None:
             row = query("SELECT * FROM users WHERE id = :u", u=id).fetchone()
@@ -74,6 +79,64 @@ class User:
         self.banned, self.global_moderator, self.global_admin, self.visible_mod = (
             bool(row[c]) for c in ('banned', 'moderator', 'admin', 'visible_mod')
         )
+
+    def _import_blinded(self, session_id):
+        """
+        Attempts to import the user and permission rows from an unblinded session_id to a new,
+        blinded session_id row.
+
+        Any permissions/bans are *moved* from the old, unblinded id to the new blinded user record.
+        """
+
+        if not session_id.startswith('15'):
+            return
+        blind_abs = crypto.blinded_abs(session_id.lower())
+        with db.transaction():
+            to_import = query(
+                """
+                SELECT * FROM users WHERE id = (
+                    SELECT "user" FROM needs_blinding WHERE blinded_abs = :ba
+                )
+                """,
+                ba=blind_abs,
+            ).fetchone()
+
+            if to_import is None:
+                return False
+
+            row = db.insert_and_get_row(
+                """
+                INSERT INTO users
+                    (session_id, created, last_active, banned, moderator, admin, visible_mod)
+                VALUES (:sid, :cr, :la, :ban, :mod, :admin, :vis)
+                """,
+                "users",
+                "id",
+                sid=session_id,
+                cr=to_import["created"],
+                la=to_import["last_active"],
+                ban=to_import["banned"],
+                mod=to_import["moderator"],
+                admin=to_import["admin"],
+                vis=to_import["visible_mod"],
+            )
+            # If we have any global ban/admin/mod then clear them (because we've just set up the
+            # global ban/mod/admin permissions for the blinded id in the query above).
+            query(
+                "UPDATE users SET banned = FALSE, admin = FALSE, moderator = FALSE WHERE id = :u",
+                u=to_import["id"],
+            )
+
+            for t in ("user_permission_overrides", "user_permission_futures", "user_ban_futures"):
+                query(
+                    f'UPDATE {t} SET "user" = :new WHERE "user" = :old',
+                    new=row["id"],
+                    old=to_import["id"],
+                )
+
+            query('DELETE FROM needs_blinding WHERE "user" = :u', u=to_import["id"])
+
+            return row
 
     def __str__(self):
         """Returns string representation of a user: U[050123…cdef], the id prefixed with @ or % if
@@ -247,13 +310,6 @@ class User:
         """True if (and only if) this is the special SOGS system user
         created for internal database tasks"""
         return self.session_id[0:2] == "ff" and self.session_id[2:] == crypto.server_pubkey_hex
-
-    @property
-    def derived_key(self):
-        """get the derived key for this user"""
-        if self.session_id[0:2] == '15':
-            return self.session_id
-        return crypto.compute_derived_id(self.session_id)
 
 
 class SystemUser(User):

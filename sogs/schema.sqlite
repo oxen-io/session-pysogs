@@ -151,6 +151,18 @@ BEGIN
 END;
 
 
+-- This table tracks unblinded session ids in user_permission (and related) rows that need to be
+-- blinded, which will happen the first time the user authenticates with their blinded id (until
+-- they do, we can't know the actual sign bit of their blinded id).  It is populated at startup
+-- when blinding is first enabled, and is used both for the initial blinding transition and when
+-- ids are added by raw session ID (e.g. when adding a moderator by session id).
+CREATE TABLE needs_blinding (
+    blinded_abs TEXT NOT NULL PRIMARY KEY, -- the positive of the possible two blinded keys
+    "user" INTEGER NOT NULL UNIQUE REFERENCES users ON DELETE CASCADE
+);
+
+
+
 -- Effectively the same as `messages` except that it also includes the `session_id` from the users
 -- table of the user who posted it, and the session id of the whisper recipient (as `whisper_to`) if
 -- a directed whisper.
