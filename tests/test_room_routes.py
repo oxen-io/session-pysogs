@@ -571,7 +571,7 @@ def test_fetch_since(client, room, user, no_rate_limit):
                 assert post['seqno'] == j
                 assert utils.decode_base64(post['data']) == f"fake data {j}".encode()
                 assert utils.decode_base64(post['signature']) == pad64(f"fake sig {j}")
-                assert -10 <= post['posted'] - time.time() <= 10
+                assert post['posted'] == from_now.seconds(0, 10)
 
                 top_fetched = post['seqno']
 
@@ -693,7 +693,7 @@ def test_pinning(client, room, user, admin, no_rate_limit):
     ri = room_json()
     assert ri['info_updates'] == 2
     assert filter_timestamps(ri['pinned_messages']) == [{'id': 3, 'pinned_by': admin.session_id}]
-    assert -1 < ri['pinned_messages'][0]['pinned_at'] - time.time() < 1
+    assert ri['pinned_messages'][0]['pinned_at'] == from_now.now()
 
     url = "/room/test-room/pin/7"
     r = sogs_post(client, url, {}, admin)
@@ -752,7 +752,9 @@ def test_pinning(client, room, user, admin, no_rate_limit):
         {'id': 3, 'pinned_by': admin.session_id},
         {'id': 7, 'pinned_by': admin.session_id},
     ]
-    assert time.time() - 1 < rpm[0]['pinned_at'] < rpm[1]['pinned_at'] < time.time() + 1
+    assert rpm[0]['pinned_at'] == from_now.now()
+    assert rpm[0]['pinned_at'] < rpm[1]['pinned_at']
+    assert rpm[1]['pinned_at'] == from_now.now()
 
     url = "/room/test-room/unpin/all"
     r = sogs_post(client, url, {}, admin)
@@ -776,7 +778,7 @@ def test_posting(client, room, user, user2, mod, global_mod):
         'data': d,
         'signature': s,
     }
-    assert -1 < p1['posted'] - time.time() < 1
+    assert p1['posted'] == from_now.now()
 
     url_get = "/room/test-room/messages/since/0"
     r = sogs_get(client, url_get, user)
@@ -806,7 +808,7 @@ def test_whisper_to(client, room, user, user2, mod, global_mod):
         'whisper_mods': False,
         'whisper_to': user2.session_id,
     }
-    assert -1 < msg['posted'] - time.time() < 1
+    assert msg['posted'] == from_now.now()
 
     url_get = "/room/test-room/messages/since/0"
     # user shouldn't get the whisper:
@@ -852,7 +854,7 @@ def test_whisper_mods(client, room, user, user2, mod, global_mod, admin):
         'whisper': True,
         'whisper_mods': True,
     }
-    assert -1 < msg['posted'] - time.time() < 1
+    assert msg['posted'] == from_now.now()
 
     url_get = "/room/test-room/messages/since/0"
 
@@ -972,7 +974,7 @@ def test_edits(client, room, user, user2, mod, global_admin):
         'data': d,
         'signature': s,
     }
-    assert -1 < p1['posted'] - time.time() < 1
+    assert p1['posted'] == from_now.now()
 
     url_get = "/room/test-room/messages/since/0"
     r = sogs_get(client, url_get, user)
@@ -1000,7 +1002,9 @@ def test_edits(client, room, user, user2, mod, global_admin):
 
     r = sogs_get(client, url_get, user)
     assert filter_timestamps(r.json) == filter_timestamps([p1])
-    assert time.time() - 1 < r.json[0]['posted'] < r.json[0]['edited'] < time.time() + 1
+    assert r.json[0]['posted'] == from_now.now()
+    assert r.json[0]['posted'] < r.json[0]['edited']
+    assert r.json[0]['edited'] == from_now.now()
     p1['edited'] = r.json[0]['edited']
 
     d, s = (utils.encode_base64(x) for x in (b"post 2", pad64("sig 2")))
@@ -1014,7 +1018,7 @@ def test_edits(client, room, user, user2, mod, global_admin):
         'data': d,
         'signature': s,
     }
-    assert -1 < p2['posted'] - time.time() < 1
+    assert p2['posted'] == from_now.now()
 
     d, s = (utils.encode_base64(x) for x in (b"post 1c", pad64("sig 1c")))
     time.sleep(0.001)

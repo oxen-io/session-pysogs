@@ -35,20 +35,27 @@ class FuzzyTime:
 
 class from_now:
     @staticmethod
-    def seconds(n):
-        return FuzzyTime(n)
+    def seconds(n, epsilon=None):
+        f = FuzzyTime(n)
+        if epsilon is not None:
+            f.epsilon = epsilon
+        return f
 
     @staticmethod
-    def minutes(n):
-        return from_now.seconds(60) * n
+    def now(epsilon=None):
+        return from_now.seconds(0, epsilon)
 
     @staticmethod
-    def hours(n):
-        return from_now.minutes(60) * n
+    def minutes(n, epsilon=None):
+        return from_now.seconds(60, epsilon) * n
 
     @staticmethod
-    def days(n):
-        return from_now.hours(24) * n
+    def hours(n, epsilon=None):
+        return from_now.minutes(60, epsilon) * n
+
+    @staticmethod
+    def days(n, epsilon=None):
+        return from_now.hours(24, epsilon) * n
 
 
 @contextmanager

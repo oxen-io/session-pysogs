@@ -4,7 +4,7 @@ import sogs.model.exc as exc
 from sogs.model.room import Room, get_rooms
 from sogs.model.file import File
 from sogs import config
-from util import pad64
+from util import pad64, from_now
 
 
 def test_create(room, room2):
@@ -446,15 +446,14 @@ def test_upload(room, user):
 
     import os
 
-    now = time.time()
     file = File(id=room.upload_file(content=b'abc', uploader=user, filename="abc.txt", lifetime=30))
 
     assert file.id
     assert file.room.id and file.room.id == room.id
     assert file.uploader.id and file.uploader.id == user.id
     assert file.size == 3
-    assert now - 1 < file.uploaded < now + 1
-    assert now - 1 < file.expiry - 30 < now + 1
+    assert file.uploaded == from_now.now()
+    assert file.expiry == from_now.seconds(30)
     assert os.path.isfile(file.path)
     assert os.path.getsize(file.path) == file.size
     assert file.path == f'{config.UPLOAD_PATH}/{room.token}/{file.id}_abc.txt'
@@ -466,8 +465,8 @@ def test_upload(room, user):
     assert file.room.id and file.room.id == room.id
     assert file.uploader.id and file.uploader.id == user.id
     assert file.size == 4
-    assert now - 1 < file.uploaded < now + 1
-    assert now - 1 < file.expiry - 15 * 86400 < now + 1
+    assert file.uploaded == from_now.now()
+    assert file.expiry == from_now.days(15)
     assert os.path.isfile(file.path)
     assert os.path.getsize(file.path) == file.size
     assert file.path == f'{config.UPLOAD_PATH}/{room.token}/{file.id}_(unnamed)'
@@ -478,13 +477,11 @@ def test_upload_expiry(room, user):
 
     import os
 
-    now = time.time()
-    now = time.time()
     file = File(id=room.upload_file(content=b'abc', uploader=user, filename="abc.txt", lifetime=-1))
 
     assert file.id
-    assert now - 1 < file.uploaded < now + 1
-    assert now - 2 < file.expiry < now
+    assert file.uploaded == from_now.now()
+    assert file.expiry == from_now.seconds(-1)
     assert os.path.isfile(file.path)
     assert os.path.getsize(file.path) == file.size
     assert file.path == f'{config.UPLOAD_PATH}/{room.token}/{file.id}_abc.txt'
@@ -562,19 +559,15 @@ def test_pinning(room, room2, user, mod, admin, global_admin, no_rate_limit):
     room.pin(msgs[5]['id'], admin)
     assert msgs[5]['id'] == 6
 
-    assert -1 < room.pinned_messages[0]['pinned_at'] - time.time() < 1
-    del room.pinned_messages[0]['pinned_at']
+    assert room.pinned_messages[0].pop('pinned_at') == from_now.now()
     assert room.pinned_messages == [{"id": 6, "pinned_by": admin.session_id}]
 
     time.sleep(0.001)
 
     room.pin(7, global_admin)
-    assert (
-        time.time() - 1
-        < room.pinned_messages[0]['pinned_at']
-        < room.pinned_messages[1]['pinned_at']
-        < time.time() + 1
-    )
+    assert room.pinned_messages[0]['pinned_at'] == from_now.now()
+    assert room.pinned_messages[0]['pinned_at'] < room.pinned_messages[1]['pinned_at']
+    assert room.pinned_messages[1]['pinned_at'] == from_now.now()
     old_ts_t = room.pinned_messages[1]['pinned_at']
     rpm = room.pinned_messages.copy()
     for pm in rpm:
@@ -588,12 +581,9 @@ def test_pinning(room, room2, user, mod, admin, global_admin, no_rate_limit):
     # Re-pin (will update its pinned timestamp and thus implicit reorder, along with pinned_by)
     room.pin(6, global_admin)
 
-    assert (
-        time.time() - 1
-        < room.pinned_messages[0]['pinned_at']
-        < room.pinned_messages[1]['pinned_at']
-        < time.time() + 1
-    )
+    assert room.pinned_messages[0]['pinned_at'] == from_now.now()
+    assert room.pinned_messages[0]['pinned_at'] < room.pinned_messages[1]['pinned_at']
+    assert room.pinned_messages[1]['pinned_at'] == from_now.now()
     assert old_ts_t == room.pinned_messages[0]['pinned_at']
     rpm = room.pinned_messages.copy()
     for pm in rpm:
