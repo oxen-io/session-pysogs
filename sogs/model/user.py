@@ -24,7 +24,16 @@ class User:
         visible_mod - True if the user's admin/moderator status should be visible in rooms
     """
 
-    def __init__(self, row=None, *, id=None, session_id=None, autovivify=True, touch=False):
+    def __init__(
+        self,
+        row=None,
+        *,
+        id: Optional[int] = None,
+        session_id: Optional[str] = None,
+        autovivify: bool = True,
+        touch: bool = False,
+        try_blinding: bool = False,
+    ):
         """
         Constructs a user from a pre-retrieved row *or* a session id or user primary key value.
 
@@ -33,16 +42,32 @@ class User:
         populate the object.  This is the default behaviour.  If False and the session_id doesn't
         exist then a NoSuchUser is raised if the session id doesn't exist.
 
+        try_blinding - if True and blinding is required, and a given `session_id` is given that is
+        *not* blinded then attempt to look up the possible blinded versions of the session id and
+        use one of those (if they exist) rather than the given unblinded id.  If no blinded version
+        exists then the unblinded id will be used (check `.is_blinded` after construction to see if
+        we found and switched to the blinded id).
+
         touch - if True (default is False) then update the last_activity time of this user before
         returning it.
         """
         self._touched = False
-        self._refresh(row=row, id=id, session_id=session_id, autovivify=autovivify)
+        self._refresh(
+            row=row, id=id, session_id=session_id, autovivify=autovivify, try_blinding=try_blinding
+        )
 
         if touch:
             self._touch()
 
-    def _refresh(self, *, row=None, id=None, session_id=None, autovivify=True):
+    def _refresh(
+        self,
+        *,
+        row=None,
+        id: Optional[int] = None,
+        session_id: Optional[str] = None,
+        autovivify: bool = True,
+        try_blinding: bool = False,
+    ):
         """
         Internal method to (re-)fetch details from the database; this is used during construction
         but also in the test suite to forcibly re-fetch details.
@@ -53,8 +78,21 @@ class User:
         elif n_args != 1:
             raise ValueError("User() error: exactly one of row/session_id/id is required")
 
+        self._tried_blinding = False
+
         if session_id is not None:
-            row = query("SELECT * FROM users WHERE session_id = :s", s=session_id).first()
+            if try_blinding and config.REQUIRE_BLIND_KEYS and session_id.startswith('05'):
+                b_pos = crypto.compute_blinded_abs_id(session_id)
+                b_neg = crypto.blinded_neg(b_pos)
+                row = query(
+                    "SELECT * FROM users WHERE session_id IN (:pos, :neg) LIMIT 1",
+                    pos=b_pos,
+                    neg=b_neg,
+                ).first()
+                self._tried_blinding = True
+
+            if not row:
+                row = query("SELECT * FROM users WHERE session_id = :s", s=session_id).first()
 
             if not row and autovivify:
                 if config.REQUIRE_BLIND_KEYS:
@@ -197,20 +235,34 @@ class User:
             )
             raise BadPermission()
 
-        query(
-            f"""
-            UPDATE users
-            SET moderator = TRUE, visible_mod = :visible
-                {', admin = :admin' if admin is not None else ''}
-            WHERE id = :u
-            """,
-            admin=bool(admin),
-            visible=visible,
-            u=self.id,
-        )
-        self.global_admin = admin
-        self.global_moderator = True
-        self.visible_mod = visible
+        with db.transaction():
+            u = self
+            need_blinding = False
+            if config.REQUIRE_BLIND_KEYS:
+                blinded = self.find_blinded()
+                if blinded is not None:
+                    u = blinded
+                else:
+                    need_blinding = True
+
+            query(
+                f"""
+                UPDATE users
+                SET moderator = TRUE, visible_mod = :visible
+                    {', admin = :admin' if admin is not None else ''}
+                WHERE id = :u
+                """,
+                admin=bool(admin),
+                visible=visible,
+                u=u.id,
+            )
+
+            if need_blinding:
+                u.record_needs_blinding()
+
+        u.global_admin = admin
+        u.global_moderator = True
+        u.visible_mod = visible
 
     def remove_moderator(self, *, removed_by: User, remove_admin_only: bool = False):
         """Removes this user's global moderator/admin status, if set."""
@@ -249,15 +301,24 @@ class User:
             app.logger.warning(f"Cannot ban {self}: {banned_by} is not a global mod/admin")
             raise BadPermission()
 
-        if self.global_moderator:
-            app.logger.warning(f"Cannot ban {self}: user is a global moderator/admin")
-            raise BadPermission()
-
         with db.transaction():
-            query("UPDATE users SET banned = TRUE WHERE id = :u", u=self.id)
+            u = self
+            need_blinding = False
+            if config.REQUIRE_BLIND_KEYS:
+                blinded = self.find_blinded()
+                if blinded is not None:
+                    u = blinded
+                else:
+                    need_blinding = True
+
+            if u.global_moderator:
+                app.logger.warning(f"Cannot ban {u}: user is a global moderator/admin")
+                raise BadPermission()
+
+            query("UPDATE users SET banned = TRUE WHERE id = :u", u=u.id)
             query(
                 'DELETE FROM user_ban_futures WHERE room IS NULL AND "user" = :u AND NOT banned',
-                u=self.id,
+                u=u.id,
             )
 
             if timeout:
@@ -266,14 +327,15 @@ class User:
                     INSERT INTO user_ban_futures
                     ("user", room, banned, at) VALUES (:u, NULL, FALSE, :at)
                     """,
-                    u=self.id,
+                    u=u.id,
                     at=time.time() + timeout,
                 )
 
-        app.logger.debug(
-            f"{banned_by} globally banned {self}{f' for {timeout}s' if timeout else ''}"
-        )
-        self.banned = True
+            if need_blinding:
+                u.record_needs_blinding()
+
+        app.logger.debug(f"{banned_by} globally banned {u}{f' for {timeout}s' if timeout else ''}")
+        u.banned = True
 
     def unban(self, *, unbanned_by: User):
         """
@@ -300,10 +362,57 @@ class User:
         pk = crypto.xed25519_pubkey(bytes.fromhex(self.session_id[2:]))
         return crypto.verify_sig_from_pk(message, sig, pk)
 
+    def find_blinded(self):
+        """
+        Attempts to look up the blinded User associated with this (unblinded) session id.
+
+        If this User is already a blinded id, this simply returns `self`.
+
+        Otherwise, if we find a blinded id in the users table that corresponds to this (unblinded)
+        id we return a new User object for the blinded user.
+
+        Otherwise returns None.
+        """
+        if self.is_blinded:
+            return self
+
+        if not self.session_id.startswith('05'):  # Mainly here to catch the SystemUser
+            return None
+
+        if self._tried_blinding:
+            # We already tried (and failed) to get the blinded id during construction
+            return None
+
+        b_pos = crypto.compute_blinded_abs_id(self.session_id)
+        b_neg = crypto.blinded_neg(b_pos)
+        row = query(
+            "SELECT * FROM users WHERE session_id IN (:pos, :neg) LIMIT 1", pos=b_pos, neg=b_neg
+        ).first()
+        if not row:
+            self._tried_blinding = True
+            return None
+
+        return User(row)
+
+    def record_needs_blinding(self):
+        """
+        Inserts a database record into the `needs_blinding` table indicating that this user requires
+        permission or ban moves.  This should only be called for an unblinded user for which
+        find_blinded did not find an existing blinded user row.
+        """
+        query(
+            """
+            INSERT INTO needs_blinding (blinded_abs, "user") VALUES (:b_abs, :u)
+            ON CONFLICT DO NOTHING
+            """,
+            b_abs=crypto.compute_blinded_abs_id(self.session_id),
+            u=self.id,
+        )
+
     @property
     def is_blinded(self):
         """True if the user's session id is a derived key"""
-        return self.session_id[0:2] == '15'
+        return self.session_id.startswith('15')
 
     @property
     def system_user(self):

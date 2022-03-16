@@ -1,5 +1,7 @@
 from sogs import crypto
 from sogs.model.room import Room
+from sogs.model.user import User
+from user import User as TUser
 from nacl.signing import SigningKey
 from sogs.hashing import blake2b
 from util import config_override
@@ -149,9 +151,7 @@ def test_blinded_transition(
     r3.set_permissions(user2, mod=user, read=True, write=True, accessible=True, upload=True)
     r3.set_permissions(mod, mod=user, read=True, accessible=True)
 
-    from user import User as TestUser
-
-    u3 = TestUser()
+    u3 = TUser()
 
     room.set_permissions(user, mod=global_admin, upload=False)
     room.ban_user(user2, mod=global_mod, timeout=86400)
@@ -275,3 +275,103 @@ def test_blinded_transition(
         b_u2 = User(session_id=user2.blinded_id)
         assert [r[0] for r in db.query('SELECT "user" FROM user_permission_futures')] == [b_u2.id]
         assert [r[0] for r in db.query('SELECT "user" FROM user_ban_futures')] == [b_u2.id]
+
+
+def get_perm_flags(db, cols, exclude=[]):
+    return {
+        r['user']: {c: None if r[c] is None else bool(r[c]) for c in cols}
+        for r in db.query(
+            f"""
+                SELECT "user", {", ".join(cols)} FROM user_permission_overrides
+                WHERE "user" NOT IN :u
+                ORDER BY "user"
+                """,
+            bind_expanding=['u'],
+            u=[u.id for u in exclude],
+        )
+    }
+
+
+def test_auto_blinding(db, client, room, user, user2, mod, global_admin):
+    with config_override(REQUIRE_BLIND_KEYS=True):
+        assert db.query("SELECT COUNT(*) FROM users").fetchone()[0] == 5
+        assert db.query("SELECT COUNT(*) FROM needs_blinding").fetchone()[0] == 0
+
+        # Banning a user by unblinded ID should set up the ban for the unblinded id *and* put them
+        # in the needs_blinding table
+
+        room.ban_user(user2, mod=mod)
+        # Set these in two separate calls so that we are making sure multiple changes on the same
+        # user works as expected:
+        room.set_permissions(user, mod=mod, write=True)
+        room.set_permissions(user, mod=mod, write=False)
+        room.set_permissions(user, mod=mod, upload=False)
+
+        upo = get_perm_flags(db, ['write', 'banned', 'upload'], [mod])
+        assert upo == {
+            user.id: {'banned': False, 'write': False, 'upload': False},
+            user2.id: {'banned': True, 'write': None, 'upload': None},
+        }
+        assert db.query("SELECT COUNT(*) FROM needs_blinding").fetchone()[0] == 2
+
+        # Initializing the blinded user should resolve the needs_blinding:
+        b_user2 = User(session_id=user2.blinded_id)
+        assert b_user2.id != user2.id
+
+        upo = get_perm_flags(db, ['write', 'banned'], [mod])
+        assert upo == {
+            user.id: {'banned': False, 'write': False},
+            b_user2.id: {'banned': True, 'write': None},
+        }
+        assert db.query("SELECT COUNT(*) FROM needs_blinding").fetchone()[0] == 1
+
+        room.unban_user(b_user2, mod=mod)
+        upo = get_perm_flags(db, ['write', 'banned'], [mod])
+        assert upo == {user.id: {'banned': False, 'write': False}}
+        # Now, since user2's blinded account already exists, attempting to ban user2 should ban
+        # b_user2 directly:
+        user2._refresh()
+        room.ban_user(user2, mod=mod)
+        upo = get_perm_flags(db, ['write', 'banned'], [mod])
+        assert upo == {
+            user.id: {'banned': False, 'write': False},
+            b_user2.id: {'banned': True, 'write': None},
+        }
+        assert db.query("SELECT COUNT(*) FROM needs_blinding").fetchone()[0] == 1
+
+        u3 = TUser()
+        # Try the same for a global ban:
+        u3.ban(banned_by=global_admin)
+        u3.unban(unbanned_by=global_admin)
+        u3.ban(banned_by=global_admin)
+        assert db.query("SELECT COUNT(*) FROM needs_blinding").fetchone()[0] == 2
+        u3._refresh()
+        assert u3.banned
+
+        b_u3 = User(session_id=u3.blinded_id)
+        assert db.query("SELECT COUNT(*) FROM needs_blinding").fetchone()[0] == 1
+        assert b_u3.banned
+        u3._refresh()
+        assert not u3.banned
+
+        b_u3.unban(unbanned_by=global_admin)
+        u3._refresh()
+        b_u3._refresh()
+        assert not u3.banned
+        assert not b_u3.banned
+        u3.ban(banned_by=global_admin)  # should ban b_u3 instead
+        b_u3._refresh()
+        u3._refresh()
+        assert not u3.banned
+        assert b_u3.banned
+
+        # Moderator setting migration:
+        b_user = User(session_id=user.blinded_id)
+        user._refresh()
+        assert db.query("SELECT COUNT(*) FROM needs_blinding").fetchone()[0] == 0
+        room.set_moderator(user, added_by=global_admin)
+        user._refresh()
+        b_user._refresh()
+        assert not room.check_moderator(user)
+        assert room.check_moderator(b_user)
+        assert not room.check_admin(b_user)
