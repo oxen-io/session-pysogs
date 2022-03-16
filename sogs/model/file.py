@@ -124,13 +124,14 @@ class File:
     def set_expiry(self, duration=None, forever=False):
         """
         Updates the file expiry to `duration` seconds from now, or to unlimited if `forever` is
-        True.  If duration is None (and not using forever) then the default expiry will be used.
+        True.  If duration is None (and not using forever) then the default expiry (relative to the
+        current time) will be used.
         """
         expiry = (
             None
             if forever
             else time.time()
-            + (duration if duration is not None else config.UPLOAD_DEFAULT_EXPIRY_DAYS)
+            + (duration if duration is not None else config.UPLOAD_DEFAULT_EXPIRY)
         )
         query("UPDATE files SET expiry = :when WHERE id = :f", when=expiry, f=self.id)
         self.expiry = expiry
@@ -139,7 +140,7 @@ class File:
     def reset_expiries(file_ids: List[int]):
         query(
             "UPDATE files SET expiry = uploaded + :exp WHERE id IN :ids",
-            exp=config.UPLOAD_DEFAULT_EXPIRY_DAYS * 86400.0,
+            exp=config.UPLOAD_DEFAULT_EXPIRY,
             ids=file_ids,
             bind_expanding=['ids'],
         )
