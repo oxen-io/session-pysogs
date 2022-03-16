@@ -59,7 +59,7 @@
 
 ; How long newly uploaded files should be stored before being cleaned up, in days.  Note that
 ; changing this only affects new files.  This limit does not apply to room images and attachments in
-; pinned messages, both of which do not expire.
+; pinned messages, both of which do not expire.  Can be set to 0 to never expire new uploads.
 ;
 ;expiry = 15
 

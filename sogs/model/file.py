@@ -127,12 +127,14 @@ class File:
         True.  If duration is None (and not using forever) then the default expiry (relative to the
         current time) will be used.
         """
-        expiry = (
-            None
-            if forever
-            else time.time()
-            + (duration if duration is not None else config.UPLOAD_DEFAULT_EXPIRY)
-        )
+        if forever:
+            expiry = None
+        elif duration is not None:
+            expiry = time.time() + duration
+        elif config.UPLOAD_DEFAULT_EXPIRY:
+            expiry = time.time() + config.UPLOAD_DEFAULT_EXPIRY
+        else:
+            expiry = None
         query("UPDATE files SET expiry = :when WHERE id = :f", when=expiry, f=self.id)
         self.expiry = expiry
 

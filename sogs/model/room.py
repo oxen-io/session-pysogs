@@ -656,6 +656,10 @@ class Room:
         Associated any of the given file ids with the given message id.  Only files that are recent,
         expiring, unowned uploads by the same user are actually updated.
         """
+        expiry = None
+        if config.UPLOAD_DEFAULT_EXPIRY:
+            expiry = time.time() + config.UPLOAD_DEFAULT_EXPIRY
+
         return db.query(
             """
             UPDATE files SET
@@ -669,7 +673,7 @@ class Room:
                 AND expiry IS NOT NULL
             """,
             m=msg_id,
-            exp=time.time() + config.UPLOAD_DEFAULT_EXPIRY,
+            exp=expiry,
             ids=files,
             r=self.id,
             u=user.id,

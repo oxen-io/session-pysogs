@@ -359,6 +359,10 @@ def import_from_0_1_x(conn):
                     )
                     timestamp = time.time()
 
+                exp = None
+                if config.UPLOAD_DEFAULT_EXPIRY:
+                    exp = timestamp + config.UPLOAD_DEFAULT_EXPIRY
+
                 new_id = db.insert_and_get_pk(
                     """
                     INSERT INTO files (room, size, uploaded, expiry, path)
@@ -368,7 +372,7 @@ def import_from_0_1_x(conn):
                     r=room_id,
                     size=size,
                     uploaded=timestamp,
-                    expiry=timestamp + config.UPLOAD_DEFAULT_EXPIRY,
+                    expiry=exp,
                     path=path,
                     dbconn=conn,
                 )

@@ -1,5 +1,7 @@
 from typing import Union
 import time
+from contextlib import contextmanager
+import sogs.config
 
 
 def pad64(data: Union[bytes, str]):
@@ -47,3 +49,27 @@ class from_now:
     @staticmethod
     def days(n):
         return from_now.hours(24) * n
+
+
+@contextmanager
+def config_override(**kwargs):
+    """
+    Context manager that locally overrides one or more sogs.config.XXX values for all given XXX keys
+    in kwargs.  The original config values are restored when leaving the context.
+
+    e.g.
+
+        with config_override(UPLOAD_FILE_MAX_SIZE=1024):
+            ...
+    """
+
+    restore = {}
+    for k, v in kwargs.items():
+        restore[k] = getattr(sogs.config, k)
+        setattr(sogs.config, k, v)
+
+    try:
+        yield None
+    finally:
+        for k, v in restore.items():
+            setattr(sogs.config, k, v)

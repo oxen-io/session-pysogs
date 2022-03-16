@@ -19,7 +19,7 @@ OMQ_LISTEN = 'tcp://*:22028'
 OMQ_INTERNAL = 'ipc://./omq.sock'
 LOG_LEVEL = 'WARNING'
 DM_EXPIRY = 15 * 86400.0  # Seconds, but specified in config file as days
-UPLOAD_DEFAULT_EXPIRY = 15 * 86400.0  # Seconds, but specified in config file as days
+UPLOAD_DEFAULT_EXPIRY = 15 * 86400.0  # Seconds (or None), but specified in config file as days
 UPLOAD_FILENAME_MAX = 60
 UPLOAD_FILENAME_KEEP_PREFIX = 40
 UPLOAD_FILENAME_KEEP_SUFFIX = 17
@@ -80,6 +80,9 @@ def load_config():
     def days_to_seconds(v):
         return float(v) * 86400.0
 
+    def days_to_seconds_or_none(v):
+        return days_to_seconds(v) if v else None
+
     truthy = ('y', 'yes', 'Y', 'Yes', 'true', 'True', 'on', 'On', '1')
     falsey = ('n', 'no', 'N', 'No', 'false', 'False', 'off', 'Off', '0')
     booly = truthy + falsey
@@ -108,7 +111,7 @@ def load_config():
             'http_show_recent': bool_opt('HTTP_SHOW_RECENT'),
         },
         'files': {
-            'expiry': ('UPLOAD_DEFAULT_EXPIRY', None, days_to_seconds),
+            'expiry': ('UPLOAD_DEFAULT_EXPIRY', None, days_to_seconds_or_none),
             'max_size': ('UPLOAD_FILE_MAX_SIZE', None, int),
             'uploads_dir': ('UPLOAD_PATH', path_exists, val_or_none),
         },
