@@ -24,7 +24,7 @@ def get_room_info(room):
         'message_sequence': room.message_sequence,
         'created': room.created,
         'active_users': room.active_users(),
-        'active_users_cutoff': int(config.ROOM_DEFAULT_ACTIVE_THRESHOLD * 86400),
+        'active_users_cutoff': int(config.ROOM_DEFAULT_ACTIVE_THRESHOLD),
         'moderators': mods,
         'admins': admins,
         'read': room.check_read(g.user),

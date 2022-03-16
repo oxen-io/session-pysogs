@@ -260,9 +260,7 @@ def handle_one_compact_poll(req):
     }
 
 
-def process_legacy_file_upload_for_room(
-    user, room, lifetime=config.UPLOAD_DEFAULT_EXPIRY_DAYS * 86400
-):
+def process_legacy_file_upload_for_room(user, room, lifetime=config.UPLOAD_DEFAULT_EXPIRY):
     """
     Uploads a file, posted by user, into the given room.  `lifetime` controls how long (in seconds)
     the file will be stored before expiry, and can be None for uploads (such as room images) that

@@ -68,7 +68,7 @@ def prune_files():
 def prune_message_history():
     count = query(
         "DELETE FROM message_history WHERE replaced < :t",
-        t=time.time() - config.MESSAGE_HISTORY_PRUNE_THRESHOLD * 86400,
+        t=time.time() - config.MESSAGE_HISTORY_PRUNE_THRESHOLD,
     ).rowcount
 
     if count > 0:
@@ -79,7 +79,7 @@ def prune_message_history():
 def prune_room_activity():
     count = query(
         "DELETE FROM room_users WHERE last_active < :t",
-        t=time.time() - config.ROOM_ACTIVE_PRUNE_THRESHOLD * 86400,
+        t=time.time() - config.ROOM_ACTIVE_PRUNE_THRESHOLD,
     ).rowcount
 
     if count > 0:

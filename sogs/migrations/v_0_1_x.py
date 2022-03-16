@@ -359,6 +359,10 @@ def import_from_0_1_x(conn):
                     )
                     timestamp = time.time()
 
+                exp = None
+                if config.UPLOAD_DEFAULT_EXPIRY:
+                    exp = timestamp + config.UPLOAD_DEFAULT_EXPIRY
+
                 new_id = db.insert_and_get_pk(
                     """
                     INSERT INTO files (room, size, uploaded, expiry, path)
@@ -368,7 +372,7 @@ def import_from_0_1_x(conn):
                     r=room_id,
                     size=size,
                     uploaded=timestamp,
-                    expiry=timestamp + 86400 * config.UPLOAD_DEFAULT_EXPIRY_DAYS,
+                    expiry=exp,
                     path=path,
                     dbconn=conn,
                 )
@@ -488,8 +492,8 @@ def import_from_0_1_x(conn):
             imported_activity, imported_active = 0, 0
 
             # Don't import rows we're going to immediately prune:
-            import_cutoff = time.time() - config.ROOM_ACTIVE_PRUNE_THRESHOLD * 86400
-            active_cutoff = time.time() - config.ROOM_DEFAULT_ACTIVE_THRESHOLD * 86400
+            import_cutoff = time.time() - config.ROOM_ACTIVE_PRUNE_THRESHOLD
+            active_cutoff = time.time() - config.ROOM_DEFAULT_ACTIVE_THRESHOLD
             n_activity = rconn.execute(
                 "SELECT COUNT(*) FROM user_activity WHERE last_active > ?", (import_cutoff,)
             ).fetchone()[0]

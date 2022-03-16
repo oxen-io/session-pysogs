@@ -36,7 +36,7 @@ class Message:
                 sender=sender.id,
                 recipient=recip.id,
                 data=data,
-                expiry=time.time() + config.DM_EXPIRY_DAYS * 86400,
+                expiry=time.time() + config.DM_EXPIRY,
             )
         # sanity check
         assert row is not None

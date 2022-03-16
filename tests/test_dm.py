@@ -5,7 +5,7 @@ from sogs.utils import encode_base64
 from sogs.model.user import SystemUser
 import nacl.bindings as salt
 from nacl.utils import random
-import time
+from util import from_now
 
 
 def test_dm_default_empty(client, blind_user):
@@ -71,21 +71,21 @@ def test_dm_send(client, blind_user, blind_user2):
     r = sogs_post(client, f'/inbox/{blind_user2.session_id}', post, blind_user)
     assert r.status_code == 201
     data = r.json
-    assert -1 < data.pop('posted_at') - time.time() < 1
-    assert -1 < data.pop('expires_at') - config.DM_EXPIRY_DAYS * 86400 - time.time() < 1
+    assert data.pop('posted_at') == from_now.seconds(0)
+    assert data.pop('expires_at') == from_now.seconds(config.DM_EXPIRY)
     assert data == {k: v for k, v in msg_expected.items() if k != 'message'}
 
     r = sogs_get(client, '/inbox', blind_user2)
     assert r.status_code == 200
     assert len(r.json) == 1
     data = r.json[0]
-    assert -1 < data.pop('posted_at') - time.time() < 1
-    assert -1 < data.pop('expires_at') - config.DM_EXPIRY_DAYS * 86400 - time.time() < 1
+    assert data.pop('posted_at') == from_now.seconds(0)
+    assert data.pop('expires_at') == from_now.seconds(config.DM_EXPIRY)
     assert data == msg_expected
 
     r = sogs_get(client, '/outbox', blind_user)
     assert len(r.json) == 1
     data = r.json[0]
-    assert -1 < data.pop('posted_at') - time.time() < 1
-    assert -1 < data.pop('expires_at') - config.DM_EXPIRY_DAYS * 86400 - time.time() < 1
+    assert data.pop('posted_at') == from_now.seconds(0)
+    assert data.pop('expires_at') == from_now.seconds(config.DM_EXPIRY)
     assert data == msg_expected

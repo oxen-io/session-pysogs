@@ -374,10 +374,10 @@ class Room:
                 query("UPDATE rooms SET upload = :upload WHERE id = :r", r=self.id, upload=upload)
                 self._refresh(perms=True)
 
-    def active_users(self, cutoff=config.ROOM_DEFAULT_ACTIVE_THRESHOLD * 86400):
+    def active_users(self, cutoff=config.ROOM_DEFAULT_ACTIVE_THRESHOLD):
         """
         Queries the number of active users in the past `cutoff` seconds.  Defaults to
-        config.ROOM_DEFAULT_ACTIVE_THRESHOLD days.  Note that room activity records are periodically
+        config.ROOM_DEFAULT_ACTIVE_THRESHOLD.  Note that room activity records are periodically
         removed, so going beyond config.ROOM_ACTIVE_PRUNE_THRESHOLD days is useless.
         """
 
@@ -656,6 +656,10 @@ class Room:
         Associated any of the given file ids with the given message id.  Only files that are recent,
         expiring, unowned uploads by the same user are actually updated.
         """
+        expiry = None
+        if config.UPLOAD_DEFAULT_EXPIRY:
+            expiry = time.time() + config.UPLOAD_DEFAULT_EXPIRY
+
         return db.query(
             """
             UPDATE files SET
@@ -669,7 +673,7 @@ class Room:
                 AND expiry IS NOT NULL
             """,
             m=msg_id,
-            exp=time.time() + config.UPLOAD_DEFAULT_EXPIRY_DAYS * 86400.0,
+            exp=expiry,
             ids=files,
             r=self.id,
             u=user.id,
@@ -1276,7 +1280,7 @@ class Room:
         uploader: User,
         *,
         filename: Optional[str] = None,
-        lifetime: Optional[float] = config.UPLOAD_DEFAULT_EXPIRY_DAYS * 86400.0,
+        lifetime: Optional[float] = config.UPLOAD_DEFAULT_EXPIRY,
     ):
         """
         Uploads a file to this room.  The uploader must have write and upload permissions.
