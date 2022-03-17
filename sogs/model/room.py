@@ -1521,6 +1521,8 @@ class Room:
                 data = dict()
                 for k in row.keys():
                     if k not in ('session_id', 'room', 'user'):
+                        if k == 'banned' and not row[k]:
+                            continue  # only include banned when true
                         if row[k] is not None:
                             data[k] = bool(row[k])
                 ret[row['session_id']] = data
