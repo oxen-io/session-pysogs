@@ -278,6 +278,24 @@ def update_room(room):
     return jsonify({})
 
 
+@rooms.get("/room/<Room:room>/permInfo")
+@auth.mod_required
+def get_permission_info(room):
+    """
+    Fetches permissions about the room, like ban info etc.
+
+    # Query Parameters
+
+    TODO: implement me
+
+    # Return Value
+
+    dict of session_id to current permission info
+
+    """
+    return jsonify(room.export_permissions(g.user))
+
+
 @rooms.get("/room/<Room:room>/pollInfo/<int:info_updated>")
 @auth.read_required
 def poll_room_info(room, info_updated):

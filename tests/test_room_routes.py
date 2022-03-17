@@ -1139,3 +1139,24 @@ def test_remove_all_self_posts_from_room(client, room, mod, user, no_rate_limit)
         assert r.status_code == 200
         assert len(room.get_messages_for(u, recent=True)) == 0
         assert room.check_unbanned(u)
+
+
+def test_get_room_perms(client, room, user):
+    r = sogs_get(client, f'/room/{room.token}/permInfo', user)
+    assert r.status_code == 403
+
+
+def test_get_room_perms_as_mod(client, room, mod):
+    r = sogs_get(client, f'/room/{room.token}/permInfo', mod)
+    assert r.status_code == 200
+    assert mod.session_id in r.json
+    perm_info = r.json[mod.session_id]
+    assert perm_info['visible_mod'] is True
+
+
+def test_get_room_perms_as_admin(client, room, admin):
+    r = sogs_get(client, f'/room/{room.token}/permInfo', admin)
+    assert r.status_code == 200
+    assert admin.session_id in r.json
+    perm_info = r.json[admin.session_id]
+    assert perm_info['admin'] is True
