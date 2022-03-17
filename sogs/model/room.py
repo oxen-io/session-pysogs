@@ -1498,7 +1498,33 @@ class Room:
 
     @property
     def url(self):
+        """
+        URL of the web based room viewer for this room
+        """
         return utils.server_url(self.token)
+
+    def export_permissions(self, mod):
+        """
+        export room permissions in full,
+        returns a dict of session_id -> permissions dict (a dict of permission type to bool)
+        """
+        if not self.check_moderator(mod):
+            app.logger.warning("unable to get room permissions for user")
+            raise BadPermission()
+        with db.transaction():
+            ret = dict()
+            for row in query(
+                """SELECT session_id, upo.* FROM user_permission_overrides upo
+                JOIN users ON "user" = users.id WHERE room = :r""",
+                r=self.id,
+            ):
+                data = dict()
+                for k in row.keys():
+                    if k not in ('session_id', 'room', 'user'):
+                        if row[k] is not None:
+                            data[k] = bool(row[k])
+                ret[row['session_id']] = data
+            return ret
 
 
 def get_rooms():
