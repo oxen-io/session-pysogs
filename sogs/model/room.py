@@ -1503,15 +1503,12 @@ class Room:
         """
         return utils.server_url(self.token)
 
-    def export_permissions(self, mod):
+    @property
+    def permissions(self):
         """
         export room permissions in full,
         returns a dict of session_id -> permissions dict (a dict of permission type to bool)
         """
-        if not self.check_moderator(mod):
-            app.logger.warning("unable to get room permissions for user")
-            raise BadPermission()
-
         ret = dict()
         for row in query(
             """SELECT session_id, upo.* FROM user_permission_overrides upo
@@ -1526,6 +1523,33 @@ class Room:
                 if row[k] is not None:
                     data[k] = bool(row[k])
             ret[row['session_id']] = data
+        return ret
+
+    @property
+    def future_permissions(self):
+        """
+        returns a list of future permission changes in this room
+        """
+        ret = list()
+        for row in query(
+            """SELECT session_id, futures.* FROM (
+        SELECT "user", at, read, write, upload, null AS banned
+        FROM user_permission_futures WHERE room = :r
+        UNION ALL
+        SELECT "user", at, null AS read, null AS write, null AS banned, banned
+        FROM user_ban_futures WHERE room = :r
+        ) futures JOIN users ON futures."user" = users.id""",
+            r=self.id,
+        ):
+            data = dict()
+            for k in row.keys():
+                if k in ('room', 'user'):
+                    continue
+                if k in ('at', 'session_id'):
+                    data[k] = row[k]
+                else:
+                    data[k] = bool(row[k])
+            ret.append(data)
         return ret
 
 

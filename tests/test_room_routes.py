@@ -1160,3 +1160,14 @@ def test_get_room_perms_as_admin(client, room, admin):
     assert admin.session_id in r.json
     perm_info = r.json[admin.session_id]
     assert perm_info['admin'] is True
+
+
+def test_get_room_future_perms(client, room, mod):
+    r = sogs_get(client, f'/room/{room.token}/futurePermInfo', mod)
+    assert r.status_code == 200
+    assert r.json == []
+
+
+def test_get_room_future_perms_not_allowed(client, room, user):
+    r = sogs_get(client, f'/room/{room.token}/futurePermInfo', user)
+    assert r.status_code == 403
