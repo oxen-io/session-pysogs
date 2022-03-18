@@ -278,6 +278,24 @@ def update_room(room):
     return jsonify({})
 
 
+def compact_permissions(perms):
+    """ take a dict of user permssions and convert them into a compact form """
+    compact = str()
+    keys = list(perms.keys())
+    keys.sort()
+    for k in keys:
+        if not perms[k]:
+            compact += '-'
+        if k == 'admin':
+            compact += 'A'
+        else:
+            compact += k[0]
+        compact += ','
+    if keys:
+        compact = compact[:-1]
+    return compact
+
+
 @rooms.get("/room/<Room:room>/permInfo")
 @auth.mod_required
 def get_permission_info(room):
@@ -286,14 +304,33 @@ def get_permission_info(room):
 
     # Query Parameters
 
-    TODO: implement me
+    - `compact` — Set to 1 if we should we send each permission as a "compacted" string.
 
     # Return Value
 
-    dict of session_id to current permission info
+    dict of session_id to current permissions,
+    if compact is set to 1 this will be a string,
+    otherwise it will be a dict containing the name of the permission mapped to a boolean value.
+    """
+    transform = lambda x: x  # noqa: E731
+    if request.args.get("compact", type=int, default=0):
+        transform = compact_permissions
+    return jsonify(transform(room.permissions))
+
+
+@rooms.get("/room/<Room:room>/futurePermInfo")
+@auth.mod_required
+def get_future_permission_info(room):
+    """
+    Fetches permission changes scheduled in the future.
+
+    # Return Value
+
+    list of all future permission changes scheduled
 
     """
-    return jsonify(room.export_permissions(g.user))
+
+    return jsonify(room.future_permissions)
 
 
 @rooms.get("/room/<Room:room>/pollInfo/<int:info_updated>")
