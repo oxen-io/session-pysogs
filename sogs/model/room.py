@@ -1511,22 +1511,22 @@ class Room:
         if not self.check_moderator(mod):
             app.logger.warning("unable to get room permissions for user")
             raise BadPermission()
-        with db.transaction():
-            ret = dict()
-            for row in query(
-                """SELECT session_id, upo.* FROM user_permission_overrides upo
-                JOIN users ON "user" = users.id WHERE room = :r""",
-                r=self.id,
-            ):
-                data = dict()
-                for k in row.keys():
-                    if k not in ('session_id', 'room', 'user'):
-                        if k in ('banned', 'moderator', 'admin', 'visible_mod') and not row[k]:
-                            continue  # only include banned when true
-                        if row[k] is not None:
-                            data[k] = bool(row[k])
-                ret[row['session_id']] = data
-            return ret
+
+        ret = dict()
+        for row in query(
+            """SELECT session_id, upo.* FROM user_permission_overrides upo
+            JOIN users ON "user" = users.id WHERE room = :r""",
+            r=self.id,
+        ):
+            data = dict()
+            for k in row.keys():
+                if k not in ('session_id', 'room', 'user'):
+                    if k in ('banned', 'moderator', 'admin', 'visible_mod') and not row[k]:
+                        continue  # only include banned when true
+                if row[k] is not None:
+                    data[k] = bool(row[k])
+            ret[row['session_id']] = data
+        return ret
 
 
 def get_rooms():
