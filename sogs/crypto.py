@@ -6,16 +6,14 @@ import nacl
 from nacl.public import PrivateKey
 from nacl.signing import SigningKey, VerifyKey
 from nacl.encoding import Base64Encoder, HexEncoder
-from nacl.bindings import crypto_scalarmult
+import nacl.bindings as sodium
 
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X25519PublicKey
 
-from .utils import decode_hex_or_b64
 from .hashing import blake2b
 
-import binascii
 import secrets
 import hmac
 import functools
@@ -93,15 +91,63 @@ xed25519_sign = pyonionreq.xed25519.sign
 xed25519_verify = pyonionreq.xed25519.verify
 xed25519_pubkey = pyonionreq.xed25519.pubkey
 
+# AKA "k" for blinding crypto:
+blinding_factor = sodium.crypto_core_ed25519_scalar_reduce(
+    blake2b(server_pubkey_bytes, digest_size=64)
+)
+
 
 @functools.lru_cache(maxsize=1024)
-def compute_derived_key_bytes(pk_bytes):
-    """compute derived key as bytes with no prefix"""
-    return crypto_scalarmult(server_pubkey_hash_bytes, pk_bytes)
+def compute_blinded_abs_key(x_pk: bytes, *, k: bytes = blinding_factor):
+    """
+    Computes the *positive* blinded Ed25519 pubkey from an unprefixed session X25519 pubkey (i.e. 32
+    bytes).  The returned value will always have the sign bit (i.e. the most significant bit of the
+    last byte) set to 0; the actual derived key associated with this session id could have either
+    sign.
+
+    Input and result are in bytes, without the 0x05 or 0x15 prefix.
+
+    k allows you to compute for an alternative blinding factor, but should normally be omitted.
+    """
+    A = xed25519_pubkey(x_pk)
+    kA = sodium.crypto_scalarmult_ed25519_noclamp(k, A)
+
+    if kA[31] & 0x80:
+        return kA[0:31] + bytes([kA[31] & 0x7F])
+    return kA
 
 
-def compute_derived_id(session_id, prefix='15'):
-    """compute derived session"""
-    return prefix + binascii.hexlify(
-        compute_derived_key_bytes(decode_hex_or_b64(session_id[2:], 32))
-    ).decode('ascii')
+def compute_blinded_abs_id(session_id: str, *, k: bytes = blinding_factor):
+    """
+    Computes the *positive* blinded id, as hex, from a prefixed, hex session id.  This function is a
+    wrapper around compute_derived_key_bytes that handles prefixes and hex conversions.
+
+    k allows you to compute for an alternative blinding factor, but should normally be omitted.
+    """
+    return '15' + compute_blinded_abs_key(bytes.fromhex(session_id[2:]), k=k).hex()
+
+
+def blinded_abs(blinded_id: str):
+    """
+    Takes a blinded hex pubkey (i.e. length 66, prefixed with 15) and returns the positive pubkey
+    alternative: that is, if the pubkey is already positive, it is returned as-is; otherwise the
+    returned value is a copy with the sign bit cleared.
+    """
+
+    # Sign bit is the MSB of the last byte, which will be at [31] of the private key, hence 64 is
+    # the most significant nibble once we convert to hex and add 2 for the prefix:
+    msn = int(blinded_id[64], 16)
+    if msn & 0x8:
+        return blinded_id[0:64] + str(msn & 0x7) + blinded_id[65:]
+    return blinded_id
+
+
+def blinded_neg(blinded_id: str):
+    """
+    Counterpart to blinded_abs that always returns the *negative* pubkey alternative.
+    """
+
+    msn = int(blinded_id[64], 16)
+    if msn & 0x8:
+        return blinded_id
+    return blinded_id[0:64] + f"{msn | 0x8:x}" + blinded_id[65:]

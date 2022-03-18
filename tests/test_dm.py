@@ -3,7 +3,7 @@ from sogs import config
 from sogs.hashing import blake2b
 from sogs.utils import encode_base64
 from sogs.model.user import SystemUser
-import nacl.bindings as salt
+import nacl.bindings as sodium
 from nacl.utils import random
 from util import from_now
 
@@ -25,12 +25,12 @@ def make_post(message, sender, to):
     a = sender.ed_key.to_curve25519_private_key().encode()
     kA = bytes.fromhex(sender.session_id[2:])
     kB = bytes.fromhex(to.session_id[2:])
-    key = blake2b(salt.crypto_scalarmult_ed25519_noclamp(a, kB) + kA + kB, digest_size=32)
+    key = blake2b(sodium.crypto_scalarmult_ed25519_noclamp(a, kB) + kA + kB, digest_size=32)
 
     # MESSAGE || UNBLINDED_ED_PUBKEY
     plaintext = message + sender.ed_key.verify_key.encode()
     nonce = random(24)
-    ciphertext = salt.crypto_aead_xchacha20poly1305_ietf_encrypt(
+    ciphertext = sodium.crypto_aead_xchacha20poly1305_ietf_encrypt(
         plaintext, aad=None, nonce=nonce, key=key
     )
     data = b'\x00' + ciphertext + nonce

@@ -1045,21 +1045,33 @@ class Room:
             )
             raise BadPermission()
 
-        query(
-            f"""
-            INSERT INTO user_permission_overrides
-                (room, "user", moderator, {'admin,' if admin is not None else ''} visible_mod)
-            VALUES (:r, :u, TRUE, {':admin,' if admin is not None else ''} :visible)
-            ON CONFLICT (room, "user") DO UPDATE SET
-                moderator = excluded.moderator,
-                {'admin = excluded.admin,' if admin is not None else ''}
-                visible_mod = excluded.visible_mod
-            """,
-            r=self.id,
-            u=user.id,
-            admin=admin,
-            visible=visible,
-        )
+        with db.transaction():
+            need_blinding = False
+            if config.REQUIRE_BLIND_KEYS:
+                blinded = user.find_blinded()
+                if blinded is not None:
+                    user = blinded
+                else:
+                    need_blinding = True
+
+            query(
+                f"""
+                INSERT INTO user_permission_overrides
+                    (room, "user", moderator, {'admin,' if admin is not None else ''} visible_mod)
+                VALUES (:r, :u, TRUE, {':admin,' if admin is not None else ''} :visible)
+                ON CONFLICT (room, "user") DO UPDATE SET
+                    moderator = excluded.moderator,
+                    {'admin = excluded.admin,' if admin is not None else ''}
+                    visible_mod = excluded.visible_mod
+                """,
+                r=self.id,
+                u=user.id,
+                admin=admin,
+                visible=visible,
+            )
+
+            if need_blinding:
+                user.record_needs_blinding()
 
         if user.id in self._perm_cache:
             del self._perm_cache[user.id]
@@ -1107,23 +1119,31 @@ class Room:
         primarily provided for testing.
         """
 
-        fail = None
-        if not self.check_moderator(mod):
-            fail = "user is not a moderator"
-        elif to_ban.id == mod.id:
-            fail = "self-ban not permitted"
-        elif to_ban.global_moderator:
-            fail = "global mods/admins cannot be banned"
-        elif self.check_moderator(to_ban) and not self.check_admin(mod):
-            fail = "only admins can ban room mods/admins"
-
-        if fail is not None:
-            app.logger.warning(f"Error banning {to_ban} from {self} by {mod}: {fail}")
-            raise BadPermission()
-
-        # TODO: log the banning action for auditing
-
         with db.transaction():
+            need_blinding = False
+            if config.REQUIRE_BLIND_KEYS:
+                blinded = to_ban.find_blinded()
+                if blinded is not None:
+                    to_ban = blinded
+                else:
+                    need_blinding = True
+
+            fail = None
+            if not self.check_moderator(mod):
+                fail = "user is not a moderator"
+            elif to_ban.id == mod.id:
+                fail = "self-ban not permitted"
+            elif to_ban.global_moderator:
+                fail = "global mods/admins cannot be banned"
+            elif self.check_moderator(to_ban) and not self.check_admin(mod):
+                fail = "only admins can ban room mods/admins"
+
+            if fail is not None:
+                app.logger.warning(f"Error banning {to_ban} from {self} by {mod}: {fail}")
+                raise BadPermission()
+
+            # TODO: log the banning action for auditing
+
             query(
                 """
                 INSERT INTO user_permission_overrides (room, "user", banned, moderator, admin)
@@ -1151,6 +1171,9 @@ class Room:
                     u=to_ban.id,
                     at=time.time() + timeout,
                 )
+
+            if need_blinding:
+                to_ban.record_needs_blinding()
 
         if to_ban.id in self._perm_cache:
             del self._perm_cache[to_ban.id]
@@ -1234,6 +1257,14 @@ class Room:
             raise BadPermission()
 
         with db.transaction():
+            need_blinding = False
+            if config.REQUIRE_BLIND_KEYS:
+                blinded = user.find_blinded()
+                if blinded is not None:
+                    user = blinded
+                else:
+                    need_blinding = True
+
             set_perms = perms.keys()
             query(
                 f"""
@@ -1249,6 +1280,9 @@ class Room:
                 write=perms.get('write'),
                 upload=perms.get('upload'),
             )
+
+            if need_blinding:
+                user.record_needs_blinding()
 
         if user.id in self._perm_cache:
             del self._perm_cache[user.id]

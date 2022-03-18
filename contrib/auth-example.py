@@ -1,6 +1,6 @@
 # Example script for demonstrating X-SOGS-* authentication calculation.
 
-import nacl.bindings as salt
+import nacl.bindings as sodium
 from nacl.signing import SigningKey
 from hashlib import blake2b, sha512
 from base64 import b64encode
@@ -29,10 +29,12 @@ def blinded_ed25519_signature(message_parts, s: SigningKey, ka: bytes, kA: bytes
     domain separation for different blinded pubkeys.  (This doesn't affect verification at all).
     """
     H_rh = sha512(s.encode()).digest()[32:]
-    r = salt.crypto_core_ed25519_scalar_reduce(sha512_multipart(H_rh, kA, message_parts))
-    sig_R = salt.crypto_scalarmult_ed25519_base_noclamp(r)
-    HRAM = salt.crypto_core_ed25519_scalar_reduce(sha512_multipart(sig_R, kA, message_parts))
-    sig_s = salt.crypto_core_ed25519_scalar_add(r, salt.crypto_core_ed25519_scalar_mul(HRAM, ka))
+    r = sodium.crypto_core_ed25519_scalar_reduce(sha512_multipart(H_rh, kA, message_parts))
+    sig_R = sodium.crypto_scalarmult_ed25519_base_noclamp(r)
+    HRAM = sodium.crypto_core_ed25519_scalar_reduce(sha512_multipart(sig_R, kA, message_parts))
+    sig_s = sodium.crypto_core_ed25519_scalar_add(
+        r, sodium.crypto_core_ed25519_scalar_mul(HRAM, ka)
+    )
     return sig_R + sig_s
 
 
@@ -52,7 +54,7 @@ def get_signing_headers(
 
     if blinded:
         # 64-byte blake2b hash then reduce to get the blinding factor:
-        k = salt.crypto_core_ed25519_scalar_reduce(blake2b(server_pk, digest_size=64).digest())
+        k = sodium.crypto_core_ed25519_scalar_reduce(blake2b(server_pk, digest_size=64).digest())
 
         # Calculate k*a.  To get 'a' (the Ed25519 private key scalar) we call the sodium function to
         # convert to an *x* secret key, which seems wrong--but isn't because converted keys use the
@@ -61,8 +63,8 @@ def get_signing_headers(
         a = s.to_curve25519_private_key().encode()
 
         # Our blinded keypair:
-        ka = salt.crypto_core_ed25519_scalar_mul(k, a)
-        kA = salt.crypto_scalarmult_ed25519_base_noclamp(ka)
+        ka = sodium.crypto_core_ed25519_scalar_mul(k, a)
+        kA = sodium.crypto_scalarmult_ed25519_base_noclamp(ka)
 
         # Blinded session id:
         pubkey = '15' + kA.hex()

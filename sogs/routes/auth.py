@@ -1,6 +1,6 @@
 from ..web import app
 from ..db import query
-from .. import crypto, http, utils
+from .. import config, crypto, http, utils
 from ..model.user import User
 from ..hashing import blake2b
 
@@ -9,7 +9,7 @@ import time
 import nacl
 from nacl.signing import VerifyKey
 import nacl.exceptions
-import nacl.bindings as salt
+import nacl.bindings as sodium
 import sqlalchemy.exc
 from functools import wraps
 
@@ -238,7 +238,7 @@ def handle_http_auth():
     blinded_pk = pk[0] == 0x15
     pk = pk[1:]
 
-    if not salt.crypto_core_ed25519_is_valid_point(pk):
+    if not sodium.crypto_core_ed25519_is_valid_point(pk):
         abort_with_reason(
             http.BAD_REQUEST,
             "Invalid authentication: given X-SOGS-Pubkey is not a valid Ed25519 pubkey",
@@ -247,8 +247,11 @@ def handle_http_auth():
     pk = VerifyKey(pk)
     if blinded_pk:
         session_id = '15' + pk.encode().hex()
+    elif config.REQUIRE_BLIND_KEYS:
+        abort_with_reason(
+            http.BAD_REQUEST, "Invalid authentication: this server requires the use of blinded ids"
+        )
     else:
-        # TODO: if "blinding required" config option is set then reject the request here
         try:
             session_id = '05' + pk.to_curve25519_public_key().encode().hex()
         except nacl.exceptions.RuntimeError:

@@ -65,6 +65,7 @@ TABLES = [
     "user_ban_futures",
     "user_request_nonces",
     "inbox",
+    "needs_blinding",
 ]
 
 with pgsql.transaction():

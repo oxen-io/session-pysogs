@@ -265,7 +265,7 @@ elif args.add_moderators:
 
     if args.rooms == ['+']:
         for sid in args.add_moderators:
-            u = User(session_id=sid)
+            u = User(session_id=sid, try_blinding=True)
             u.set_moderator(admin=args.admin, visible=args.visible, added_by=sysadmin)
             print(
                 "Added {} as {} global {}".format(
@@ -284,7 +284,7 @@ elif args.add_moderators:
                 print(f"No such room: '{nsr.token}'", file=sys.stderr)
 
         for sid in args.add_moderators:
-            u = User(session_id=sid)
+            u = User(session_id=sid, try_blinding=True)
             for room in rooms:
                 room.set_moderator(u, admin=args.admin, visible=not args.hidden, added_by=sysadmin)
                 print(
@@ -315,7 +315,7 @@ elif args.delete_moderators:
 
     if args.rooms == ['+']:
         for sid in args.delete_moderators:
-            u = User(session_id=sid)
+            u = User(session_id=sid, try_blinding=True)
             was_admin = u.global_admin
             if not u.global_admin and not u.global_moderator:
                 print(f"{u.session_id} was not a global moderator")
@@ -332,7 +332,7 @@ elif args.delete_moderators:
                 print(f"No such room: '{nsr.token}'", file=sys.stderr)
 
         for sid in args.delete_moderators:
-            u = User(session_id=sid)
+            u = User(session_id=sid, try_blinding=True)
             for room in rooms:
                 room.remove_moderator(u, removed_by=sysadmin)
                 print(f"Removed {u.session_id} as moderator/admin of {room.name} ({room.token})")
