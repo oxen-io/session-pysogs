@@ -1,0 +1,26 @@
+# check docker/Readme.md
+
+FROM ubuntu:impish
+RUN apt update
+RUN apt upgrade -y
+
+RUN apt-get install -y locales && locale-gen en_US.UTF-8
+ENV LANG='en_US.UTF-8' LANGUAGE='en_US:en' LC_ALL='en_US.UTF-8'
+
+RUN DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC apt -y install curl build-essential libssl-dev pkg-config lsb-release
+RUN curl -so /etc/apt/trusted.gpg.d/oxen.gpg https://deb.oxen.io/pub.gpg
+RUN echo "deb https://deb.oxen.io $(lsb_release -sc) main" | tee /etc/apt/sources.list.d/oxen.list
+RUN apt update
+RUN apt -y install python3-oxenmq python3-oxenc python3-pyonionreq python3-coloredlogs python3-uwsgidecorators python3-flask python3-cryptography python3-nacl python3-pil python3-protobuf python3-openssl python3-qrencode python3-better-profanity python3-sqlalchemy python3-sqlalchemy-utils uwsgi-plugin-python3
+
+
+# just add an alias to the pysogs-start command
+RUN echo -e '#!/bin/bash\nuwsgi docker/uwsgi-sogs-docker.ini' > /usr/bin/pysogs && \
+    chmod +x /usr/bin/pysogs
+
+
+RUN mkdir session-pysogs
+WORKDIR session-pysogs
+
+
+EXPOSE 80
