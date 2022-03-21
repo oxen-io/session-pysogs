@@ -1547,7 +1547,7 @@ class Room:
                     continue
                 if k in ('at', 'session_id'):
                     data[k] = row[k]
-                else:
+                elif row[k] is not None:
                     data[k] = bool(row[k])
             ret.append(data)
         return ret

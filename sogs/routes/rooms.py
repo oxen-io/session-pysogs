@@ -312,10 +312,10 @@ def get_permission_info(room):
     if compact is set to 1 this will be a string,
     otherwise it will be a dict containing the name of the permission mapped to a boolean value.
     """
-    transform = lambda x: x  # noqa: E731
+    perms = room.permissions
     if request.args.get("compact", type=int, default=0):
-        transform = compact_permissions
-    return jsonify(transform(room.permissions))
+        perms = {key: compact_permissions(perms[key]) for key in perms}
+    return jsonify(perms)
 
 
 @rooms.get("/room/<Room:room>/futurePermInfo")
