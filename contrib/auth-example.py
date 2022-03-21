@@ -131,4 +131,4 @@ for h, v in sig_headers.items():
 # X-SOGS-Pubkey: 1598932d4bccbe595a8789d7eb1629cefc483a0eaddc7e20e8fe5c771efafd9af5
 # X-SOGS-Timestamp: 1642472103
 # X-SOGS-Nonce: CdB5nyKVmQGCw6s0Bvv8Ww==
-# X-SOGS-Signature: n4HK33v7gkcz/3pZuWvzmOlY+AbzbpEN1K12dtCc8Gw0m4iP5gUddGKKLEbmoWNhqJeY2S81Lm9uK2DBBN8aCg==  # noqa E501
+# X-SOGS-Signature: gYqpWZX6fnF4Gb2xQM3xaXs0WIYEI49+B8q4mUUEg8Rw0ObaHUWfoWjMHMArAtP9QlORfiydsKWz1o6zdPVeCQ==  # noqa E501
