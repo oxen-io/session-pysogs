@@ -125,7 +125,7 @@ To upgrade from a 0.1.x version of (Rust) SOGS you will need to do two things:
   directory into the session-pysogs project directory.
 - Manually convert your keys from the old openssl format, using:
 ```bash
-python3 -msogs.key_convert -i x25519_private_key.pem key_x25519
+python3 -msogs.key_convert -i x25519_private_key.pem -o key_x25519
 ```
 
 The first time you start sogs after doing this it will see that it has no rooms but that
