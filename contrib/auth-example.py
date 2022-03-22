@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 # Example script for demonstrating X-SOGS-* authentication calculation.
 
 import nacl.bindings as sodium
@@ -5,8 +7,12 @@ from nacl.signing import SigningKey
 from hashlib import blake2b, sha512
 from base64 import b64encode
 
-# import time
-# import nacl.utils
+import time
+import nacl.utils
+
+import argparse
+import sys
+import requests
 
 
 def sha512_multipart(*message_parts):
@@ -20,6 +26,23 @@ def sha512_multipart(*message_parts):
         else:
             hasher.update(m)
     return hasher.digest()
+
+
+def blinded_ed25519_keys(server_pk: bytes, s: SigningKey):
+    # 64-byte blake2b hash then reduce to get the blinding factor:
+    k = sodium.crypto_core_ed25519_scalar_reduce(blake2b(server_pk, digest_size=64).digest())
+
+    # Calculate k*a.  To get 'a' (the Ed25519 private key scalar) we call the sodium function to
+    # convert to an *x* secret key, which seems wrong--but isn't because converted keys use the
+    # same secret scalar secret.  (And so this is just the most convenient way to get 'a' out of
+    # a sodium Ed25519 secret key).
+    a = s.to_curve25519_private_key().encode()
+
+    # Our blinded keypair:
+    ka = sodium.crypto_core_ed25519_scalar_mul(k, a)
+    kA = sodium.crypto_scalarmult_ed25519_base_noclamp(ka)
+
+    return ka, kA
 
 
 def blinded_ed25519_signature(message_parts, s: SigningKey, ka: bytes, kA: bytes):
@@ -53,18 +76,7 @@ def get_signing_headers(
     assert len(nonce) == 16
 
     if blinded:
-        # 64-byte blake2b hash then reduce to get the blinding factor:
-        k = sodium.crypto_core_ed25519_scalar_reduce(blake2b(server_pk, digest_size=64).digest())
-
-        # Calculate k*a.  To get 'a' (the Ed25519 private key scalar) we call the sodium function to
-        # convert to an *x* secret key, which seems wrong--but isn't because converted keys use the
-        # same secret scalar secret.  (And so this is just the most convenient way to get 'a' out of
-        # a sodium Ed25519 secret key).
-        a = s.to_curve25519_private_key().encode()
-
-        # Our blinded keypair:
-        ka = sodium.crypto_core_ed25519_scalar_mul(k, a)
-        kA = sodium.crypto_scalarmult_ed25519_base_noclamp(ka)
+        ka, kA = blinded_ed25519_keys(server_pk, s)
 
         # Blinded session id:
         pubkey = '15' + kA.hex()
@@ -98,26 +110,149 @@ def get_signing_headers(
     }
 
 
+#
+# End of blinding cryptography; everything below this is command-line parsing, display, etc.
+#
+
+
+def hexstr(size: int):
+    def validator(x: str):
+        import string
+
+        if len(x) != size or not all(c in string.hexdigits for c in x):
+            raise RuntimeError(f"Invalid argument: {x}; expected {size}-char hex string")
+
+
+parser = argparse.ArgumentParser(description="auth test")
+parser.add_argument(
+    '--seed',
+    '-s',
+    type=hexstr(64),
+    default='c010d89eccbaf5d1c6d19df766c6eedf965d4a28a56f87c9fc819edb59896dd9',
+    help='Ed25519 seed hex',
+)
+parser.add_argument(
+    '--blinded', '-b', action='store_true', help='Specify to generated blinded auth headers'
+)
+parser.add_argument(
+    '--unblinded', '-u', action='store_true', help='Specify to generate unblinded auth headers'
+)
+parser.add_argument(
+    '--server-pubkey',
+    '-k',
+    type=hexstr(64),
+    default='c3b3c6f32f0ab5a57f853cc4f30f5da7fda5624b0c77b3fb0829de562ada081d',
+    help='Server X25519 pubkey (hex)',
+)
+parser.add_argument(
+    '--nonce',
+    '-n',
+    type=hexstr(32),
+    default='09d0799f2295990182c3ab3406fbfc5b',
+    help='Request nonce (hex)',
+)
+parser.add_argument(
+    '--random-nonce', '-N', action='store_true', help='Use random nonce instead of --nonce value'
+)
+parser.add_argument(
+    '--timestamp',
+    '-t',
+    type=int,
+    default=1642472103,
+    help='Request timestamp; specify 0 for current time',
+)
+parser.add_argument('--method', '-m', type=str, default='GET', help='Request method, e.g. GET POST')
+parser.add_argument(
+    '--path',
+    '-p',
+    type=str,
+    default='/room/the-best-room/messages/recent?limit=25',
+    help='Request path',
+)
+parser.add_argument('--body', '-B', type=str, help='Request body (for POST, etc.)')
+parser.add_argument(
+    '--submit',
+    '-S',
+    type=str,
+    help='Submit the request to this URL; takes the base URL (i.e. without the path)',
+)
+
+args = parser.parse_args()
+
+if not (args.blinded or args.unblinded):
+    args.blinded = True
+    args.unblinded = True
+
 # Session "master" ed25519 key:
-s = SigningKey(bytes.fromhex('c010d89eccbaf5d1c6d19df766c6eedf965d4a28a56f87c9fc819edb59896dd9'))
+s = SigningKey(bytes.fromhex(args.seed))
 # Server pubkey:
-B = bytes.fromhex('c3b3c6f32f0ab5a57f853cc4f30f5da7fda5624b0c77b3fb0829de562ada081d')
+B = bytes.fromhex(args.server_pubkey)
 # Random 16-byte nonce
-# nonce = nacl.utils.random(16)
-nonce = bytes.fromhex('09d0799f2295990182c3ab3406fbfc5b')  # fixed for reproducible example
-# ts = int(time.time())
-ts = 1642472103  # for reproducible example
-method, path = 'GET', '/room/the-best-room/messages/recent?limit=25'
+if args.random_nonce:
+    nonce = nacl.utils.random(16)
+else:
+    nonce = bytes.fromhex(args.nonce)
+ts = args.timestamp
+if ts == 0:
+    ts = int(time.time())
+method = args.method.upper()
+if method not in ('GET', 'POST', 'PUT', 'DELETE'):
+    print(f"Error: invalid method {method}", file=sys.stderr)
+    sys.exit(1)
+path = args.path
+if not path.startswith('/'):
+    print(f"Error: invalid path {path}: should start with a /", file=sys.stderr)
+    sys.exit(1)
+body = args.body
 
-print("Unblinded headers:")
-sig_headers = get_signing_headers(s, B, nonce, method, path, ts, body=None, blinded=False)
-for h, v in sig_headers.items():
-    print(f"{h}: {v}")
+if body is not None and method not in ('POST', 'PUT'):
+    print(f"Error: {method} request should not have a body", file=sys.stderr)
+    sys.exit(1)
 
-print("\nBlinded headers:")
-sig_headers = get_signing_headers(s, B, nonce, method, path, ts, body=None, blinded=True)
-for h, v in sig_headers.items():
-    print(f"{h}: {v}")
+
+def submit_req(headers):
+    url = args.submit.rstrip('/') + path
+    print(f"\nSubmitting request to {url}...\n", file=sys.stderr)
+    r = requests.request(method, url, headers=sig_headers, data=body)
+    print(f"Request returned {r.status_code} {r.reason} with headers:", file=sys.stderr)
+    for k, v in r.headers.items():
+        print(f"    {k}: {v}", file=sys.stderr)
+    print("Body:", file=sys.stderr)
+    print(r.text)
+
+
+print(
+    f"""
+Signing request using:
+Master Ed25519 pubkey: {s.verify_key.encode().hex()}
+Session ID: 05{s.to_curve25519_private_key().public_key.encode().hex()}
+Server X25519 pubkey: {B.hex()}
+Blinded Session ID (for this server): 15{blinded_ed25519_keys(B, s)[1].hex()}
+Request: {method} {path}
+""",
+    file=sys.stderr,
+)
+
+
+if args.unblinded:
+    print("\nUnblinded headers:", file=sys.stderr)
+    sig_headers = get_signing_headers(s, B, nonce, method, path, ts, body=body, blinded=False)
+    for h, v in sig_headers.items():
+        print(f"{h}: {v}", file=sys.stderr)
+    if args.submit:
+        submit_req(sig_headers)
+
+
+if args.blinded:
+    if args.unblinded and args.random_nonce:
+        nonce = nacl.utils.random(16)
+
+    print("\nBlinded headers:", file=sys.stderr)
+    sig_headers = get_signing_headers(s, B, nonce, method, path, ts, body=body, blinded=True)
+    for h, v in sig_headers.items():
+        print(f"{h}: {v}", file=sys.stderr)
+    if args.submit:
+        submit_req(sig_headers)
 
 
 # Prints:
