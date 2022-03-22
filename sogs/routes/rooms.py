@@ -278,6 +278,18 @@ def update_room(room):
     return jsonify({})
 
 
+def addExtraPermInfo(perms):
+    """ """
+    if perms.get("moderator"):
+        perms["hidden"] = not bool(perms.pop("visible_mod"))
+    if perms.get("admin"):
+        del perms["moderator"]
+    # if banned is explicitly provided and set to false omit it entirely
+    if perms.get("banned") is False:
+        del perms["banned"]
+    return perms
+
+
 @rooms.get("/room/<Room:room>/permInfo")
 @auth.mod_required
 def get_permission_info(room):
@@ -290,7 +302,8 @@ def get_permission_info(room):
     if compact is set to 1 this will be a string,
     otherwise it will be a dict containing the name of the permission mapped to a boolean value.
     """
-    return jsonify(room.permissions)
+    perms = room.permissions
+    return jsonify({key: addExtraPermInfo(perms[key]) for key in perms.keys()})
 
 
 @rooms.get("/room/<Room:room>/futurePermInfo")
