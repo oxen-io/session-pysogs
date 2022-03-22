@@ -182,21 +182,3 @@ def add_session_message_padding(data: Union[bytes, memoryview], length):
             data = bytes(data)
         data += b'\x80' + b'\x00' * (length - len(data) - 1)
     return data
-
-
-def compact_permissions(perms):
-    """ take a dict of user permssions and convert them into a compact form """
-    compact = str()
-    keys = list(perms.keys())
-    keys.sort()
-    for k in keys:
-        if not perms[k]:
-            compact += '-'
-        if k == 'admin':
-            compact += 'A'
-        else:
-            compact += k[0]
-        compact += ','
-    if keys:
-        compact = compact[:-1]
-    return compact
