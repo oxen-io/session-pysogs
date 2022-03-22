@@ -1,12 +1,17 @@
 {% extends "base.html" %}
 {% block body %}
 <div class="container mx-auto">
-  <h1> room directory </h1>
+  <h1> TEST </h1>
 </div>
-<ul>
+<div class="flex flex-row justify-center space-x-3">
   {% for room in rooms %}
-  <li><a href="/r/{{room.token}}">{{room.token}}</a></li>
+  <a class="flex justify-center items-center transition duration-500 
+  w-1/3 h-16 md:w-1/4 lg:w-1/6 bg-green-400 hover:bg-black hover:text-white text-3xl rounded" href="/r/{{room.token}}">
+    <div>{{room.token}}</div>
+  </a>
+  <div>
+  </div>
   {% endfor %}
-</ul>
+</div>
 
 {% endblock %}
