@@ -8,7 +8,7 @@
 __pycache__
 *.pyc
 /protobuf.*/
-/node_modules
+node_modules
 
 # This file is for local config which we never want committed:
 /sogs.ini
