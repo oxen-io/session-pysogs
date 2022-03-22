@@ -299,8 +299,7 @@ def get_permission_info(room):
     # Return Value
 
     dict of session_id to current permissions,
-    if compact is set to 1 this will be a string,
-    otherwise it will be a dict containing the name of the permission mapped to a boolean value.
+    a dict containing the name of the permission mapped to a boolean value.
     """
     perms = room.permissions
     return jsonify({key: addExtraPermInfo(perms[key]) for key in perms.keys()})
