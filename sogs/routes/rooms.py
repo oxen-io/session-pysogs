@@ -279,13 +279,23 @@ def update_room(room):
 
 
 def addExtraPermInfo(perms):
-    """ """
-    if perms.get("moderator"):
-        perms["hidden"] = not bool(perms.pop("visible_mod"))
-    if perms.get("admin"):
+    """
+    Apply some cleanups/simplifications for more digestable permission indicators by clients.
+
+    - We only include one of moderator/admin (admin if both, moderator if mod but not admin)
+    - Don't include moderator/admin at all when both are false
+    - We rewrite visible_mod=False to hidden=True (and omit both if not a mod/admin, or not hidden)
+    - Don't include banned unless true.
+    """
+    vis_mod = perms.pop("visible_mod", True)
+    if perms["moderator"]:
+        if not vis_mod:
+            perms["hidden"] = True
+        del perms["moderator" if perms["admin"] else "admin"]
+    else:
         del perms["moderator"]
-    # if banned is explicitly provided and set to false omit it entirely
-    if perms.get("banned") is False:
+        del perms["admin"]
+    if not perms["banned"]:
         del perms["banned"]
     return perms
 
@@ -301,8 +311,7 @@ def get_permission_info(room):
     dict of session_id to current permissions,
     a dict containing the name of the permission mapped to a boolean value.
     """
-    perms = room.permissions
-    return jsonify({key: addExtraPermInfo(perms[key]) for key in perms.keys()})
+    return jsonify({k: addExtraPermInfo(v) for k, v in room.permissions.items()})
 
 
 @rooms.get("/room/<Room:room>/futurePermInfo")
