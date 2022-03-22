@@ -1533,7 +1533,7 @@ class Room:
         SELECT "user", at, read, write, upload, null AS banned
         FROM user_permission_futures WHERE room = :r
         UNION ALL
-        SELECT "user", at, null AS read, null AS write, null AS banned, banned
+        SELECT "user", at, null AS read, null AS write, null AS upload, banned
         FROM user_ban_futures WHERE room = :r
         ) futures JOIN users ON futures."user" = users.id""",
             r=self.id,
