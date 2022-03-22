@@ -14,6 +14,7 @@ import sqlite3
 import importlib.resources
 import sys
 import re
+import time
 
 import sogs  # noqa: F401
 
@@ -50,7 +51,7 @@ pg_schema = importlib.resources.read_text('sogs', 'schema.pgsql')
 old = sqlite3.connect(f"file:{args.sogs_db[0]}?mode=ro", uri=True)
 old.row_factory = sqlite3.Row
 
-pgsql = psycopg.connect(args.postgresql_url[0])
+pgsql = psycopg.connect(args.postgresql_url[0], autocommit=True)
 
 TABLES = [
     "rooms",
@@ -113,8 +114,6 @@ with pgsql.transaction():
     # We have circular foreign keys that we need to break for the copy to work:
     curout.execute("ALTER TABLE rooms DROP CONSTRAINT room_image_fk")
 
-    curout.execute("SET CONSTRAINTS ALL DEFERRED")
-
     def copy(table):
 
         cols = [r['name'] for r in curin.execute(f"PRAGMA table_info({table})")]
@@ -141,6 +140,9 @@ with pgsql.transaction():
             )
 
         count = 0
+        count_total = curin.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+        print(f"Importing {table}: {count}/{count_total}", end="", flush=True)
+        started = time.time()
         for row in curin.execute(f"SELECT * FROM {table}"):
             colnames = ', '.join('"' + c + '"' if c == "user" else c for c in cols)
             vals = ', '.join('%s' for _ in cols)
@@ -153,27 +155,67 @@ with pgsql.transaction():
             )
             count += 1
 
-        print(f"rooms: {count} rows copied")
+            if count % 10 == 0 and args.commit:
+                curout.execute("COMMIT; BEGIN")
+            if count % 1000 == 0:
+                print(f"\rImporting {table}: {count}/{count_total}", end="", flush=True)
+
+        if args.commit:
+            curout.execute("COMMIT; BEGIN")
+        print(
+            f"\rFinished importing {table}: {count}/{count_total} rows imported "
+            f"[{time.time() - started:.3f}s]",
+            flush=True,
+        )
 
     for t in TABLES:
         copy(t)
 
     # Put the foreign key we deleted back in:
+    print("Reactivating room_image foreign key...", end="", flush=True)
+    started = time.time()
     curout.execute(
         "ALTER TABLE rooms ADD CONSTRAINT room_image_fk FOREIGN KEY (image)"
         " REFERENCES files ON DELETE SET NULL"
     )
+    if args.commit:
+        curout.execute("COMMIT; BEGIN")
+    print(f" done [{time.time() - started:.3f}s].")
 
     # Our DB triggers mess with the seqno/updates values, so restore them:
+    print("Updating message sequence counters...", end="", flush=True)
+    started = time.time()
+    count = 0
+    count_total = curin.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
     for row in curin.execute("SELECT id, seqno FROM messages"):
         curout.execute("UPDATE messages SET seqno = %s WHERE id = %s", [row[1], row[0]])
+        count += 1
+        if count % 1000 == 0:
+            if args.commit:
+                curout.execute("COMMIT; BEGIN")
+            print(
+                f"\rUpdating message sequence counters... {count}/{count_total}", end="", flush=True
+            )
+    if args.commit:
+        curout.execute("COMMIT; BEGIN")
+    print(
+        f"\rUpdated message sequence counters... {count}/{count_total} "
+        f"[{time.time() - started:.3f}s]",
+        flush=True,
+    )
+
+    print("Updating room sequence/updates counters...")
+    started = time.time()
     for row in curin.execute("SELECT id, message_sequence, info_updates FROM rooms"):
         curout.execute(
             "UPDATE rooms SET message_sequence = %s, info_updates = %s WHERE id = %s",
             [row[1], row[2], row[0]],
         )
+    print(f" done [{time.time() - started:.3f}s].")
 
     # Restart the identity sequences (otherwise new inserts will fail with conflicting ids)
+    print("Restarting identity sequences...", end="", flush=True)
+    started = time.time()
     identities = [
         (r[0], r[1])
         for r in curout.execute(
@@ -184,8 +226,9 @@ with pgsql.transaction():
     for table, col in identities:
         next_id = curout.execute(f"SELECT MAX({col}) FROM {table}").fetchone()[0]
         if next_id is not None:
-            print(f"Updating {table}.{col} identity to start at {next_id+1}")
+            print(f" {table}.{col}={next_id+1}", end="", flush=True)
             curout.execute(f"ALTER TABLE {table} ALTER COLUMN {col} RESTART WITH {next_id+1}")
+    print(f". Done [{time.time() - started:.3f}s].")
 
     if not args.commit:
         print("Import finished, aborting transaction (because --commit not given)")
