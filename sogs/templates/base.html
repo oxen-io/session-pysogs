@@ -3,11 +3,21 @@
     <title> sogs </title>
     <link rel="stylesheet" href="{{ url_for('static', filename='main.css') }}">
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              sessionGreen: '#00e97b',
+            }
+          }
+        }
+      }
+    </script>
   </head>
   <body>
     <div class="flex justify-center">
-      <h1 class="text-5xl font-bold underline text-green-400">SOGS</h1>
-      <h1>plainh1</h1>
+      <h1 class="text-5xl font-bold underline text-sessionGreen">Session Open Group Server</h1>
     </div>
       {% block body %}
       {% endblock %}
