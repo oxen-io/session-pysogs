@@ -1,6 +1,8 @@
 {% extends "base.html" %}
 {% block body %}
-<h1> room directory </h1>
+<div class="container mx-auto">
+  <h1> room directory </h1>
+</div>
 <ul>
   {% for room in rooms %}
   <li><a href="/r/{{room.token}}">{{room.token}}</a></li>

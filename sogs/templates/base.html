@@ -1,9 +1,14 @@
 <html>
   <head>
     <title> sogs </title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='main.css') }}">
+    <script src="https://cdn.tailwindcss.com"></script>
   </head>
   <body>
-    {% block body %}
-    {% endblock %}
+    <div class="flex justify-center">
+      <h1 class="text-3xl font-bold underline">SOGS</h1>
+    </div>
+      {% block body %}
+      {% endblock %}
   </body>
 </html>
