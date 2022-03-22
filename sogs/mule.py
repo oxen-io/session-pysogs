@@ -89,15 +89,15 @@ def log_exceptions(f):
 @log_exceptions
 def message_posted(m: oxenmq.Message):
     id = bt_deserialize(m.data()[0])
-    app.logger.warning(f"FIXME: mule -- message posted stub, id={id}")
+    app.logger.debug(f"FIXME: mule -- message posted stub, id={id}")
 
 
 @log_exceptions
 def messages_deleted(m: oxenmq.Message):
     ids = bt_deserialize(m.data()[0])
-    app.logger.warning(f"FIXME: mule -- message delete stub, deleted messages: {ids}")
+    app.logger.debug(f"FIXME: mule -- message delete stub, deleted messages: {ids}")
 
 
 @log_exceptions
 def message_edited(m: oxenmq.Message):
-    app.logger.warning("FIXME: mule -- message edited stub")
+    app.logger.debug("FIXME: mule -- message edited stub")
