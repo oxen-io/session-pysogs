@@ -1151,7 +1151,7 @@ def test_get_room_perms_as_mod(client, room, mod):
     assert r.status_code == 200
     assert mod.session_id in r.json
     perm_info = r.json[mod.session_id]
-    assert perm_info['visible_mod'] is True
+    assert perm_info['moderator'] is True
 
 
 def test_get_room_perms_as_admin(client, room, admin):
