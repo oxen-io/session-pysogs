@@ -37,19 +37,27 @@ def get_caps():
     return jsonify(res), res_code
 
 
-def parse_batch_request(req):
-    """
-    Checks a batch request dict for the required fields:
+batch_args = """
+    Each individual batch subrequest is a list of dicts containing keys:
 
-    - method is required and must be one of GET/DELETE/POST/PUT
-    - path is required and must begin with a /
+    - `method` is required and must be one of GET/DELETE/POST/PUT
+    - `path` is required and must begin with a /
     - for POST/PUT requests there must be exactly one of:
-        - a json value under the 'json' key
-        - a base64-encoded body under the 'b64' key
-        - a raw bytes value under the 'bytes' key (not recommended for json)
-    - headers may be provided, and must be a dict of k/v string pairs if provided.
+        - a json value under the `json` key
+        - a base64-encoded body under the `b64` key
+        - a raw bytes value under the `bytes` key (not recommended for json)
+    - `headers` may be provided, and must be a dict of k/v string pairs if provided.
 
-    If non-conforming data is encountered then a BAD_REQUEST request abort is raised.
+    If non-conforming data is encountered then the request is terminated with a Bad Request error
+    code.
+"""
+
+
+def parse_batch_request(req):
+    f"""
+    Checks a batch request dict for the required fields.
+
+    {batch_args}
 
     Returns (method, path, headers, json, body).  `headers` will be a dict (empty if no headers were
     provided); `json`/`body` will be None for GET/DELETE requests; `json` will simply be the `json`
@@ -124,6 +132,12 @@ def batch(_sequential=False):
     be attempted.  There is no guarantee on the order in which requests will be carried out.  (For
     sequential, related requests invoke via /sequence instead).
 
+    # Body
+
+    {batch_args}
+
+    # Return value
+
     Returns a list of responses in the same order as the provided requests; each response consists
     of a dict containing:
     - code -- the numeric http response code (e.g. 200 for success)
@@ -171,6 +185,8 @@ def sequence():
     Like batch, responses are returned in the same order as requests, but unlike batch there may be
     fewer elements in the response list (if requests were stopped because of a non-2xx response).
     In such a case, the final, non-2xx response is still included as the final response value.
+
+    See [`/batch`](#post-batch) for arguments and response.
     """
 
     return batch(_sequential=True)

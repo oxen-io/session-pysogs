@@ -7,6 +7,7 @@ from .exc import NoSuchUser, BadPermission
 
 from typing import Optional
 import time
+import contextlib
 
 
 class User:
@@ -236,29 +237,18 @@ class User:
             raise BadPermission()
 
         with db.transaction():
-            u = self
-            need_blinding = False
-            if config.REQUIRE_BLIND_KEYS:
-                blinded = self.find_blinded()
-                if blinded is not None:
-                    u = blinded
-                else:
-                    need_blinding = True
-
-            query(
-                f"""
-                UPDATE users
-                SET moderator = TRUE, visible_mod = :visible
-                    {', admin = :admin' if admin is not None else ''}
-                WHERE id = :u
-                """,
-                admin=bool(admin),
-                visible=visible,
-                u=u.id,
-            )
-
-            if need_blinding:
-                u.record_needs_blinding()
+            with self.check_blinding() as u:
+                query(
+                    f"""
+                    UPDATE users
+                    SET moderator = TRUE, visible_mod = :visible
+                        {', admin = :admin' if admin is not None else ''}
+                    WHERE id = :u
+                    """,
+                    admin=bool(admin),
+                    visible=visible,
+                    u=u.id,
+                )
 
         u.global_admin = admin
         u.global_moderator = True
@@ -293,8 +283,8 @@ class User:
 
         timeout should be None for a non-expiring ban and otherwise should be the duration of the
         ban, in seconds; an unban will be scheduled to occur after the interval.  In either case,
-        any existing scheduled global unbans for this user will be deleted (and replaced, if a new
-        timeout is provided).
+        any existing scheduled global bans/unbans for this user will be deleted (and replaced, if a
+        new timeout is provided).
         """
 
         if not banned_by.global_moderator:
@@ -302,37 +292,23 @@ class User:
             raise BadPermission()
 
         with db.transaction():
-            u = self
-            need_blinding = False
-            if config.REQUIRE_BLIND_KEYS:
-                blinded = self.find_blinded()
-                if blinded is not None:
-                    u = blinded
-                else:
-                    need_blinding = True
+            with self.check_blinding() as u:
+                if u.global_moderator:
+                    app.logger.warning(f"Cannot ban {u}: user is a global moderator/admin")
+                    raise BadPermission()
 
-            if u.global_moderator:
-                app.logger.warning(f"Cannot ban {u}: user is a global moderator/admin")
-                raise BadPermission()
+                query("UPDATE users SET banned = TRUE WHERE id = :u", u=u.id)
+                query('DELETE FROM user_ban_futures WHERE room IS NULL AND "user" = :u', u=u.id)
 
-            query("UPDATE users SET banned = TRUE WHERE id = :u", u=u.id)
-            query(
-                'DELETE FROM user_ban_futures WHERE room IS NULL AND "user" = :u AND NOT banned',
-                u=u.id,
-            )
-
-            if timeout:
-                query(
-                    """
-                    INSERT INTO user_ban_futures
-                    ("user", room, banned, at) VALUES (:u, NULL, FALSE, :at)
-                    """,
-                    u=u.id,
-                    at=time.time() + timeout,
-                )
-
-            if need_blinding:
-                u.record_needs_blinding()
+                if timeout:
+                    query(
+                        """
+                        INSERT INTO user_ban_futures
+                        ("user", room, banned, at) VALUES (:u, NULL, FALSE, :at)
+                        """,
+                        u=u.id,
+                        at=time.time() + timeout,
+                    )
 
         app.logger.debug(f"{banned_by} globally banned {u}{f' for {timeout}s' if timeout else ''}")
         u.banned = True
@@ -348,9 +324,7 @@ class User:
             raise BadPermission()
 
         query("UPDATE users SET banned = FALSE WHERE id = :u", u=self.id)
-        query(
-            'DELETE FROM user_ban_futures WHERE room IS NULL AND "user" = :u AND banned', u=self.id
-        )
+        query('DELETE FROM user_ban_futures WHERE room IS NULL AND "user" = :u', u=self.id)
 
         app.logger.debug(f"{unbanned_by} removed global ban on {self}")
         self.banned = False
@@ -393,6 +367,29 @@ class User:
             return None
 
         return User(row)
+
+    @contextlib.contextmanager
+    def check_blinding(self):
+        """
+        Context manager that checks to see if blinding is enabled and this user is an unblinded
+        user.  If both are true, this attempts to look up the blinded User record for this user.
+        The User (either the blinded one or `self`) is yielded.  Upon exiting the context
+        successfully `record_needs_blinding()` is called if required to set up the required blinding
+        information.
+        """
+        user = self
+        need_blinding = False
+        if config.REQUIRE_BLIND_KEYS:
+            blinded = self.find_blinded()
+            if blinded is not None:
+                user = blinded
+            else:
+                need_blinding = True
+
+        yield user
+
+        if need_blinding:
+            user.record_needs_blinding()
 
     def record_needs_blinding(self):
         """

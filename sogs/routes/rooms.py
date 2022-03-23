@@ -7,6 +7,7 @@ from flask import abort, jsonify, g, Blueprint, request, make_response, Response
 from werkzeug.http import http_date, parse_options_header
 from os import path, fstat
 import urllib.parse
+import time
 
 # Room-related routes, excluding retrieving/posting messages
 
@@ -300,7 +301,7 @@ def addExtraPermInfo(perms):
     return perms
 
 
-@rooms.get("/room/<Room:room>/permInfo")
+@rooms.get("/room/<Room:room>/permissions")
 @auth.mod_required
 def get_permission_info(room):
     """
@@ -314,7 +315,26 @@ def get_permission_info(room):
     return jsonify({k: addExtraPermInfo(v) for k, v in room.permissions.items()})
 
 
-@rooms.get("/room/<Room:room>/futurePermInfo")
+@rooms.get("/room/<Room:room>/permissions/<SessionID:sid>")
+@auth.mod_required
+def get_user_permission_info(room, sid):
+    """
+    Fetches assigned room permissions/bans/etc. for the given session id in the room.
+
+    If the given SessionID is unblinded, blinding is enabled, and the blinded version of the given
+    id is known then this returns results for the blinded id rather than the unblinded id.
+
+    # Return Value
+
+    Returns a json dict of current permissions.  Note that only specifically assigned permissions
+    but not room defaults are included in the response.
+    """
+
+    user = muser.User(session_id=sid, try_blinding=True)
+    return jsonify(addExtraPermInfo(room.user_permissions(user)))
+
+
+@rooms.get("/room/<Room:room>/futurePermissions")
 @auth.mod_required
 def get_future_permission_info(room):
     """
@@ -327,6 +347,325 @@ def get_future_permission_info(room):
     """
 
     return jsonify(room.future_permissions)
+
+
+@rooms.get("/room/<Room:room>/futurePermissions/<SessionID:sid>")
+@auth.mod_required
+def get_user_future_permissions(room, sid):
+    """
+    Returns any scheduled future permission changes and bans for a single user.  The response is
+    exactly like [`GET /room/ROOM/futurePermissions`](#get-roomroomfuturePermissions) except that
+    only rows for the given Session ID are returned.
+
+    If the given SessionID is unblinded, blinding is enabled, and the blinded version of the given
+    id is known then this returns results for the blinded id rather than the unblinded id.
+    """
+
+    user = muser.User(session_id=sid, try_blinding=True)
+    return jsonify(room.user_future_permissions(user))
+
+
+@rooms.post("/room/<Room:room>/permissions/<SessionID:sid>")
+@auth.mod_required
+def set_permissions(room, sid):
+    """
+    Assigns room permissions for a user; requires moderator room permission.
+
+    This allows adding or removing user permissions for the access/read/write/upload.  Permission
+    changes can be instantaneous or time-delayed.
+
+    For bans and moderators see the /user/... endpoints which can handle both room-specific and
+    global permissions.
+
+    # Body
+
+    This request takes a JSON object as request body containing the permissions to update; keys are
+    as follows:
+
+    - `accessible` — can be true or false to grant or revoke access to this room for the given
+      session id when the session id does not have `read` access.  That is: a user with neither
+      `read` nor `accessible` permissions cannot retrieve any information about the room and it will
+      appear from the user's perspective that the room does not exist (i.e. attempting to access
+      will receive Not Found errors).  Note that the `accessible` permission has no effect if the
+      user has `read` access; clients should normally set both `"accessible": false, "read": false`
+      together to revoke room access.
+
+    - `read` — can be true or false to grant or revoke read permission for the given session id in
+      this room.  If null or omitted the read permission is not changed.
+
+    - `write` — can be true or false to grant or revoke write (i.e. posting) permissions for the
+      given session id in this room.  If omitted the write permission is not changed.
+
+    - `upload` — can be true or false to grant or revoke upload (i.e. attachment) permission for
+      this given session id in this room.  Note that uploading *also* requires the `write`
+      permission: setting this to true has no effect if the user doesn't also have `write`
+      permission.
+
+    - `default_accessible`, `default_read`, `default_write`, `default_upload` — these can be
+      specified as true to remove the named user-specific permissions, restoring the user's
+      permissions to the room's defaults.  It is an error to specify these as true when also
+      specifying a non-null value for the non-default permission (e.g. `"read": true,
+      "default_read": true`).
+
+    - `unschedule` — if specified and set explicitly to `false` then do *not* unschedule future
+      permission changes for each of the given `read`/`write`/`upload` values.  The default, when
+      this is omitted or true, is to explicitly clear any scheduled future changes.  See the [future
+      permissions endpoint](#post-roomroomfuturePermissionssid) for more details.
+
+    # Return value
+
+    On success this returns a JSON dict of the user's new room permissions (as would be returned for
+    this session ID in the [GET `/room/ROOM/permissions` endpoint](#get-roomroompermissions), but
+    with an additional key `session_id` indicating the session id to which the permissions were
+    applied.
+
+    Note that when blinding is enabled and this endpoint is called with an unblinded session ID, the
+    returned `session_id` will be the *blinded* ID rather than the unblinded ID provided in the URL
+    if the blinded ID is known to the server.
+    """
+
+    user = muser.User(session_id=sid, try_blinding=True)
+    req = request.json
+
+    perms = {}
+    for p in ('accessible', 'read', 'write', 'upload'):
+        v = req.get(p)
+        default = bool(req.get('default_' + p))
+        if v is not None:
+            if default:
+                app.logger.warning(
+                    f"Invalid permission request: cannot use `{p}` with `default_{p}`"
+                )
+                abort(http.BAD_REQUEST)
+            perms[p] = v
+        elif default:
+            perms[p] = None
+
+    with db.transaction():
+        with user.check_blinding() as u:
+
+            if req.get('unschedule') is not False and any(
+                p in perms for p in ('read', 'write', 'upload')
+            ):
+                room.clear_future_permissions(
+                    u,
+                    mod=g.user,
+                    read='read' in perms,
+                    write='write' in perms,
+                    upload='upload' in perms,
+                )
+
+            room.set_permissions(u, mod=g.user, **perms)
+
+            res = room.user_permissions(u)
+
+    if res:
+        res = addExtraPermInfo(res)
+
+    return jsonify(res)
+
+
+@rooms.post("/room/<Room:room>/futurePermissions/<SessionID:sid>")
+@auth.mod_required
+def set_future_permissions(room, sid):
+    """
+    Scheduled future permission changes for this user in this room.
+
+    This endpoint is typically combined with a permission change (i.e. in a [batch
+    request](#post-batch)) to revert a permission change after a certain amount of time, for example
+    to mute a user for 1 day.
+
+    # Interaction with setting permissions
+
+    There are typically two types of permission changes that are applied: a permanent change that
+    applies until it is explicitly changed again; and a temporary change that should be revoked
+    after a certain amount of time.
+
+    ## Permanent permission restrictions
+
+    The first case is implemented by a call to [permissions](#get-roomroompermissionssid), for
+    example:
+
+    ```json
+    { "write": false }
+    ```
+
+    This call will revoke write permissions for the user in the room, and clear any future scheduled
+    changes to the "write" permission for this user in this room.
+
+    Similarly, a call such as
+
+    ```json
+    { "default_write": true }
+    ```
+
+    or
+
+    ```json
+    { "write": true }
+    ```
+
+    would clear any scheduled "write" permission changes and return the user's permissions to the
+    room's default, or explicitly grant write access, respectively.
+
+    If specifying multiple permissions such as:
+
+    ```json
+    { "read": true, "write": true, "upload": true }
+    ```
+
+    then any scheduled changes for *each* of the given permissions will be cleared.
+
+    ## Temporary permission changes
+
+    To assign a temporary permission change such as restricting write access for 1 day the moderator
+    client is expected to first schedule the "permanent" permission change (as described above) and
+    immediately follow it by a call to this endpoint.  (Typically these will be bundled into a
+    single [batch sequence](#post-sequence) request).
+
+    In effect, the first subrequest then clears any schedule future changes, the the second
+    subrequest (to this endpoint) schedules a new future change.  For example, to restrict a user's
+    posting permission for 1 day, you would issue a batch request where the first subrequest posts
+    to the `permissions` endpoint containing:
+
+    ```json
+    { "write": false }
+    ```
+
+    and the second subrequest posts to this endpoint (`futurePermissions`) containing:
+
+    ```json
+    { "write": true, "in": 86400 }
+    ```
+
+    A more complex example would be to apply a restriction that: revokes read access for 1 day,
+    revokes write access for 1 week, and revokes upload access permanently.  This would use three
+    subrequests:
+
+    `POST /room/ROOMID/permissions/SESSIONID`:
+
+    ```json
+    { "read": false, "write": false, "upload": false }
+    ```
+
+    `POST /room/ROOMID/futurePermissions/SESSIONID`:
+
+    ```json
+    { "write": true, "in": 604800 }
+    ```
+
+    `POST /room/ROOMID/futurePermissions/SESSIONID`:
+
+    ```json
+    { "read": true, "in": 86400 }
+    ```
+
+    ## Permission races
+
+    If two moderators submit different permission changes at (approximately) the same time then
+    there is no specific attempt to detect or merge the changes: instead what happens is that the
+    later received change takes effect.  For example, if moderator one decides to revoke write
+    permissions permanently, and moderator two decides to revoke read and write permissions for 1
+    week then the result will be the order in which the requests are received:
+
+    - if moderator 2's request is received after moderator 1's then the result will be revoked read
+      and write permissions that are restored after 1 week.
+
+    - if moderator 1's request is received after moderator 2's then the scheduled write permission
+      restoration will be removed, and the user will end up with read permissions revoked for a week
+      (because moderator 1 did not touch the read permission) and write permissions revoked
+      permanently.
+
+    ## More complex scheduling
+
+    In some complex cases it may be that a client wants to change current permissions *without*
+    removing currently scheduled changes.  For this purpose the `permission` endpoint allows
+    specifying `"unschedule": false` to explicitly avoid clearing scheduled changes for the affected
+    permissions.
+
+    For example, suppose a write permission has been revoked and scheduled to be restored in 1 day,
+    then a temporary exception to the ban can be scheduled using:
+
+    `POST /room/ROOMID/permissions/SESSIONID`:
+
+    ```json
+    { "write": true, "unschedule": false }
+    ```
+
+    `POST /room/ROOMID/futurePermissions/SESSIONID`:
+
+    ```json
+    { "write": false, "in": 3600 }
+    ```
+
+    This would effect a current change that grants the write permission, revokes it after 1 hour,
+    without removing the change to restore it after a day.  (Alternatively you can omit the first
+    call to permissions to add a future change without changing the current permission at all).
+
+    There is no limit to the number of permission changes that can be scheduled this way, but note
+    that many conflicting scheduled changes can have unexpected, complex effects and so this should
+    only be used with care and careful consideration.
+
+    This sort of multi-scheduled changes is *not* expected to be needed in most cases; clients can
+    likely ignore this complexity without a noticeable loss in functionality.
+
+    # Body
+
+    This request takes a JSON object containing the following keys:
+
+    - `read`, `write`, `upload` — one or more of these must be specified with a true or false value
+      to apply the permission change at the scheduled time.  A null or omitted value indicates not
+      to schedule a permission change for the permission.  At least one of these keys must be
+      provided with a true or false value.
+
+    - `in` — how long from now, in seconds, this permission change should take effect.  This field
+      is required, must be positive, and must be less than 1 billion (to detect accidentally passing
+      in a unix timestamp rather than a duration).  Note that permission changes are processed every
+      10 seconds, so the actual change may be delayed up to 10s beyond the scheduled time.
+
+    # Return value
+
+    This call returns a JSON list containing all currently scheduled permission changes for this
+    user, as would be returned by the [get future permissions](#get-roomroomfuturePermissions)
+    endpoint, but only including changes for this user.
+
+    Note that when blinding is enabled and an unblinded id is given, any permission changes will be
+    scheduled against the *blinded* Session ID, if known, rather than the unblinded id.
+    """
+
+    user = muser.User(session_id=sid, try_blinding=True)
+    req = request.json
+
+    perms = {}
+    for p in ('read', 'write', 'upload'):
+        v = req.get(p)
+        if v is not None:
+            perms[p] = bool(v)
+
+    if not perms:
+        app.logger.warning(
+            "Invalid future permission request: at least one of read, write, upload must be given"
+        )
+        abort(http.BAD_REQUEST)
+
+    duration = req.get('in')
+    if type(duration) not in (int, float):
+        app.logger.warning("Invalid future permission request: numeric `in` duration is required")
+        abort(http.BAD_REQUEST)
+
+    if not 0 < duration < 1_000_000_000:
+        app.logger.warning(
+            f"Invalid future permission request: in={duration} isn't a valid duration"
+        )
+        abort(http.BAD_REQUEST)
+
+    with db.transaction():
+        with user.check_blinding() as u:
+            room.add_future_permission(u, mod=g.user, at=time.time() + duration, **perms)
+
+            res = room.user_future_permissions(u)
+
+    return jsonify(res)
 
 
 @rooms.get("/room/<Room:room>/pollInfo/<int:info_updated>")
