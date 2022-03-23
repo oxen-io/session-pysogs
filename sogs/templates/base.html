@@ -41,6 +41,7 @@
     </script>
   </head>
   <body class="dark:bg-otherGray transition duration-500">
+    <!-- header / navbar -->
     <div class="px-5 flex justify-between items-center w-full h-32 mb-10 bg-sessionGreen dark:bg-otherGray border-b-8 border-black dark:border-sessionGreen transition duration-500">
       <div class="text-black dark:text-white text-center">
         <h1 class="text-7xl ">{% block heading %}{% endblock %}</h1>
@@ -48,7 +49,11 @@
       </div>
       <button class='h-8 px-4 bg-black text-white rounded-full space-x-3' onclick="toggleDarkMode()">Toggle Dark Mode</button>
     </div>
+    
+    <!-- content/body -->
+    <section class="text-black dark:text-white">
       {% block body %}
       {% endblock %}
+    </section>  
   </body>
 </html>
