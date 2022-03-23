@@ -1,6 +1,7 @@
 <html id="html" class="">
   <head>
     <title> sogs </title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="{{ url_for('static', filename='main.css') }}">
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -35,6 +36,14 @@
               lightGray: '#585858',
               otherGray: '#272726'
             }
+          },
+          screens : {
+            'xs'    : '365px',
+            'sm'    : '640px',
+            'md'    : '768px',
+            'lg'    : '1024px',
+            'xl'    : '1280px',
+            '2xl'   : '1536px'
           }
         }
       }
@@ -42,18 +51,19 @@
   </head>
   <body class="dark:bg-otherGray transition duration-500">
     <!-- header / navbar -->
-    <div class="px-5 flex justify-between items-center w-full h-32 mb-10 bg-sessionGreen dark:bg-otherGray border-b-8 border-black dark:border-sessionGreen transition duration-500">
+    <div class="px-5 flex justify-between items-center w-full h-32 mb-4 
+    bg-sessionGreen dark:bg-otherGray border-b-8 border-black dark:border-sessionGreen transition duration-500">
       <div class="text-black dark:text-white text-center">
-        <h1 class="text-7xl ">{% block heading %}{% endblock %}</h1>
-        <p class="text-2xl ">Session Open Group Server</p>
+        <h1 class="text-3xl xs:text-4xl sm:text-5xl">{% block heading %}{% endblock %}</h1>
+        <p class="text-lg xs:text-xl sm:text-2xl">Session Open Group Server</p>
       </div>
-      <button class='h-8 px-4 bg-black text-white rounded-full space-x-3' onclick="toggleDarkMode()">Toggle Dark Mode</button>
+      <button class='h-12 px-1 bg-black text-white rounded' onclick="toggleDarkMode()">Dark<br>Mode</button>
     </div>
     
     <!-- content/body -->
     <section class="text-black dark:text-white">
       {% block body %}
       {% endblock %}
-    </section>  
+    </section>
   </body>
 </html>
