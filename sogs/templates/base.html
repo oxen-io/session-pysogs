@@ -3,7 +3,28 @@
     <title> sogs </title>
     <link rel="stylesheet" href="{{ url_for('static', filename='main.css') }}">
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="/static/utils.js"></script>
+    <script>
+      var element = document.getElementById("html");
+      function setPageTheme(){
+        if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+          element.classList.add('dark')
+        } else {
+          element.classList.remove('dark')
+        }
+      }
+
+      function toggleDarkMode(){
+        if ('theme' in localStorage && localStorage.theme === 'light') {
+          localStorage.theme = 'dark'
+          setPageTheme();
+        } else {
+          localStorage.theme = 'light'
+          setPageTheme();
+        }
+      }
+
+      setPageTheme();
+    </script>
     <script>
       tailwind.config = {
         darkMode: 'class',
@@ -11,17 +32,19 @@
           extend: {
             colors: {
               sessionGreen: '#00e97b',
+              lightGray: '#585858',
+              otherGray: '#272726'
             }
           }
         }
       }
     </script>
   </head>
-  <body class="dark:bg-black">
-    <div class="flex items-center w-full h-32 mb-10 bg-sessionGreen dark:bg-black border-b-8 border-black  dark:border-sessionGreen  ">
-      <div class="flex flex-col justify-center">
-        <h1 class="text-center text-7xl text-white ">Room Directory</h1>
-        <p class="text-center text-white ">Session Open Group Server</p>
+  <body class="dark:bg-otherGray">
+    <div class="px-5 flex justify-between items-center w-full h-32 mb-10 bg-sessionGreen dark:bg-otherGray border-b-8 border-black dark:border-sessionGreen">
+      <div class="text-black dark:text-white text-center">
+        <h1 class="text-7xl ">{% block heading %}{% endblock %}</h1>
+        <p class="text-2xl ">Session Open Group Server</p>
       </div>
       <button class='h-8 px-4 bg-black text-white rounded-full space-x-3' onclick="toggleDarkMode()">Toggle Dark Mode</button>
     </div>
