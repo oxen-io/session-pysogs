@@ -6,14 +6,16 @@ Room Directory
 
 {% block body %}
 
-<div class="grid grid-cols-2 lg:grid-cols-4 2xl:grid-cols-6 justify-items-center gap-y-5 gap-x-7 px-5 mx-16">
+<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-6 justify-items-center gap-y-2 gap-x-2 mx-4">
   {% for room in rooms %}
-  <a class="px-5 flex flex-col justify-center items-center transition duration-500 text-center
-  w-full h-36 md:h-28 bg-sessionGreen hover:bg-black hover:text-white text-6xl lg:text-4xl border-8 border-black 
-  dark:border-sessionGreen rounded-full dark:bg-black dark:hover:bg-sessionGreen dark:hover:text-black " href="/r/{{room.token}}">
-    <p>{{room.token }}</p>
-    <p class="text-3xl lg:text-xl">{{room.active_users() }} Active User{{'s' if room.active_users() > 1}}</p>
-  </a>
+  {% for i in range(8) %}
+    <a class="px-5 flex flex-col justify-center items-center transition duration-500 text-center w-full h-24 
+    border-8 border-black bg-sessionGreen hover:bg-black hover:text-white md:h-28
+    dark:border-sessionGreen rounded-full dark:bg-black dark:hover:bg-sessionGreen dark:hover:text-black " href="/r/{{room.token}}">
+      <p class="text-2xl xs:text-3xl sm:text-4xl">{{room.token }}</p>
+      <p class="text-sm xs:text-lg sm:text-xl">{{room.active_users() }} Active User{{'s' if room.active_users() > 1}}</p>
+    </a>
+  {% endfor %}
   {% endfor %}
 </div>
 
