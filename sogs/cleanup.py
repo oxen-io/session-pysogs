@@ -94,17 +94,31 @@ def expire_nonce_history():
 def apply_permission_updates():
     with db.transaction():
         now = time.time()
+        # This update gets a bit complicated; basically what we want to do is:
+        # - if a future permission row is to be applied, then any `null` permission should not
+        #   change the current permission (i.e. preserve the current override value if an override
+        #   row exists, otherwise insert a null).
+        # - for non-null permissions if the permission being applied equals the room's default then
+        #   we want to update the override value to null regardless of what it is now, because that
+        #   is almost always what was intended.
+        # The: `CASE WHEN f.perm IS NULL THEN o.perm ELSE NULLIF(f.perm, r.perm) END`s below make
+        # this happen: if our future is null we use the current override value (null if we have no
+        # override), otherwise if the future and room defaults and equal we specifically set null;
+        # otherwise we set the future value.
         num_perms = query(
             """
             INSERT INTO user_permission_overrides (room, "user", read, write, upload)
-            SELECT room, "user", read, write, upload
-                FROM user_permission_futures
+            SELECT f.room, f."user",
+                    CASE WHEN f.read IS NULL THEN o.read ELSE NULLIF(f.read, r.read) END,
+                    CASE WHEN f.write IS NULL THEN o.write ELSE NULLIF(f.write, r.write) END,
+                    CASE WHEN f.upload IS NULL THEN o.upload ELSE NULLIF(f.upload, r.upload) END
+                FROM user_permission_futures f
+                    JOIN rooms r ON f.room = r.id
+                    LEFT JOIN user_permission_overrides o ON f.room = o.room AND f."user" = o."user"
                 WHERE at <= :now
                 ORDER BY at
             ON CONFLICT (room, "user") DO UPDATE SET
-                read = COALESCE(excluded.read, user_permission_overrides.read),
-                write = COALESCE(excluded.write, user_permission_overrides.write),
-                upload = COALESCE(excluded.upload, user_permission_overrides.upload)
+                read = excluded.read, write = excluded.write, upload = excluded.upload
             """,
             now=now,
         ).rowcount
