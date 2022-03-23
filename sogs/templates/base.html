@@ -1,10 +1,12 @@
-<html>
+<html id="html" class="">
   <head>
     <title> sogs </title>
     <link rel="stylesheet" href="{{ url_for('static', filename='main.css') }}">
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="/static/utils.js"></script>
     <script>
       tailwind.config = {
+        darkMode: 'class',
         theme: {
           extend: {
             colors: {
@@ -15,9 +17,13 @@
       }
     </script>
   </head>
-  <body>
-    <div class="flex justify-center">
-      <h1 class="text-5xl font-bold underline text-sessionGreen">Session Open Group Server</h1>
+  <body class="dark:bg-black">
+    <div class="flex items-center w-full h-32 mb-10 bg-sessionGreen dark:bg-black border-b-8 border-black  dark:border-sessionGreen  ">
+      <div class="flex flex-col justify-center">
+        <h1 class="text-center text-7xl text-white ">Room Directory</h1>
+        <p class="text-center text-white ">Session Open Group Server</p>
+      </div>
+      <button class='h-8 px-4 bg-black text-white rounded-full space-x-3' onclick="toggleDarkMode()">Toggle Dark Mode</button>
     </div>
       {% block body %}
       {% endblock %}
