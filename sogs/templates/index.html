@@ -8,14 +8,12 @@ Room Directory
 
 <div class="grid grid-cols-2 lg:grid-cols-4 2xl:grid-cols-6 justify-items-center gap-y-5 gap-x-7 px-5 mx-16">
   {% for room in rooms %}
-   {%for i in range(8)%}
-    <a class="px-5 flex flex-col justify-center items-center transition duration-500 text-center
-    w-full h-36 md:h-28 bg-sessionGreen hover:bg-black hover:text-white text-black text-6xl lg:text-4xl border-8 border-black 
-    dark:border-sessionGreen dark:text-white rounded-full dark:bg-black dark:hover:bg-sessionGreen dark:hover:text-black " href="/r/{{room.token}}">
-      <p>{{room.token }}</p>
-      <p class="text-3xl lg:text-xl">{{room.active_users() }} Active User{{'s' if room.active_users() > 1}}</p>
-    </a>
-   {% endfor %}
+  <a class="px-5 flex flex-col justify-center items-center transition duration-500 text-center
+  w-full h-36 md:h-28 bg-sessionGreen hover:bg-black hover:text-white text-black text-6xl lg:text-4xl border-8 border-black 
+  dark:border-sessionGreen dark:text-white rounded-full dark:bg-black dark:hover:bg-sessionGreen dark:hover:text-black " href="/r/{{room.token}}">
+    <p>{{room.token }}</p>
+    <p class="text-3xl lg:text-xl">{{room.active_users() }} Active User{{'s' if room.active_users() > 1}}</p>
+  </a>
   {% endfor %}
 </div>
 
