@@ -4,28 +4,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="{{ url_for('static', filename='main.css') }}">
     <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-      var element = document.getElementById("html");
-      function setPageTheme(){
-        if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-          element.classList.add('dark')
-        } else {
-          element.classList.remove('dark')
-        }
-      }
-
-      function toggleDarkMode(){
-        if ('theme' in localStorage && localStorage.theme === 'light') {
-          localStorage.theme = 'dark'
-          setPageTheme();
-        } else {
-          localStorage.theme = 'light'
-          setPageTheme();
-        }
-      }
-
-      setPageTheme();
-    </script>
+    
     <script>
       tailwind.config = {
         darkMode: 'class',
@@ -57,7 +36,8 @@
         <h1 class="text-3xl xs:text-4xl sm:text-5xl">{% block heading %}{% endblock %}</h1>
         <p class="text-lg xs:text-xl sm:text-2xl">Session Open Group Server</p>
       </div>
-      <button class='h-12 px-1 bg-black text-white rounded' onclick="toggleDarkMode()">Dark<br>Mode</button>
+      <button id="moonIcon" class='px-1 rounded' onclick="toggleDarkMode()"><img src="{{ url_for('static', filename='moon-d-50-min.png') }}" alt="moon"></button>
+      <button id="sunIcon" style="display: none;" class='px-1 rounded' onclick="toggleDarkMode()"><img src="{{ url_for('static', filename='sun-w-50-min.png') }}" alt="sun"></button>
     </div>
     
     <!-- content/body -->
@@ -66,4 +46,34 @@
       {% endblock %}
     </section>
   </body>
+  <!-- dark mode toggle js -->
+  <script>
+      var htmlElement = document.getElementById("html");
+      var moonIcon = document.getElementById("moonIcon");
+      var sunIcon = document.getElementById("sunIcon");
+
+      function setPageTheme(){
+        if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+          htmlElement.classList.add('dark')
+          sunIcon.style.display = 'block'
+          moonIcon.style.display = 'none'
+        } else {
+          htmlElement.classList.remove('dark')
+          sunIcon.style.display = 'none'
+          moonIcon.style.display = 'block'
+        }
+      }
+
+      function toggleDarkMode(){
+        if ('theme' in localStorage && localStorage.theme === 'light') {
+          localStorage.theme = 'dark'
+          setPageTheme();
+        } else {
+          localStorage.theme = 'light'
+          setPageTheme();
+        }
+      }
+
+      setPageTheme();
+  </script>
 </html>
