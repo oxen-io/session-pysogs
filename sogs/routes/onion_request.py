@@ -87,7 +87,7 @@ def handle_v3_onionreq_plaintext(body):
             user_reauth=True,  # Because onion requests have auth headers on the *inside*
         )
 
-        if response.status_code == http.OK:
+        if 200 <= response.status_code < 300:
             data = response.get_data()
             app.logger.debug(
                 f"Onion sub-request for {endpoint} returned success, {len(data)} bytes"
