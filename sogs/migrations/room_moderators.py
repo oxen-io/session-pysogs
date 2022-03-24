@@ -4,8 +4,10 @@ from .exc import DatabaseUpgradeRequired
 
 def migrate(conn, *, check_only):
     """
-    Adds the room_moderators view and drops/replaces the user_permission_overrides_public_mods
-    index.
+    Adds the room_moderators view, along with a couple other optimizations that came at the same
+    time:
+    - we drop the user_permissions view (to be recreated in the user_permissions migration code)
+    - we drop the user_permission_overrides_public_mods index and recreate a tighter index
     """
 
     from .. import db
@@ -90,6 +92,7 @@ SELECT session_id, mods.* FROM (
 """
         )
 
+    conn.execute("DROP VIEW IF EXISTS user_permissions")
     conn.execute("DROP INDEX IF EXISTS user_permission_overrides_public_mods")
     conn.execute(
         "CREATE INDEX IF NOT EXISTS user_permission_overrides_mods "
