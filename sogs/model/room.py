@@ -981,11 +981,12 @@ class Room:
         ([public_mods], [public_admins], [hidden_mods], [hidden_admins])
         """
 
+        visible_clause = "" if self.check_moderator(user) else "AND visible_mod"
         m, hm, a, ha = [], [], [], []
         for session_id, visible, admin in query(
-            """
-            SELECT session_id, visible_mod, admin FROM user_permissions
-            WHERE room = :r AND moderator
+            f"""
+            SELECT session_id, visible_mod, admin FROM room_moderators
+            WHERE room = :r {visible_clause}
             ORDER BY session_id
             """,
             r=self.id,
@@ -995,9 +996,6 @@ class Room:
                 continue
 
             ((a if admin else m) if visible else (ha if admin else hm)).append(session_id)
-
-        if user is None or not any(user.session_id in modlist for modlist in (m, hm, a, ha)):
-            hm, ha = [], []
 
         return m, a, hm, ha
 

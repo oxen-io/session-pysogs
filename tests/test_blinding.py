@@ -247,6 +247,9 @@ def test_blinded_transition(
 
         assert unmigrated == set()
 
+        for r in (room, room2, r3):
+            r._refresh(perms=True)
+
         # NB: "global_admin" isn't actually an admin anymore (we transferred the permission to the
         # blinded equivalent), so shouldn't see the invisible mods:
         assert room.get_mods(global_admin) == ([mod.blinded_id], [admin.blinded_id], [], [])
