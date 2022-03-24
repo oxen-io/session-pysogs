@@ -54,6 +54,7 @@ const setup = async () => {
 
                     const plain = Message.decode(data).dataMessage;
                     e.appendChild(document.createTextNode(plain.profile.displayName +": "+plain.body));
+                    e.classList.add('bg-gray-300','dark:bg-lightGray', 'w-fit', 'rounded-full', 'px-3', 'my-2')
                     elem.appendChild(e);
 
                 }
