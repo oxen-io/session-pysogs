@@ -2,11 +2,13 @@ import pytest
 import time
 from sogs.model.room import Room
 from sogs.model.file import File
-from sogs import utils
+from sogs import utils, crypto
 import sogs.config
 import werkzeug.exceptions as wexc
-from util import pad64, from_now
+from util import pad64, from_now, config_override
+from auth import x_sogs
 from request import sogs_get, sogs_post, sogs_put, sogs_post_raw, sogs_delete
+import json
 
 
 def test_list(client, room, room2, user, user2, admin, mod, global_mod, global_admin):
@@ -659,15 +661,21 @@ def test_fetch_one(client, room, user, no_rate_limit):
         assert r.json == p
 
 
-time_fields = {'posted', 'edited', 'pinned_at'}
+time_fields = {'posted', 'edited', 'pinned_at', 'at'}
 
 
 def filter_timestamps(x, fields=time_fields):
-    """Filters timestamp fields out of a dict or list of dicts for easier comparing of everything
-    except timestamps"""
+    """
+    Filters timestamp keys out of a dict or list of dicts (recursively) for easier comparing of
+    everything except timestamps.
+    """
     if isinstance(x, list):
         return [filter_timestamps(y, fields) for y in x]
-    return {k: v for k, v in x.items() if k not in fields}
+    return {
+        k: filter_timestamps(v, fields) if isinstance(v, list) or isinstance(v, dict) else v
+        for k, v in x.items()
+        if k not in fields
+    }
 
 
 def test_pinning(client, room, user, admin, no_rate_limit):
@@ -1139,3 +1147,380 @@ def test_remove_all_self_posts_from_room(client, room, mod, user, no_rate_limit)
         assert r.status_code == 200
         assert len(room.get_messages_for(u, recent=True)) == 0
         assert room.check_unbanned(u)
+
+
+def test_get_room_perms(client, room, user):
+    r = sogs_get(client, f'/room/{room.token}/permissions', user)
+    assert r.status_code == 403
+
+
+def test_get_room_perms_as_mod(client, room, mod):
+    r = sogs_get(client, f'/room/{room.token}/permissions', mod)
+    assert r.status_code == 200
+    assert mod.session_id in r.json
+    perm_info = r.json[mod.session_id]
+    assert perm_info['moderator'] is True
+
+
+def test_get_room_perms_as_admin(client, room, admin):
+    r = sogs_get(client, f'/room/{room.token}/permissions', admin)
+    assert r.status_code == 200
+    assert admin.session_id in r.json
+    perm_info = r.json[admin.session_id]
+    assert perm_info['admin'] is True
+
+
+def test_get_room_future_perms(client, room, mod):
+    r = sogs_get(client, f'/room/{room.token}/futurePermissions', mod)
+    assert r.status_code == 200
+    assert r.json == []
+
+
+def test_get_room_future_perms_not_allowed(client, room, user):
+    r = sogs_get(client, f'/room/{room.token}/futurePermissions', user)
+    assert r.status_code == 403
+
+
+def test_set_room_perms(client, room, user, mod):
+    r = sogs_post(
+        client,
+        f'/room/{room.token}/permissions/{user.session_id}',
+        {'read': True, 'write': False},
+        mod,
+    )
+
+    assert r.status_code == 200
+    assert r.json == {"read": True, "write": False}
+
+    r = sogs_post(
+        client, f'/room/{room.token}/permissions/{user.session_id}', {'default_read': True}, mod
+    )
+    assert r.status_code == 200
+    assert r.json == {"write": False}
+
+    r = sogs_post(
+        client,
+        f'/room/{room.token}/permissions/{user.session_id}',
+        {'default_read': True, 'write': False, 'upload': False, 'accessible': True},
+        mod,
+    )
+    assert r.status_code == 200
+    assert r.json == {"write": False, 'upload': False, 'accessible': True}
+
+    r = sogs_get(client, f'/room/{room.token}/permissions', mod)
+    assert r.status_code == 200
+    assert r.json == {
+        mod.session_id: {'moderator': True},
+        user.session_id: {"write": False, 'upload': False, 'accessible': True},
+    }
+
+    r = sogs_get(client, f'/room/{room.token}/permissions/{user.session_id}', mod)
+    assert r.status_code == 200
+    assert r.json == {"write": False, "upload": False, "accessible": True}
+
+    r = sogs_post(
+        client,
+        f'/room/{room.token}/permissions/{user.session_id}',
+        {'default_' + x: True for x in ('read', 'write', 'upload', 'accessible')},
+        mod,
+    )
+    assert r.status_code == 200
+    assert r.json == {}
+
+
+def test_set_room_perm_futures(client, room, user, mod):
+
+    r = sogs_post(
+        client,
+        '/sequence',
+        [
+            {
+                'method': 'POST',
+                'path': f'/room/{room.token}/permissions/{user.session_id}',
+                'json': {'read': True, 'write': False, 'upload': False, 'accessible': True},
+            },
+            {
+                'method': 'POST',
+                'path': f'/room/{room.token}/futurePermissions/{user.session_id}',
+                'json': {'write': True, 'upload': True, 'in': 0.001},
+            },
+        ],
+        mod,
+    )
+    assert filter_timestamps(r.json) == [
+        {
+            'code': 200,
+            'headers': {'content-type': 'application/json'},
+            'body': {'read': True, 'write': False, 'upload': False, 'accessible': True},
+        },
+        {
+            "code": 200,
+            'headers': {'content-type': 'application/json'},
+            'body': [{'upload': True, 'write': True}],
+        },
+    ]
+
+    assert r.json[1]['body'][0]['at'] == from_now.seconds(0.001)
+    time.sleep(0.002)
+
+    r = sogs_get(client, f'/room/{room.token}/futurePermissions', mod)
+    assert r.status_code == 200
+    assert filter_timestamps(r.json) == [
+        {'session_id': user.session_id, 'upload': True, 'write': True}
+    ]
+    assert r.json[0]['at'] == from_now.seconds(0.001)
+
+    r = sogs_post(
+        client,
+        f'/room/{room.token}/futurePermissions/{user.session_id}',
+        {'in': 30, 'write': False, 'upload': False, 'read': False},
+        mod,
+    )
+    assert r.status_code == 200
+    assert filter_timestamps(r.json) == [
+        {'upload': True, 'write': True},
+        {'upload': False, 'write': False, 'read': False},
+    ]
+    assert r.json[0]['at'] == from_now.seconds(0.001)
+    assert r.json[1]['at'] == from_now.seconds(30)
+
+    from sogs.cleanup import cleanup
+
+    assert cleanup() == (0, 0, 0, 1, 0)
+
+    r = sogs_get(client, f'/room/{room.token}/permissions/{user.session_id}', mod)
+    assert r.status_code == 200
+    assert r.json == {'read': True, 'accessible': True}
+
+    r = sogs_get(client, f'/room/{room.token}/futurePermissions/{user.session_id}', mod)
+    assert r.status_code == 200
+    assert filter_timestamps(r.json) == [{'upload': False, 'write': False, 'read': False}]
+    assert r.json[0]['at'] == from_now.seconds(29.999)
+
+    r = sogs_get(client, f'/room/{room.token}/permissions', mod)
+    assert r.status_code == 200
+    assert r.json == {
+        user.session_id: {'read': True, 'accessible': True},
+        mod.session_id: {'moderator': True},
+    }
+
+    r = sogs_get(client, f'/room/{room.token}/futurePermissions', mod)
+    assert r.status_code == 200
+    assert filter_timestamps(r.json) == [
+        {'session_id': user.session_id, 'upload': False, 'write': False, 'read': False}
+    ]
+    assert r.json[0]['at'] == from_now.seconds(29.999)
+
+    r = sogs_get(client, f'/room/{room.token}/permissions/{user.session_id}', user)
+    assert r.status_code == 403
+    r = sogs_get(client, f'/room/{room.token}/futurePermissions/{user.session_id}', user)
+    assert r.status_code == 403
+
+
+def test_set_room_perms_blinding(client, db, room, user, user2, mod):
+    with config_override(REQUIRE_BLIND_KEYS=True):
+        db.database_init()
+
+        # Authenticate `user` so that the sogs knows about user's session id before we set up
+        # permissions (to make sure they go to the *blinded* id even when we specify the unblinded
+        # id):
+        r = client.get(
+            f'/room/{room.token}',
+            headers=x_sogs(
+                user.ed_key, crypto.server_pubkey, 'GET', f'/room/{room.token}', blinded=True
+            ),
+        )
+        assert r.status_code == 200
+
+        body = json.dumps(
+            [
+                {
+                    'method': 'POST',
+                    'path': f'/room/{room.token}/permissions/{user.session_id}',
+                    'json': {'read': True, 'write': False},
+                },
+                {
+                    'method': 'POST',
+                    'path': f'/room/{room.token}/futurePermissions/{user.session_id}',
+                    'json': {'write': True, 'in': 0.001},
+                },
+                {
+                    'method': 'POST',
+                    'path': f'/room/{room.token}/permissions/{user2.session_id}',
+                    'json': {'upload': False},
+                },
+                {
+                    'method': 'POST',
+                    'path': f'/room/{room.token}/futurePermissions/{user2.session_id}',
+                    'json': {'upload': True, 'in': 0.002},
+                },
+            ]
+        ).encode()
+        r = client.post(
+            '/sequence',
+            headers=x_sogs(
+                mod.ed_key, crypto.server_pubkey, 'POST', '/sequence', body, blinded=True
+            ),
+            content_type='application/json',
+            data=body,
+        )
+        assert r.status_code == 200
+        assert filter_timestamps(r.json) == [
+            {
+                'code': 200,
+                'headers': {'content-type': 'application/json'},
+                'body': {'read': True, 'write': False},
+            },
+            {
+                "code": 200,
+                'headers': {'content-type': 'application/json'},
+                'body': [{'write': True}],
+            },
+            {
+                'code': 200,
+                'headers': {'content-type': 'application/json'},
+                'body': {'upload': False},
+            },
+            {
+                "code": 200,
+                'headers': {'content-type': 'application/json'},
+                'body': [{'upload': True}],
+            },
+        ]
+
+        assert r.json[1]['body'][0]['at'] == from_now.seconds(0.001)
+        assert r.json[3]['body'][0]['at'] == from_now.seconds(0.002)
+
+        r = client.get(
+            f'/room/{room.token}/permissions',
+            headers=x_sogs(
+                mod.ed_key,
+                crypto.server_pubkey,
+                'GET',
+                f'/room/{room.token}/permissions',
+                blinded=True,
+            ),
+        )
+        assert r.status_code == 200
+        assert r.json == {
+            # user has a known blinded id so should have been inserted blinded:
+            user.blinded_id: {'read': True, 'write': False},
+            # user2 doesn't, so would be set up unblinded:
+            user2.session_id: {'upload': False},
+            mod.blinded_id: {'moderator': True},
+        }
+
+        r = client.get(
+            f'/room/{room.token}/futurePermissions',
+            headers=x_sogs(
+                mod.ed_key,
+                crypto.server_pubkey,
+                'GET',
+                f'/room/{room.token}/futurePermissions',
+                blinded=True,
+            ),
+        )
+        assert r.status_code == 200
+        assert filter_timestamps(r.json) == [
+            {'session_id': user.blinded_id, 'write': True},
+            {'session_id': user2.session_id, 'upload': True},
+        ]
+        assert r.json[0]['at'] == from_now.seconds(0.001)
+        assert r.json[1]['at'] == from_now.seconds(0.002)
+
+        # Authenticate user2, which should auto-convert the unblinded perm and future to the blinded
+        # id:
+        r = client.get(
+            f'/room/{room.token}',
+            headers=x_sogs(
+                user2.ed_key, crypto.server_pubkey, 'GET', f'/room/{room.token}', blinded=True
+            ),
+        )
+        assert r.status_code == 200
+
+        r = client.get(
+            f'/room/{room.token}/permissions',
+            headers=x_sogs(
+                mod.ed_key,
+                crypto.server_pubkey,
+                'GET',
+                f'/room/{room.token}/permissions',
+                blinded=True,
+            ),
+        )
+        assert r.status_code == 200
+        assert r.json == {
+            user.blinded_id: {'read': True, 'write': False},
+            user2.blinded_id: {'upload': False},
+            mod.blinded_id: {'moderator': True},
+        }
+
+        r = client.get(
+            f'/room/{room.token}/futurePermissions',
+            headers=x_sogs(
+                mod.ed_key,
+                crypto.server_pubkey,
+                'GET',
+                f'/room/{room.token}/futurePermissions',
+                blinded=True,
+            ),
+        )
+        assert r.status_code == 200
+        assert filter_timestamps(r.json) == [
+            {'session_id': user.blinded_id, 'write': True},
+            {'session_id': user2.blinded_id, 'upload': True},
+        ]
+        assert r.json[0]['at'] == from_now.seconds(0.001)
+        assert r.json[1]['at'] == from_now.seconds(0.002)
+
+        # GETting either blinded or unblinded should give us back the same permissions:
+        r = client.get(
+            f'/room/{room.token}/permissions/{user.session_id}',
+            headers=x_sogs(
+                mod.ed_key,
+                crypto.server_pubkey,
+                'GET',
+                f'/room/{room.token}/permissions/{user.session_id}',
+                blinded=True,
+            ),
+        )
+        assert r.status_code == 200
+        assert r.json == {'read': True, 'write': False}
+        r2 = client.get(
+            f'/room/{room.token}/permissions/{user.blinded_id}',
+            headers=x_sogs(
+                mod.ed_key,
+                crypto.server_pubkey,
+                'GET',
+                f'/room/{room.token}/permissions/{user.blinded_id}',
+                blinded=True,
+            ),
+        )
+        assert r2.status_code == 200
+        assert r2.json == r.json
+
+        r = client.get(
+            f'/room/{room.token}/futurePermissions/{user2.session_id}',
+            headers=x_sogs(
+                mod.ed_key,
+                crypto.server_pubkey,
+                'GET',
+                f'/room/{room.token}/futurePermissions/{user2.session_id}',
+                blinded=True,
+            ),
+        )
+        assert r.status_code == 200
+        assert filter_timestamps(r.json) == [{'upload': True}]
+        assert r.json[0]['at'] == from_now.seconds(0.002)
+        r2 = client.get(
+            f'/room/{room.token}/futurePermissions/{user2.blinded_id}',
+            headers=x_sogs(
+                mod.ed_key,
+                crypto.server_pubkey,
+                'GET',
+                f'/room/{room.token}/futurePermissions/{user2.blinded_id}',
+                blinded=True,
+            ),
+        )
+        assert r2.status_code == 200
+        assert r2.json == r.json

@@ -274,13 +274,13 @@ def test_auth_malformed(client, db):
 
     # Bad timestamps
     r = client.get(
-        "/auth_test/whoami", headers=x_sogs(a, B, 'GET', '/auth_test/whoami', timestamp_off=86401)
+        "/auth_test/whoami", headers=x_sogs(a, B, 'GET', '/auth_test/whoami', timestamp_off=86402)
     )
     assert r.status_code == 425
     assert r.data == b'Invalid authentication: X-SOGS-Timestamp is too far from current time'
 
     r = client.get(
-        "/auth_test/whoami", headers=x_sogs(a, B, 'GET', '/auth_test/whoami', timestamp_off=-86401)
+        "/auth_test/whoami", headers=x_sogs(a, B, 'GET', '/auth_test/whoami', timestamp_off=-86402)
     )
     assert r.status_code == 425
     assert r.data == b'Invalid authentication: X-SOGS-Timestamp is too far from current time'

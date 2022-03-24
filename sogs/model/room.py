@@ -1046,37 +1046,35 @@ class Room:
             raise BadPermission()
 
         with db.transaction():
-            need_blinding = False
-            if config.REQUIRE_BLIND_KEYS:
-                blinded = user.find_blinded()
-                if blinded is not None:
-                    user = blinded
-                else:
-                    need_blinding = True
+            with user.check_blinding() as u:
+                query(
+                    f"""
+                    INSERT INTO user_permission_overrides
+                        (room,
+                        "user",
+                        moderator,
+                        {'admin,' if admin is not None else ''}
+                        visible_mod)
+                    VALUES (:r, :u, TRUE, {':admin,' if admin is not None else ''} :visible)
+                    ON CONFLICT (room, "user") DO UPDATE SET
+                        moderator = excluded.moderator,
+                        {'admin = excluded.admin,' if admin is not None else ''}
+                        visible_mod = excluded.visible_mod
+                    """,
+                    r=self.id,
+                    u=u.id,
+                    admin=admin,
+                    visible=visible,
+                )
+                if u.id in self._perm_cache:
+                    del self._perm_cache[u.id]
 
-            query(
-                f"""
-                INSERT INTO user_permission_overrides
-                    (room, "user", moderator, {'admin,' if admin is not None else ''} visible_mod)
-                VALUES (:r, :u, TRUE, {':admin,' if admin is not None else ''} :visible)
-                ON CONFLICT (room, "user") DO UPDATE SET
-                    moderator = excluded.moderator,
-                    {'admin = excluded.admin,' if admin is not None else ''}
-                    visible_mod = excluded.visible_mod
-                """,
-                r=self.id,
-                u=user.id,
-                admin=admin,
-                visible=visible,
-            )
+                if u.id in self._perm_cache:
+                    del self._perm_cache[u.id]
 
-            if need_blinding:
-                user.record_needs_blinding()
-
-        if user.id in self._perm_cache:
-            del self._perm_cache[user.id]
-
-        app.logger.info(f"{added_by} set {user} as {'admin' if admin else 'moderator'} of {self}")
+                app.logger.info(
+                    f"{added_by} set {u} as {'admin' if admin else 'moderator'} of {self}"
+                )
 
     def remove_moderator(self, user: User, *, removed_by: User, remove_admin_only: bool = False):
         """
@@ -1120,67 +1118,58 @@ class Room:
         """
 
         with db.transaction():
-            need_blinding = False
-            if config.REQUIRE_BLIND_KEYS:
-                blinded = to_ban.find_blinded()
-                if blinded is not None:
-                    to_ban = blinded
-                else:
-                    need_blinding = True
+            with to_ban.check_blinding() as to_ban:
+                fail = None
+                if not self.check_moderator(mod):
+                    fail = "user is not a moderator"
+                elif to_ban.id == mod.id:
+                    fail = "self-ban not permitted"
+                elif to_ban.global_moderator:
+                    fail = "global mods/admins cannot be banned"
+                elif self.check_moderator(to_ban) and not self.check_admin(mod):
+                    fail = "only admins can ban room mods/admins"
 
-            fail = None
-            if not self.check_moderator(mod):
-                fail = "user is not a moderator"
-            elif to_ban.id == mod.id:
-                fail = "self-ban not permitted"
-            elif to_ban.global_moderator:
-                fail = "global mods/admins cannot be banned"
-            elif self.check_moderator(to_ban) and not self.check_admin(mod):
-                fail = "only admins can ban room mods/admins"
+                if fail is not None:
+                    app.logger.warning(f"Error banning {to_ban} from {self} by {mod}: {fail}")
+                    raise BadPermission()
 
-            if fail is not None:
-                app.logger.warning(f"Error banning {to_ban} from {self} by {mod}: {fail}")
-                raise BadPermission()
+                # TODO: log the banning action for auditing
 
-            # TODO: log the banning action for auditing
-
-            query(
-                """
-                INSERT INTO user_permission_overrides (room, "user", banned, moderator, admin)
-                    VALUES (:r, :ban, TRUE, FALSE, FALSE)
-                ON CONFLICT (room, "user") DO
-                    UPDATE SET banned = TRUE, moderator = FALSE, admin = FALSE
-                """,
-                r=self.id,
-                ban=to_ban.id,
-            )
-
-            # Replace (or remove) an existing scheduled unban:
-            query(
-                'DELETE FROM user_ban_futures WHERE room = :r AND "user" = :u AND NOT banned',
-                r=self.id,
-                u=to_ban.id,
-            )
-            if timeout:
                 query(
                     """
-                    INSERT INTO user_ban_futures
-                    (room, "user", banned, at) VALUES (:r, :u, FALSE, :at)
+                    INSERT INTO user_permission_overrides (room, "user", banned, moderator, admin)
+                        VALUES (:r, :ban, TRUE, FALSE, FALSE)
+                    ON CONFLICT (room, "user") DO
+                        UPDATE SET banned = TRUE, moderator = FALSE, admin = FALSE
                     """,
                     r=self.id,
-                    u=to_ban.id,
-                    at=time.time() + timeout,
+                    ban=to_ban.id,
                 )
 
-            if need_blinding:
-                to_ban.record_needs_blinding()
+                # Replace (or remove) an existing scheduled bans/unbans:
+                query(
+                    'DELETE FROM user_ban_futures WHERE room = :r AND "user" = :u',
+                    r=self.id,
+                    u=to_ban.id,
+                )
+                if timeout:
+                    query(
+                        """
+                        INSERT INTO user_ban_futures
+                        (room, "user", banned, at) VALUES (:r, :u, FALSE, :at)
+                        """,
+                        r=self.id,
+                        u=to_ban.id,
+                        at=time.time() + timeout,
+                    )
 
-        if to_ban.id in self._perm_cache:
-            del self._perm_cache[to_ban.id]
+                if to_ban.id in self._perm_cache:
+                    del self._perm_cache[to_ban.id]
 
-        app.logger.debug(
-            f"Banned {to_ban} from {self} {f'for {timeout}s ' if timeout else ''}(banned by {mod})"
-        )
+                app.logger.debug(
+                    f"Banned {to_ban} from {self} {f'for {timeout}s ' if timeout else ''}"
+                    f"(banned by {mod})"
+                )
 
     def unban_user(self, to_unban: User, *, mod: User):
         """
@@ -1257,37 +1246,119 @@ class Room:
             raise BadPermission()
 
         with db.transaction():
-            need_blinding = False
-            if config.REQUIRE_BLIND_KEYS:
-                blinded = user.find_blinded()
-                if blinded is not None:
-                    user = blinded
-                else:
-                    need_blinding = True
+            with user.check_blinding() as user:
+                set_perms = perms.keys()
+                query(
+                    f"""
+                    INSERT INTO user_permission_overrides (room, "user", {', '.join(set_perms)})
+                    VALUES (:r, :u, :{', :'.join(set_perms)})
+                    ON CONFLICT (room, "user") DO UPDATE SET
+                        {', '.join(f"{p} = :{p}" for p in set_perms)}
+                    """,
+                    r=self.id,
+                    u=user.id,
+                    read=perms.get('read'),
+                    accessible=perms.get('accessible'),
+                    write=perms.get('write'),
+                    upload=perms.get('upload'),
+                )
 
-            set_perms = perms.keys()
-            query(
-                f"""
-                INSERT INTO user_permission_overrides (room, "user", {', '.join(set_perms)})
-                VALUES (:r, :u, :{', :'.join(set_perms)})
-                ON CONFLICT (room, "user") DO UPDATE SET
-                    {', '.join(f"{p} = :{p}" for p in set_perms)}
-                """,
-                r=self.id,
-                u=user.id,
-                read=perms.get('read'),
-                accessible=perms.get('accessible'),
-                write=perms.get('write'),
-                upload=perms.get('upload'),
-            )
+                if user.id in self._perm_cache:
+                    del self._perm_cache[user.id]
 
-            if need_blinding:
-                user.record_needs_blinding()
+                app.logger.debug(f"{mod} applied {self} permission(s) {perms} to {user}")
 
-        if user.id in self._perm_cache:
-            del self._perm_cache[user.id]
+    def clear_future_permissions(
+        self,
+        user: User,
+        *,
+        mod: User,
+        read: bool = False,
+        write: bool = False,
+        upload: bool = False,
+    ):
+        """
+        Clears any scheduled room permissions changes for this user that change the read and/or
+        write and/or upload permissions.
 
-        app.logger.debug(f"{mod} applied {self} permission(s) {perms} to {user}")
+        This only removes the requested permission flags; for instance, if called with `read=True,
+        write=True` and a future permission is scheduled that sets `read=true, write=false,
+        upload=true` then the upload=true scheduled override will remain and the read/write
+        scheduled changes will be removed.
+
+        Also note that this removes *all* scheduled changes if there are multiple scheduled changes.
+        """
+
+        sets = []
+        if read:
+            sets.append("read = NULL")
+        if write:
+            sets.append("write = NULL")
+        if upload:
+            sets.append("upload = NULL")
+
+        if not sets:
+            return
+
+        with db.transaction():
+            with user.check_blinding() as u:
+                r = query(
+                    f"""
+                    UPDATE user_permission_futures
+                    SET {', '.join(sets)}
+                    WHERE room = :r AND "user" = :u
+                    """,
+                    r=self.id,
+                    u=u.id,
+                )
+
+                # Clear any rows that we updated to all-nulls:
+                if r.rowcount > 0:
+                    query(
+                        """
+                        DELETE FROM user_permission_futures
+                        WHERE room = :r AND "user" = :u AND
+                            read = NULL AND write = NULL AND upload = NULL
+                        """,
+                        r=self.id,
+                        u=u.id,
+                    )
+
+    def add_future_permission(
+        self,
+        user,
+        *,
+        at: float,
+        mod: User,
+        read: Optional[bool] = None,
+        write: Optional[bool] = None,
+        upload: Optional[bool] = None,
+    ):
+        """
+        Schedules a future permission change for the given user in this room.
+
+        The permission change will occur at (or within a few seconds of) the unix timestamp given in
+        `at`, and will set read, write, and/or upload to the given boolean values.  (None values are
+        left unchanged).
+        """
+
+        if not any(x is not None for x in (read, write, upload)):
+            return
+
+        with db.transaction():
+            with user.check_blinding() as u:
+                query(
+                    """
+                    INSERT INTO user_permission_futures (room, "user", at, read, write, upload)
+                    VALUES (:r, :u, :at, :read, :write, :upload)
+                    """,
+                    r=self.id,
+                    u=u.id,
+                    at=at,
+                    read=read,
+                    write=write,
+                    upload=upload,
+                )
 
     def get_file(self, file_id: int):
         """Retrieves a file uploaded to this room by id.  Returns None if not found."""
@@ -1498,7 +1569,104 @@ class Room:
 
     @property
     def url(self):
+        """
+        URL of the web based room viewer for this room
+        """
         return utils.server_url(self.token)
+
+    @property
+    def permissions(self):
+        """
+        export room permissions in full,
+        returns a dict of session_id -> permissions dict (a dict of permission type to bool)
+        """
+        ret = dict()
+        for row in query(
+            """SELECT session_id, upo.* FROM user_permission_overrides upo
+            JOIN users ON "user" = users.id WHERE room = :r""",
+            r=self.id,
+        ):
+            data = dict()
+            for k in row.keys():
+                if row[k] is not None and k not in ('session_id', 'room', 'user'):
+                    data[k] = bool(row[k])
+            ret[row['session_id']] = data
+        return ret
+
+    def user_permissions(self, user):
+        """
+        Returns assigned room permissions for the given user.  Note that this does not reflect
+        default permissions, but rather only permissions that have been specifically granted or
+        revoked for this user.
+        """
+        row = query(
+            'SELECT * from user_permission_overrides WHERE "user" = :u AND room = :r',
+            u=user.id,
+            r=self.id,
+        ).fetchone()
+        if not row:
+            return {}
+        return {
+            k: bool(row[k]) for k in row.keys() if k not in ('room', 'user') and row[k] is not None
+        }
+
+    @property
+    def future_permissions(self):
+        """
+        returns a list of future permission changes in this room
+        """
+        ret = list()
+        for row in query(
+            """
+            SELECT session_id, futures.* FROM (
+                SELECT "user", at, read, write, upload, NULL AS banned
+                FROM user_permission_futures WHERE room = :r
+
+                UNION ALL
+
+                SELECT "user", at, NULL AS read, NULL AS write, NULL AS upload, banned
+                FROM user_ban_futures WHERE room = :r
+            ) futures JOIN users ON futures."user" = users.id
+            ORDER BY at
+            """,
+            r=self.id,
+        ):
+            data = dict()
+            for k in row.keys():
+                if k == 'user':
+                    continue
+                if k in ('at', 'session_id'):
+                    data[k] = row[k]
+                elif row[k] is not None:
+                    data[k] = bool(row[k])
+            ret.append(data)
+        return ret
+
+    def user_future_permissions(self, user):
+        """
+        Returns a list of any scheduled future permission changes for the given user in this room
+        (note that this includes bans as well as the read/write/upload permissions).
+        """
+        result = []
+        for row in query(
+            """
+            SELECT * FROM (
+                SELECT at, read, write, upload, null AS banned
+                FROM user_permission_futures WHERE room = :r AND "user" = :u
+
+                UNION ALL
+
+                SELECT at, NULL AS read, NULL AS write, NULL AS upload, banned
+                FROM user_ban_futures WHERE room = :r AND "user" = :u
+            ) futures ORDER BY at
+            """,
+            u=user.id,
+            r=self.id,
+        ):
+            result.append({k: bool(row[k]) for k in row.keys() if k != 'at' and row[k] is not None})
+            result[-1]['at'] = row['at']
+
+        return result
 
 
 def get_rooms():

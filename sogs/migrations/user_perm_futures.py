@@ -68,7 +68,9 @@ CREATE INDEX user_ban_futures_room_user ON user_ban_futures(room, "user");
 INSERT INTO user_ban_futures (room, "user", at, banned)
     SELECT room, "user", at, banned FROM user_permission_futures WHERE banned is NOT NULL;
 
-ALTER TABLE user_permission_futures DROP CONSTRAINT user_permission_futures_pkey;
+DELETE FROM user_permission_futures WHERE read IS NULL AND write IS NULL AND uploads IS NULL;
+
+ALTER TABLE user_permission_futures DROP CONSTRAINT IF EXISTS user_permission_futures_pkey;
 ALTER TABLE user_permission_futures DROP COLUMN banned;
 """
         )
