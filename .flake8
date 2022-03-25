@@ -1,6 +1,7 @@
 [flake8]
 per-file-ignores =
     sogs/web.py:F401,E402
+    sogs/__main__.py:E402
 max-line-length = 100
 extend-ignore = E203  # See https://github.com/psf/black/issues/315
-exclude=sogs/config.py,sogs/session_pb2.py
+exclude=sogs/session_pb2.py

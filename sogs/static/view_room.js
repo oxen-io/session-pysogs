@@ -20,9 +20,15 @@ const setup = async () => {
         const root = protobuf.parse(proto).root;
 
         const Message = root.lookupType("signalservice.Content");
-
+        const url = window.poll_room_url;
         const update = async () => {
-            const req = await fetch(`/room/${window.view_room}/messages/recent`);
+            const req = await fetch(url);
+            if(req.status != 200)
+            {
+                elem.replaceChildren();
+                elem.appendChild(document.createTextNode(`HTTP {req.status}`));
+                return;
+            }
             const msgs = await req.json();
 
 
@@ -57,8 +63,16 @@ const setup = async () => {
                 }
             }
         };
-        await update();
-        setInterval(update, 5000);
+        if(url)
+        {
+            await update();
+            setInterval(update, 5000);
+        }
+        else
+        {
+            elem.replaceChildren();
+            elem.appendChild(document.createTextNode("no poll url set"));
+        }
     }
 };
 

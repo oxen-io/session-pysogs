@@ -5,9 +5,9 @@
 [db]
 
 ; The database connection string url for the sogs database where everything is stored.  For sqlite
-; (currently the only supported database) this is `sqlite:///` followed by the path.  E.g.
-; `sqlite:///sogs.db` for sogs.db in the current working directory, or `sqlite:////path/to/sogs.db`
-; for an absolute URL.
+; this is `sqlite:///` followed by the path.  E.g.  ; `sqlite:///sogs.db` for sogs.db in the current
+; working directory, or `sqlite:////path/to/sogs.db` for an absolute URL.
+; PostgreSQL is also supported; see the SQLAlchemy docs for the required connect string format.
 ;url = sqlite:///sogs.db
 
 
@@ -43,6 +43,12 @@
 ;omq_internal = ipc://./omq.sock
 
 
+; Whether we should show an index of public rooms on the root URL when visited by a
+; browser.
+;
+;http_show_index = yes
+
+
 ; Whether we should show recent messages for public rooms on the sogs room page when visited by a
 ; browser.
 ;
@@ -53,7 +59,7 @@
 
 ; How long newly uploaded files should be stored before being cleaned up, in days.  Note that
 ; changing this only affects new files.  This limit does not apply to room images and attachments in
-; pinned messages, both of which do not expire.
+; pinned messages, both of which do not expire.  Can be set to 0 to never expire new uploads.
 ;
 ;expiry = 15
 

@@ -10,29 +10,42 @@ logger = logging.getLogger("config")
 coloredlogs.install(milliseconds=True, isatty=True, logger=logger)
 
 # Default config settings; most of these are configurable via config.ini (see it for details).
-DB_PATH = 'sogs.db'
-DB_SCHEMA_FILE = 'schema.sql'  # Not configurable, just a constant
+DB_URL = 'sqlite:///sogs.db'
 KEY_FILE = 'key_x25519'
 URL_BASE = 'http://example.net'
+HTTP_SHOW_INDEX = True
 HTTP_SHOW_RECENT = True
 OMQ_LISTEN = 'tcp://*:22028'
 OMQ_INTERNAL = 'ipc://./omq.sock'
 LOG_LEVEL = 'WARNING'
-UPLOAD_DEFAULT_EXPIRY_DAYS = 15
+DM_EXPIRY = 15 * 86400.0  # Seconds, but specified in config file as days
+UPLOAD_DEFAULT_EXPIRY = 15 * 86400.0  # Seconds (or None), but specified in config file as days
 UPLOAD_FILENAME_MAX = 60
 UPLOAD_FILENAME_KEEP_PREFIX = 40
 UPLOAD_FILENAME_KEEP_SUFFIX = 17
 UPLOAD_FILE_MAX_SIZE = 6_000_000
 UPLOAD_FILENAME_BAD = re.compile(r"[^\w+\-.'()@\[\]]+")
-ROOM_ACTIVE_PRUNE_THRESHOLD = 60
-ROOM_DEFAULT_ACTIVE_THRESHOLD = 7
-MESSAGE_HISTORY_PRUNE_THRESHOLD = 30
+ROOM_ACTIVE_PRUNE_THRESHOLD = 60 * 86400.0  # Seconds, but specified in config file as days
+ROOM_DEFAULT_ACTIVE_THRESHOLD = 7 * 86400.0  # Seconds, but specified in config file as days
+MESSAGE_HISTORY_PRUNE_THRESHOLD = 30 * 86400.0  # Seconds, but specified in config file as days
 IMPORT_ADJUST_MS = 0
 PROFANITY_FILTER = False
 PROFANITY_SILENT = True
 PROFANITY_CUSTOM = None
+REQUIRE_BLIND_KEYS = False
 TEMPLATE_PATH = 'templates'
 STATIC_PATH = 'static'
+UPLOAD_PATH = 'uploads'
+
+# Will be true if we're running as a uwsgi app, false otherwise; used where we need to do things
+# only in one case or another (e.g. database initialization only via app mode).
+RUNNING_AS_APP = False
+try:
+    import uwsgi  # noqa: F401
+
+    RUNNING_AS_APP = True
+except ImportError:
+    pass
 
 
 def load_config():
@@ -58,20 +71,33 @@ def load_config():
     if 'log' in cp.sections() and 'level' in cp['log']:
         logger.setLevel(cp['log']['level'])
 
-    path_exists = lambda path: not path or os.path.exists(path)
-    val_or_none = lambda path: path if path else None
+    def path_exists(path):
+        return not path or os.path.exists(path)
+
+    def val_or_none(v):
+        return v or None
+
+    def days_to_seconds(v):
+        return float(v) * 86400.0
+
+    def days_to_seconds_or_none(v):
+        return days_to_seconds(v) if v else None
 
     truthy = ('y', 'yes', 'Y', 'Yes', 'true', 'True', 'on', 'On', '1')
     falsey = ('n', 'no', 'N', 'No', 'false', 'False', 'off', 'Off', '0')
     booly = truthy + falsey
-    bool_opt = lambda name: (name, lambda x: x in booly, lambda x: x in truthy)
+
+    def bool_opt(name):
+        return (name, lambda x: x in booly, lambda x: x in truthy)
 
     # Map of: section => { param => ('GLOBAL', test lambda, value lambda) }
     # global is the string name of the global variable to set
     # test lambda returns True/False for validation (if None/omitted, accept anything)
     # value lambda extracts the value (if None/omitted use str value as-is)
     setting_map = {
-        'db': {'url': ('DB_PATH', lambda x: x.startswith('sqlite:///'), lambda x: x[10:])},
+        'db': {
+            'url': ('DB_URL', lambda x: x.startswith('sqlite:///') or x.startswith('postgresql'))
+        },
         'crypto': {'key_file': ('KEY_FILE',)},
         'net': {
             'base_url': ('URL_BASE', lambda x: re.search('^https?://.', x)),
@@ -81,18 +107,22 @@ def load_config():
                 lambda x: [y for y in x.splitlines() if len(y)],
             ),
             'omq_internal': ('OMQ_INTERNAL', lambda x: re.search('^(?:tcp|ipc)://.', x)),
+            'http_show_index': bool_opt('HTTP_SHOW_INDEX'),
             'http_show_recent': bool_opt('HTTP_SHOW_RECENT'),
         },
         'files': {
-            'expiry': ('UPLOAD_DEFAULT_EXPIRY_DAYS', None, float),
+            'expiry': ('UPLOAD_DEFAULT_EXPIRY', None, days_to_seconds_or_none),
             'max_size': ('UPLOAD_FILE_MAX_SIZE', None, int),
+            'uploads_dir': ('UPLOAD_PATH', path_exists, val_or_none),
         },
         'rooms': {
-            'active_threshold': ('ROOM_DEFAULT_ACTIVE_THRESHOLD', None, float),
-            'active_prune_threshold': ('ROOM_ACTIVE_PRUNE_THRESHOLD', None, float),
+            'active_threshold': ('ROOM_DEFAULT_ACTIVE_THRESHOLD', None, days_to_seconds),
+            'active_prune_threshold': ('ROOM_ACTIVE_PRUNE_THRESHOLD', None, days_to_seconds),
         },
+        'direct_messages': {'expiry': ('DM_EXPIRY', None, days_to_seconds)},
+        'users': {'require_blind_keys': bool_opt('REQUIRE_BLIND_KEYS')},
         'messages': {
-            'history_prune_threshold': ('MESSAGE_HISTORY_PRUNE_THRESHOLD', None, float),
+            'history_prune_threshold': ('MESSAGE_HISTORY_PRUNE_THRESHOLD', None, days_to_seconds),
             'profanity_filter': bool_opt('PROFANITY_FILTER'),
             'profanity_silent': bool_opt('PROFANITY_SILENT'),
             'profanity_custom': ('PROFANITY_CUSTOM', path_exists, val_or_none),

@@ -38,6 +38,7 @@ if not args.overwrite and os.path.exists(args.out):
         f"Error: {args.out} already exists, not overwriting it without --overwrite flag!",
         file=sys.stderr,
     )
+    sys.exit(1)
 
 key = c.load_privatekey(c.FILETYPE_PEM, pkey_pem).to_cryptography_key()
 pubkey_hex = key.public_key().public_bytes(encoding=s.Encoding.Raw, format=s.PublicFormat.Raw).hex()

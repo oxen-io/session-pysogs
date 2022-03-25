@@ -1,12 +1,9 @@
 from argparse import ArgumentParser as AP, RawDescriptionHelpFormatter
+import atexit
 import re
 import sys
-import sqlite3
 
-from . import db
-from . import config
-from . import model
-from . import crypto
+from . import __version__ as version
 
 ap = AP(
     epilog="""
@@ -25,11 +22,16 @@ Examples:
      # List room info:
     python3 -msogs -L
 
+A sogs.ini will be loaded from the current directory, if one exists.  You can override this by
+specifying a path to the config file to load in the SOGS_CONFIG environment variable.
+
 """,  # noqa: E501
     formatter_class=RawDescriptionHelpFormatter,
 )
 
-actions = ap.add_mutually_exclusive_group()
+ap.add_argument('--version', '-V', action='version', version=f'PySOGS {version}')
+
+actions = ap.add_mutually_exclusive_group(required=True)
 
 actions.add_argument('--add-room', help="Add a room with the given token", metavar='TOKEN')
 ap.add_argument(
@@ -88,18 +90,86 @@ ap.add_argument(
 ap.add_argument(
     "--yes", action='store_true', help="Don't prompt for confirmation for some commands, just do it"
 )
+actions.add_argument(
+    "--initialize",
+    action='store_true',
+    help="Initialize database and private key if they do not exist; advanced use only.",
+)
+actions.add_argument(
+    "--upgrade",
+    "-U",
+    action="store_true",
+    help="Perform any required database upgrades.  If database upgrades are required then other "
+    "commands will exit with an error message until this flag is used.  Note that this is "
+    "normally not required: database upgrades are performed automatically during sogs daemon "
+    "startup.",
+)
+actions.add_argument(
+    "--check-upgrades",
+    action="store_true",
+    help="Check whether database upgrades are required then exit.  The exit code is 0 if no "
+    "upgrades are needed, 5 if required upgrades were detected.",
+)
 
 args = ap.parse_args()
 
+from . import config, crypto, db
+from .migrations.exc import DatabaseUpgradeRequired
+from sqlalchemy_utils import database_exists
 
-def print_room(room: model.Room):
+db_updated = False
+try:
+    if not args.initialize and not database_exists(config.DB_URL):
+        raise RuntimeError(f"{config.DB_URL} database does not exist")
+
+    if args.initialize:
+        crypto.persist_privkey()
+
+    db.init_engine(sogs_skip_init=True)
+
+    db_updated = db.database_init(create=args.initialize, upgrade=args.upgrade)
+
+except DatabaseUpgradeRequired as e:
+    print(
+        f"Database upgrades are required: {e}\n\n"
+        "You can attempt the upgrade using the --upgrade flag; see --help for details."
+    )
+    sys.exit(5)
+
+except Exception as e:
+    print(
+        f"""
+
+SOGS initialization failed: {e}.
+
+
+Perhaps you need to specify a SOGS_CONFIG path or use one of the --upgrade/--initialize options?
+Try --help for additional information.
+"""
+    )
+    sys.exit(1)
+
+from . import web
+from .model.room import Room, get_rooms
+from .model.user import User, SystemUser, get_all_global_moderators
+from .model.exc import AlreadyExists, NoSuchRoom
+
+web.appdb = db.get_conn()
+
+
+@atexit.register
+def close_conn():
+    web.appdb.close()
+
+
+def print_room(room: Room):
     msgs, msgs_size = room.messages_size()
     files, files_size = room.attachments_size()
 
     msgs_size /= 1_000_000
     files_size /= 1_000_000
 
-    active = [room.active_users(x * 86400) for x in (7, 14, 30)]
+    active = [room.active_users_last(x * 86400) for x in (7, 14, 30)]
     m, a, hm, ha = room.get_all_moderators()
     admins = len(a) + len(ha)
     mods = len(m) + len(hm)
@@ -131,7 +201,16 @@ Moderators: {admins} admins ({len(ha)} hidden), {mods} moderators ({len(hm)} hid
         print()
 
 
-if args.add_room:
+if args.initialize:
+    print("Database schema created.")
+
+elif args.upgrade:
+    print("Database successfully upgraded." if db_updated else "No database upgrades required.")
+
+elif args.check_upgrades:
+    print("No database upgrades required.")
+
+elif args.add_room:
     if not re.fullmatch(r'[\w-]{1,64}', args.add_room):
         print(
             "Error: room tokens may only contain a-z, A-Z, 0-9, _, and - characters",
@@ -140,21 +219,19 @@ if args.add_room:
         sys.exit(1)
 
     try:
-        with db.tx() as cur:
-            cur.execute(
-                "INSERT INTO rooms(token, name, description) VALUES(?, ?, ?)",
-                [args.add_room, args.name or args.add_room, args.description],
-            )
-    except sqlite3.IntegrityError:
+        room = Room.create(
+            token=args.add_room, name=args.name or args.add_room, description=args.description
+        )
+    except AlreadyExists:
         print(f"Error: room '{args.add_room}' already exists!", file=sys.stderr)
         sys.exit(1)
     print(f"Created room {args.add_room}:")
-    print_room(model.Room(token=args.add_room))
+    print_room(room)
 
 elif args.delete_room:
     try:
-        room = model.Room(token=args.delete_room)
-    except model.NoSuchRoom:
+        room = Room(token=args.delete_room)
+    except NoSuchRoom:
         print(f"Error: no such room '{args.delete_room}'", file=sys.stderr)
         sys.exit(1)
 
@@ -164,9 +241,7 @@ elif args.delete_room:
     else:
         res = input("Are you sure you want to delete this room? [yN] ")
     if res.startswith("y") or res.startswith("Y"):
-        with db.tx() as cur:
-            cur.execute("DELETE FROM rooms WHERE token = ?", [args.delete_room])
-            count = cur.rowcount
+        room.delete()
         print("Room deleted.")
     else:
         print("Aborted.")
@@ -177,7 +252,7 @@ elif args.add_moderators:
         print("Error: --rooms is required when using --add-moderators", file=sys.stderr)
         sys.exit(1)
     for a in args.add_moderators:
-        if not re.fullmatch(r'05[A-Fa-f0-9]{64}', a):
+        if not re.fullmatch(r'[01]5[A-Fa-f0-9]{64}', a):
             print(f"Error: '{a}' is not a valid session id", file=sys.stderr)
             sys.exit(1)
     if len(args.rooms) > 1 and ('*' in args.rooms or '+' in args.rooms):
@@ -186,11 +261,11 @@ elif args.add_moderators:
         )
         sys.exit(1)
 
-    sysadmin = model.SystemUser()
+    sysadmin = SystemUser()
 
     if args.rooms == ['+']:
         for sid in args.add_moderators:
-            u = model.User(session_id=sid)
+            u = User(session_id=sid, try_blinding=True)
             u.set_moderator(admin=args.admin, visible=args.visible, added_by=sysadmin)
             print(
                 "Added {} as {} global {}".format(
@@ -201,15 +276,15 @@ elif args.add_moderators:
             )
     else:
         if args.rooms == ['*']:
-            rooms = model.get_rooms()
+            rooms = get_rooms()
         else:
             try:
-                rooms = [model.Room(token=r) for r in args.rooms]
-            except model.NoSuchRoom as nsr:
+                rooms = [Room(token=r) for r in args.rooms]
+            except NoSuchRoom as nsr:
                 print(f"No such room: '{nsr.token}'", file=sys.stderr)
 
         for sid in args.add_moderators:
-            u = model.User(session_id=sid)
+            u = User(session_id=sid, try_blinding=True)
             for room in rooms:
                 room.set_moderator(u, admin=args.admin, visible=not args.hidden, added_by=sysadmin)
                 print(
@@ -227,7 +302,7 @@ elif args.delete_moderators:
         print("Error: --rooms is required when using --delete-moderators", file=sys.stderr)
         sys.exit(1)
     for a in args.delete_moderators:
-        if not re.fullmatch(r'05[A-Fa-f0-9]{64}', a):
+        if not re.fullmatch(r'[01]5[A-Fa-f0-9]{64}', a):
             print(f"Error: '{a}' is not a valid session id", file=sys.stderr)
             sys.exit(1)
     if len(args.rooms) > 1 and ('*' in args.rooms or '+' in args.rooms):
@@ -236,11 +311,11 @@ elif args.delete_moderators:
         )
         sys.exit(1)
 
-    sysadmin = model.SystemUser()
+    sysadmin = SystemUser()
 
     if args.rooms == ['+']:
         for sid in args.delete_moderators:
-            u = model.User(session_id=sid)
+            u = User(session_id=sid, try_blinding=True)
             was_admin = u.global_admin
             if not u.global_admin and not u.global_moderator:
                 print(f"{u.session_id} was not a global moderator")
@@ -249,20 +324,20 @@ elif args.delete_moderators:
                 print(f"Removed {sid} as global {'admin' if was_admin else 'moderator'}")
     else:
         if args.rooms == ['*']:
-            rooms = model.get_rooms()
+            rooms = get_rooms()
         else:
             try:
-                rooms = [model.Room(token=r) for r in args.rooms]
-            except model.NoSuchRoom as nsr:
+                rooms = [Room(token=r) for r in args.rooms]
+            except NoSuchRoom as nsr:
                 print(f"No such room: '{nsr.token}'", file=sys.stderr)
 
         for sid in args.delete_moderators:
-            u = model.User(session_id=sid)
+            u = User(session_id=sid, try_blinding=True)
             for room in rooms:
                 room.remove_moderator(u, removed_by=sysadmin)
                 print(f"Removed {u.session_id} as moderator/admin of {room.name} ({room.token})")
 elif args.list_rooms:
-    rooms = model.get_rooms()
+    rooms = get_rooms()
     if rooms:
         for room in rooms:
             print_room(room)
@@ -270,7 +345,7 @@ elif args.list_rooms:
         print("No rooms.")
 
 elif args.list_global_mods:
-    m, a, hm, ha = model.get_all_global_moderators()
+    m, a, hm, ha = get_all_global_moderators()
     admins = len(a) + len(ha)
     mods = len(m) + len(hm)
 

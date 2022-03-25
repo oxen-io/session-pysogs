@@ -28,8 +28,12 @@ Python using:
 sudo curl -so /etc/apt/trusted.gpg.d/oxen.gpg https://deb.oxen.io/pub.gpg
 echo "deb https://deb.oxen.io $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/oxen.list
 sudo apt update
-sudo apt install python3-{oxenmq,oxenc,pyonionreq,coloredlogs,uwsgidecorators,flask,cryptography,nacl,pil,protobuf,openssl,qrencode,better-profanity} uwsgi-plugin-python3
+sudo apt install python3-{oxenmq,oxenc,pyonionreq,coloredlogs,uwsgidecorators,flask,cryptography,nacl,pil,protobuf,openssl,qrencode,better-profanity,sqlalchemy,sqlalchemy-utils} uwsgi-plugin-python3
 ```
+
+If you want to use a postgresql database backend then you will also need the python3-psycopg2
+package.  If unsure then stick with the default (sqlite3) database.
+
 
 ## Step 3: Adjust configuration
 
@@ -121,7 +125,7 @@ To upgrade from a 0.1.x version of (Rust) SOGS you will need to do two things:
   directory into the session-pysogs project directory.
 - Manually convert your keys from the old openssl format, using:
 ```bash
-python3 -msogs.key_convert -i x25519_private_key.pem key_x25519
+python3 -msogs.key_convert -i x25519_private_key.pem -o key_x25519
 ```
 
 The first time you start sogs after doing this it will see that it has no rooms but that

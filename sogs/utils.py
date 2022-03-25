@@ -6,6 +6,7 @@ from . import session_pb2 as protobuf
 import base64
 from flask import request, abort, Response
 import json
+from typing import Union, Tuple
 
 
 def message_body(data: bytes):
@@ -46,7 +47,7 @@ def decode_hex_or_b64(data: bytes, size: int):
     # Allow unpadded data; python's base64 has no ability to load an unpadded value, though, so pad
     # it ourselves:
     if b64_unpadded <= len(data) <= b64_size:
-        decoded = base64.b64decode(data)
+        decoded = decode_base64(data)
         if len(decoded) == size:  # Might not equal our target size because of padding
             return decoded
 
@@ -54,7 +55,7 @@ def decode_hex_or_b64(data: bytes, size: int):
 
 
 def _json_b64_impl(val):
-    if isinstance(val, bytes):
+    if isinstance(val, bytes) or isinstance(val, memoryview):
         return encode_base64(val)
     if isinstance(val, list):
         return [_json_b64_impl(v) for v in val]
@@ -65,8 +66,8 @@ def _json_b64_impl(val):
 
 def json_with_base64(val):
     """
-    Returns val encoded in json, but with any `bytes` values encoded as base64 strings.  Note that
-    this base64-conversion only supports following lists and dicts.
+    Returns val encoded in json, but with any `bytes` or `memoryview` values encoded as base64
+    strings.  Note that this base64-conversion only supports following lists and dicts.
     """
     return json.dumps(_json_b64_impl(val))
 
@@ -79,11 +80,29 @@ def jsonify_with_base64(val):
     return Response(json_with_base64(val), mimetype="application/json")
 
 
-def get_session_id(flask_request):
-    return flask_request.headers.get("X-SOGS-Pubkey")
+def bencode_consume_string(body: memoryview) -> Tuple[memoryview, memoryview]:
+    """
+    Parses a bencoded byte string from the beginning of `body`.  Returns a pair of memoryviews on
+    success: the first is the string byte data; the second is the remaining data (i.e. after the
+    consumed string).
+    Raises ValueError on parse failure.
+    """
+    pos = 0
+    while pos < len(body) and 0x30 <= body[pos] <= 0x39:  # 1+ digits
+        pos += 1
+    if pos == 0 or pos >= len(body) or body[pos] != 0x3A:  # 0x3a == ':'
+        raise ValueError("Invalid string bencoding: did not find `N:` length prefix")
+
+    strlen = int(body[0:pos])  # parse the digits as a base-10 integer
+    pos += 1  # skip the colon
+    if pos + strlen > len(body):
+        raise ValueError("Invalid string bencoding: length exceeds buffer")
+    return body[pos : pos + strlen], body[pos + strlen :]
 
 
 def server_url(room):
+    # TODO: Once Session supports it, prefix this with /r/ so that SOGS pseudo-URLs for Session
+    # coincide with the web viewer URL.
     return '{}/{}?public_key={}'.format(config.URL_BASE, room or '', crypto.server_pubkey_hex)
 
 
@@ -154,10 +173,12 @@ def remove_session_message_padding(data: bytes):
     return data
 
 
-def add_session_message_padding(data: bytes, length):
+def add_session_message_padding(data: Union[bytes, memoryview], length):
     """Adds the custom padding that Session delivered the message with (and over which the signature
     is written).  Returns the padded value."""
 
     if length > len(data):
+        if isinstance(data, memoryview):
+            data = bytes(data)
         data += b'\x80' + b'\x00' * (length - len(data) - 1)
     return data
