@@ -24,7 +24,7 @@ def get_room_info(room):
         'info_updates': room.info_updates,
         'message_sequence': room.message_sequence,
         'created': room.created,
-        'active_users': room.active_users(),
+        'active_users': room.active_users,
         'active_users_cutoff': int(config.ROOM_DEFAULT_ACTIVE_THRESHOLD),
         'moderators': mods,
         'admins': admins,
@@ -722,7 +722,7 @@ def poll_room_info(room, info_updated):
 
     result = {
         'token': room.token,
-        'active_users': room.active_users(),
+        'active_users': room.active_users,
         'read': room.check_read(g.user),
         'write': room.check_write(g.user),
         'upload': room.check_upload(g.user),

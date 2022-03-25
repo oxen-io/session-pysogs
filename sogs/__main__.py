@@ -169,7 +169,7 @@ def print_room(room: Room):
     msgs_size /= 1_000_000
     files_size /= 1_000_000
 
-    active = [room.active_users(x * 86400) for x in (7, 14, 30)]
+    active = [room.active_users_last(x * 86400) for x in (7, 14, 30)]
     m, a, hm, ha = room.get_all_moderators()
     admins = len(a) + len(ha)
     mods = len(m) + len(hm)

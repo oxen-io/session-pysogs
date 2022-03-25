@@ -12,6 +12,7 @@ CREATE TABLE rooms (
     created FLOAT NOT NULL DEFAULT ((julianday('now') - 2440587.5)*86400.0), /* unix epoch */
     message_sequence INTEGER NOT NULL DEFAULT 0, /* monotonic current top message.seqno value: +1 for each new message, edit or deletion */
     info_updates INTEGER NOT NULL DEFAULT 0, /* +1 for any room metadata update (name/desc/image/pinned/mods) */
+    active_users INTEGER NOT NULL DEFAULT 0,
     read BOOLEAN NOT NULL DEFAULT TRUE, /* Whether users can read by default */
     accessible BOOLEAN NOT NULL DEFAULT TRUE, /* Whether room metadata is accessible when `read` is false */
     write BOOLEAN NOT NULL DEFAULT TRUE, /* Whether users can post by default */

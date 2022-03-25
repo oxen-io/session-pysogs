@@ -602,3 +602,28 @@ def test_pinning(room, room2, user, mod, admin, global_admin, no_rate_limit):
         room2.pin(7, global_admin)
 
     assert not room2.pinned_messages
+
+
+def test_active_users(room, user, user2):
+    assert room.active_users == 0
+    user.update_room_activity(room)
+    room._refresh()
+    assert room.active_users_last(1) == 1
+    assert room.active_users == 0  # Doesn't update until the cleanup cycle
+
+    from sogs.cleanup import cleanup
+
+    cleanup()
+    room._refresh()
+
+    assert room.active_users == 1
+    user2.update_room_activity(room)
+    room._refresh()
+    assert room.active_users == 1
+    assert room.active_users_last(1) == 2
+
+    cleanup()
+    room._refresh()
+
+    assert room.active_users == 2
+    assert room.active_users_last(1) == 2

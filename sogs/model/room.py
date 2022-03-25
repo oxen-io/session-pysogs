@@ -45,6 +45,8 @@ class Room:
             new/edited/deleted messages.
         info_updates - counter on room metadata that is automatically incremented whenever room
             metadata (name, description, image, etc.) changes for the room.
+        active_users - count of the number of active users in the past
+            config.ROOM_DEFAULT_ACTIVE_THRESHOLD seconds.
         default_read - True if default user permissions includes read permission
         default_accessible - True if default user permissions include accessible permission
         default_write - True if default user permissions includes write permission
@@ -92,6 +94,7 @@ class Room:
             self.created,
             self.message_sequence,
             self.info_updates,
+            self.active_users,
         ) = (
             row[c]
             for c in (
@@ -103,6 +106,7 @@ class Room:
                 'created',
                 'message_sequence',
                 'info_updates',
+                'active_users',
             )
         )
         self._default_read, self._default_accessible, self._default_write, self._default_upload = (
@@ -374,11 +378,15 @@ class Room:
                 query("UPDATE rooms SET upload = :upload WHERE id = :r", r=self.id, upload=upload)
                 self._refresh(perms=True)
 
-    def active_users(self, cutoff=config.ROOM_DEFAULT_ACTIVE_THRESHOLD):
+    def active_users_last(self, cutoff: float):
         """
-        Queries the number of active users in the past `cutoff` seconds.  Defaults to
-        config.ROOM_DEFAULT_ACTIVE_THRESHOLD.  Note that room activity records are periodically
-        removed, so going beyond config.ROOM_ACTIVE_PRUNE_THRESHOLD days is useless.
+        Queries the number of active users in the past `cutoff` seconds.  This is like the
+        `active_users` property except that it always queries for the instantaneous value
+        (`active_users` is only updated every few seconds in sogs.cleanup), and supports values
+        other than the default activity threshold.
+
+        Note that room activity records are periodically removed, so specifying a cutoff above
+        config.ROOM_ACTIVE_PRUNE_THRESHOLD days is useless.
         """
 
         return query(

@@ -15,7 +15,8 @@ def migrate(conn, *, check_only):
             'whisper': 'INTEGER REFERENCES users(id)',
             'whisper_mods': 'BOOLEAN NOT NULL DEFAULT FALSE',
             'filtered': 'BOOLEAN NOT NULL DEFAULT FALSE',
-        }
+        },
+        'rooms': {'active_users': 'BIGINT NOT NULL DEFAULT 0'},
     }
 
     added = False

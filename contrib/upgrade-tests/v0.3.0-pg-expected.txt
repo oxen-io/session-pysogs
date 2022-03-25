@@ -1,12 +1,12 @@
 rooms:
-+----+------------+--------------+----------------------------------------------------------------+-------+--------------+------------------+------+------------+-------+--------+
-| id | token      | name         | description                                                    | image | info_updates | message_sequence | read | accessible | write | upload |
-+----+------------+--------------+----------------------------------------------------------------+-------+--------------+------------------+------+------------+-------+--------+
-|  1 | gibberish  | Gibberish 🥄 | Delivering your daily dose of gibberish.                       |     2 |            3 |               10 |    1 |          1 |     1 |      1 |
-|  2 | sudoku     | Sudoku       | Delivering your daily dose of gib... sudoku.                   |     1 |            2 |                4 |    1 |          1 |     1 |      1 |
-|  3 | cool-room  | Private room | If you're reading these posts then you're too cool for school. |  NULL |            1 |                4 |    1 |          1 |     1 |      1 |
-|  4 | empty-room | Empty        | We don't go there anymore.                                     |  NULL |            1 |                0 |    1 |          1 |     1 |      1 |
-+----+------------+--------------+----------------------------------------------------------------+-------+--------------+------------------+------+------------+-------+--------+
++----+------------+--------------+----------------------------------------------------------------+-------+--------------+--------------+------------------+------+------------+-------+--------+
+| id | token      | name         | description                                                    | image | active_users | info_updates | message_sequence | read | accessible | write | upload |
++----+------------+--------------+----------------------------------------------------------------+-------+--------------+--------------+------------------+------+------------+-------+--------+
+|  1 | gibberish  | Gibberish 🥄 | Delivering your daily dose of gibberish.                       |     2 |            0 |            3 |               10 |    1 |          1 |     1 |      1 |
+|  2 | sudoku     | Sudoku       | Delivering your daily dose of gib... sudoku.                   |     1 |            0 |            2 |                4 |    1 |          1 |     1 |      1 |
+|  3 | cool-room  | Private room | If you're reading these posts then you're too cool for school. |  NULL |            0 |            1 |                4 |    1 |          1 |     1 |      1 |
+|  4 | empty-room | Empty        | We don't go there anymore.                                     |  NULL |            0 |            1 |                0 |    1 |          1 |     1 |      1 |
++----+------------+--------------+----------------------------------------------------------------+-------+--------------+--------------+------------------+------+------------+-------+--------+
 
 room_import_hacks:
 message_metadata:

@@ -12,6 +12,7 @@ CREATE TABLE rooms (
     created FLOAT NOT NULL DEFAULT (extract(epoch from now())),
     message_sequence BIGINT NOT NULL DEFAULT 0, /* monotonic current top message.seqno value: +1 for each new message, edit or deletion */
     info_updates BIGINT NOT NULL DEFAULT 0, /* +1 for any room metadata update (name/desc/image/pinned/mods) */
+    active_users BIGINT NOT NULL DEFAULT 0,
     read BOOLEAN NOT NULL DEFAULT TRUE, /* Whether users can read by default */
     accessible BOOLEAN NOT NULL DEFAULT TRUE, /* Whether room metadata is accessible when `read` is false */
     write BOOLEAN NOT NULL DEFAULT TRUE, /* Whether users can post by default */
@@ -445,8 +446,8 @@ CREATE INDEX user_permissions_future_room_user ON user_permission_futures(room, 
 -- their user_permissions.banned to TRUE then add a row here with banned = FALSE to schedule the
 -- unban.  (You can also schedule a future *ban* here, but the utility of that is less clear).
 CREATE TABLE user_ban_futures (
-    room INTEGER REFERENCES rooms ON DELETE CASCADE,
-    "user" INTEGER NOT NULL REFERENCES users ON DELETE CASCADE,
+    room BIGINT REFERENCES rooms ON DELETE CASCADE,
+    "user" BIGINT NOT NULL REFERENCES users ON DELETE CASCADE,
     at FLOAT NOT NULL, /* when the change should take effect (unix epoch) */
     banned BOOLEAN NOT NULL /* if true then ban at `at`, if false then unban */
 );
