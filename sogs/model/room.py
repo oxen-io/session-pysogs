@@ -1211,14 +1211,20 @@ class Room:
 
     def get_bans(self):
         """
-        Retrieves all the session IDs banned from this room.  This does not check permissions: i.e.
-        it should only be accessed by moderators/admins.
+        Retrieves all the session IDs specifically banned from this room (not including global
+        bans).  This does not check permissions: i.e.  it should only be accessed by
+        moderators/admins.
         """
 
         return sorted(
             r[0]
             for r in query(
-                "SELECT session_id FROM user_permissions WHERE room = :r AND banned", r=self.id
+                """
+                SELECT session_id
+                FROM user_permission_overrides upo JOIN users ON upo."user" = users.id
+                WHERE room = :r AND upo.banned
+                """,
+                r=self.id,
             )
         )
 
