@@ -10,21 +10,26 @@
     <button class="bg-black text-white dark:bg-sessionGreen dark:text-black rounded px-1 py-1 my-2" > <a href="/">< Back</a></button>
     <pre class="text-sm break-all whitespace-normal">{{room.url}}</pre>
   </div>
-  <div class="w-1/3 md:w-1/6">
-    <img class="aspect-square max-w-full max-h-40" src="invite.png" />
+  <div class="w-1/3 lg:w-auto  ">
+    <img class="aspect-square max-w-full max-h-40 min-h-fit" src="invite.png" />
   </div>
 </div>
 
-{% if show_recent %}
-  <ul id="messages" class="">
-    <li>loading...</li>
-  </ul>
-  <script>
-    window.view_room = "{{room.token}}";
-    window.poll_room_url = "/room/{{room.token}}/messages/recent";
-  </script>
-  <script src="/static/protobuf.min.js"></script>
-  <script src="/static/view_room.js"></script>
-{%endif%}
+<div class="flex">
+  {% if show_recent %}
+    <div id="messages-container" class=" overflow-y-auto border-2 rounded border-sessionGreen h-96 flex-1 my-5" >
+      <ul id="messages" class="m-2">
+        <li>loading...</li>
+      </ul>
+    </div>
+    <script>
+      window.view_room = "{{room.token}}";
+      window.poll_room_url = "/room/{{room.token}}/messages/recent";
+    </script>
+    <script src="/static/protobuf.min.js"></script>
+    <script src="/static/view_room.js"></script>
+  {%endif%}
+</div>
+
 
 {% endblock %}
