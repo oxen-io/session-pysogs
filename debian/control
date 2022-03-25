@@ -5,10 +5,22 @@ Maintainer: Jason Rhinelander <jason@oxen.io>
 Build-Depends:
     debhelper-compat (= 11),
     dh-python,
-    dh-python-pep517,
+    pybuild-plugin-pyproject,
     python3-all,
     python3-setuptools,
-    protobuf-compiler
+    protobuf-compiler,
+    python3-flask,
+    python3-coloredlogs,
+    python3-cryptography,
+    python3-nacl,
+    python3-pil,
+    python3-protobuf,
+    python3-qrencode,
+    python3-oxenmq,
+    python3-oxenc,
+    python3-pyonionreq,
+    python3-sqlalchemy,
+    python3-sqlalchemy-utils
 Standards-Version: 4.1.3
 Homepage: https://oxen.io
 
@@ -29,6 +41,8 @@ Depends:
     python3-oxenmq,
     python3-oxenc,
     python3-pyonionreq,
+    python3-sqlalchemy,
+    python3-sqlalchemy-utils,
     ${python3:Depends},
     ${misc:Depends}
 Recommends:

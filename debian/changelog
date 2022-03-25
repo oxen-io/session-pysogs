@@ -1,3 +1,241 @@
+session-pysogs (0.3.0~rc1-1) sid; urgency=medium
+
+  [ Jason Rhinelander ]
+  * Hide system user from get_all_global_moderators
+  * Use SQLAlchemy for database backend
+  * PostgreSQL support
+  * Remove obsolete rust format config
+  * Fix deprecated call: logger.warn -> logger.warning
+  * DB interface fixes/improvements
+  * Slight cleanup using f"..." strings
+  * Model: API improvements
+  * Add initial pytest test suite
+  * cleanup: transaction fix & optionally use RETURNING
+  * Move engine init to function to help test suite
+  * Test suite: in-memory db workaround for older sqlalchemy
+  * fix wrong distro in debian stable job
+  * Ubuntu impish fix: scalar_one() doesn't work
+  * Split up model.py
+  * Collect route handlers under sogs.routes.*
+  * http codes: constant naming consistency
+  * Add capabilities and capability checking
+  * Add /batch and /sequence support
+  * flake8 fixes
+  * Python 3.8 compatibility fix
+  * Add tests for capabilities, batch, sequence requests
+  * Formatting/flake8 fixes
+  * Add request nonce tracking tables and cleanup code
+  * Add X-SOGS-* request authentication
+  * Fix acceptance of unpadded base64
+  * Test that inner auth headers on batch subreqs get ignored
+  * Room: sort ban list
+  * Make X-SOGS-* auth apply to legacy endpoints
+  * Blake2B: use 42-byte digest, 16-byte personality
+  * Add example script generating X-SOGS auth headers
+  * Add sogs.hashing with nicer blake2b call
+  * Add @user_required decorator for auth-required endpoints
+  * Add global user ban request rejection
+  * Use flask.Blueprint for endpoint grouping
+  * New endpoints: info, polling, fetching, permissions, pinning
+  * postgresql fixes
+  * Make sure migrations happen inside a transaction
+  * Add room posting/editing endpoints
+  * Add sequence message mode for /since/<seqno>
+  * Add support for IN clauses to db.query()
+  * api doc formatting fix
+  * Drop banned request earlier
+  * Implement moderator/admin endpoints
+  * Simplify making signed requests in test suite
+  * api.yaml syntax fixes
+  * Relax test timing
+  * /user/{sid}/ban and .../unban endpoints
+  * Test and fix ban timeouts, and allow global timeouts
+  * Add PUT endpoint to modify room details
+  * Room info fixes
+  * Add @auth.admin_required and .mod_required decorators
+
+  [ Ian Macdonald ]
+  * Add new config Boolean, http_show_index, for room directory display.
+
+  [ Jason Rhinelander ]
+  * Remove unused constant
+  * Fail if schema creation didn't work right
+  * Fix database bugs
+  * Add postgresql support to test suite
+  * Add postgresql ci job
+  * SQLAlchemy 1.3 pg compatibility workaround
+  * Split pg ci job into sid/pg14 and focal/pg12
+  * Pg fix: drop NOT NULL constraint from user ban
+  * v4 onion requests
+  * pgsql upgrade fix
+  * Fix bad sig sizes
+  * Remove obsolete column
+
+  [ Jeff ]
+  * user inbox endpoint
+
+  [ Jason Rhinelander ]
+  * Add blinding example script
+  * Fix auth-example.py and api docs for new blinded sigs
+  * Add SHA-512 to sogs.hasher
+  * X-SOGS-* auth: use ed25519 sigs instead of hashes
+  * Switch to new blinded encryption for test DMs
+  * flake8/black
+  * Drop --sql-tracing from ci jobs
+  * Ensure nacl 1.4.0+; add tests for small subgroups
+  * Move DB migration code out of sogs.db
+  * Cleanup variable usage in messages
+  * Produce a useful warning/error if client feeds us garbage
+  * Fix room permission check
+  * Add 'accessible' permission flag
+  * Improve variable/func names
+  * Add inbox creation to master schema files
+  * Fix non-cascading foreign key in hack tables
+  * Fix migration errors
+  * Fix SQLite inbox expiry to match postgresql (15d instead of 1d)
+  * Fix 0.1.x import
+  * Make sure citext is created in the public schema
+  * Don't create a second transaction in v_0_1_x import
+  * v0.1.x postgresql compatibility fixes
+  * Add whisper_mods to message_metadata view
+  * Add import test scripts and CI pipeline
+  * Accommodate v0.2.0 import over-incrementing message_sequence
+  * Fix bug that made key_convert always overwrite
+  * Add docstring-to-markdown script
+  * Small refactor database & privkey initialization
+  * Move docs from api.yaml to python doc strings
+  * Include `"data": null` for deleted posts.
+  * Add missing module
+  * PG migration fix
+  * Fix bug in message retrieval code
+  * Fix missing default_accessible key in unit test
+  * flake8/formatting fixes
+  * Fix wrong method for a transaction
+  * Fix wrong placeholder in delete all
+  * Reformat output
+  * Add 0.2.0 upgrade test
+  * Add pg upgrade tests
+  * Put sogs test bundles in /sogs-assets/ oxen.rocks directory
+  * Add missing CI dep
+  * Replace tabulate with prettytable
+
+  [ Jeff ]
+  * add outbox endpoints, refactor common logic for in/out boxes into common helper function return all data in inbox/outbox endpoints
+  * restructure docs and dm endpoints
+  * flake8
+
+  [ Jason Rhinelander ]
+  * Put version in sogs/__init__.py; add --version flag to cli
+  * Rejigger CLI database init/upgrades
+  * Make sure no more migrations needed after migrating
+  * Add files.message foreign key and related code
+
+  [ Jeff ]
+  * add endpoints for deleting posts from a room.
+
+  [ Jason Rhinelander ]
+  * Remove user_permission_futures.accessible
+  * Add sqlite -> postgresql conversion script
+  * Test more upgrade paths, split up sqlite/pg
+
+  [ Jeff ]
+  * clean up room viewer routes
+
+  [ Jason Rhinelander ]
+  * Undo /r/ in server_url for now (leave a TODO comment)
+  * Include more details in the DM submission return value
+  * Fix CLI not accepting blinded ids for moderators/admins
+
+  [ Jeff ]
+  * Move conftest.py to root of repo so it can run with pytest-3 wrapper
+  * have ci use pytest-3 wrapper
+  * add file upload endpoints
+  * allow setting image via PUT /room/<token>
+
+  [ Jason Rhinelander ]
+  * Don't require filename
+  * Remove debug
+  * Build the file response manually
+  * Only warn for >= 400 responses
+  * Preserve unicode filenames & fix tests
+  * Make sure we disassociate a room image from an owning post
+  * Fix retrieval of infinite expiry files (like room images)
+
+  [ Jeff ]
+  * revert sql query to not reference non existing column
+
+  [ Jason Rhinelander ]
+  * File upload test fixes
+  * Tests: rename seconds/minutes/etc. to from_now.seconds, etc.
+  * Verify that room image upload updates expiry timestamp
+  * Older python compat fix
+  * Fix broken `.room_id` attribute
+  * Add File.post_id attribute
+  * Finish off test_owned_files test case implementations
+  * Move upload/download API doc from api.yaml
+  * Fix & test cross-posting of uploads
+
+  [ Jeff ]
+  * Add Remove all posts for user from room endpoint
+
+  [ Jason Rhinelander ]
+  * Don't set room to null for expired images
+  * Make all sogs.config timespan variables store seconds
+  * Allow attachment default expiry to be unlimited
+  * Move file tests from test_room_routes -> test_files
+  * Switch bracketed time comparisons to use from_now
+  * Rename 'salt' import alias to 'sodium'
+  * Fix autovivify not being passed through from constructor
+  * Error if attempting to auth with non-blinded ids when blinding required
+  * Add sogs blinded key permission migration
+  * Implement assigning perms to unblinded users
+  * Fix wrong signature in example output
+
+  [ Harris ]
+  * Update the upgrade docs
+
+  [ Jason Rhinelander ]
+  * Parameterize & support submission from auth-example.py
+
+  [ Jeff ]
+  * Fetch room perminssions routes. Basic unit tests and basic functionality.
+
+  [ majestrate ]
+  * Update sogs/model/room.py
+  * Update sogs/model/room.py
+
+  [ Jeff ]
+  * dont use a transaction
+  * * add future permissions * make permissions and future permissions an attribute * add unit tests
+  * respect none value
+  * do not include keys in dict we do not care about like session_id room and user
+  * get rid of banal compaction of permissions, we'll use xz if we want compression later
+  * add function to fix up permissions in routes codepath
+  * clarify docstrin
+
+  [ majestrate ]
+  * dont filter data in model
+
+  [ Jason Rhinelander ]
+  * Tweak addExtraPermInfo to remove some stuff we can omit
+  * Fix permission ban query
+  * Minor postgresql migration fixes
+  * Downgrade mule warnings to debug for 0.3.0
+  * pg-import optimizations
+  * Make future permissions restore room defaults
+  * Add user permission + futures endpoints
+  * Improve batch/sequence docs
+  * Fix LICENSE.txt to appease github license detection
+  * Fix test suite failure edge case
+  * Add optimized view for fetching room moderators
+  * Clean up user_permissions view
+  * Make sure v3 onion requests work for 201-returning endpoints
+  * Cache room active_users
+  * ban_list: slow query fix
+  * Update version to 0.3.0rc1
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Fri, 25 Mar 2022 19:23:01 -0300
+
 session-pysogs (0.2.0-1) sid; urgency=medium
 
   * 0.2.0 release!
