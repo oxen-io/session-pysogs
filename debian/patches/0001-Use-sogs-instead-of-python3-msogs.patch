@@ -10,11 +10,11 @@ reflect that.
  1 file changed, 5 insertions(+), 4 deletions(-)
 
 diff --git a/sogs/__main__.py b/sogs/__main__.py
-index 89e92db..1e2d9cf 100644
+index 3d36f6b..742505a 100644
 --- a/sogs/__main__.py
 +++ b/sogs/__main__.py
-@@ -9,21 +9,22 @@ from . import model
- from . import crypto
+@@ -6,21 +6,22 @@ import sys
+ from . import __version__ as version
  
  ap = AP(
 +    prog="sogs",
@@ -38,5 +38,5 @@ index 89e92db..1e2d9cf 100644
 -    python3 -msogs -L
 +    sogs -L
  
- """,  # noqa: E501
-     formatter_class=RawDescriptionHelpFormatter,
+ A sogs.ini will be loaded from the current directory, if one exists.  You can override this by
+ specifying a path to the config file to load in the SOGS_CONFIG environment variable.
