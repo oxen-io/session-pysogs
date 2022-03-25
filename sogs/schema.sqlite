@@ -12,6 +12,7 @@ CREATE TABLE rooms (
     created FLOAT NOT NULL DEFAULT ((julianday('now') - 2440587.5)*86400.0), /* unix epoch */
     message_sequence INTEGER NOT NULL DEFAULT 0, /* monotonic current top message.seqno value: +1 for each new message, edit or deletion */
     info_updates INTEGER NOT NULL DEFAULT 0, /* +1 for any room metadata update (name/desc/image/pinned/mods) */
+    active_users INTEGER NOT NULL DEFAULT 0,
     read BOOLEAN NOT NULL DEFAULT TRUE, /* Whether users can read by default */
     accessible BOOLEAN NOT NULL DEFAULT TRUE, /* Whether room metadata is accessible when `read` is false */
     write BOOLEAN NOT NULL DEFAULT TRUE, /* Whether users can post by default */
@@ -215,8 +216,7 @@ CREATE TABLE user_permission_overrides (
     PRIMARY KEY(room, user),
     CHECK(NOT (banned AND (moderator OR admin))) /* Mods/admins cannot be banned */
 ) WITHOUT ROWID;
-CREATE INDEX user_permission_overrides_public_mods ON
-    user_permission_overrides(room) WHERE moderator OR admin;
+CREATE INDEX user_permission_overrides_mods ON user_permission_overrides(room) WHERE moderator;
 
 -- Create a trigger to maintain the implication "admin implies moderator"
 CREATE TRIGGER user_perms_update_admins_are_mods AFTER UPDATE OF moderator, admin ON user_permission_overrides
@@ -314,11 +314,12 @@ END;
 
 -- View of permissions; for users with an entry in user_permissions we use those values; for null
 -- values or no user_permissions entry we return the room's default read/write values (and false for
--- the other fields).
+-- the other fields).  This view should only be used for querying individual user permissions as it
+-- will involve a full table scan on `users` if not given a "user" value in the query.
 CREATE VIEW user_permissions AS
 SELECT
     rooms.id AS room,
-    users.id AS user,
+    users.id AS "user",
     users.session_id,
     CASE WHEN users.banned THEN TRUE ELSE COALESCE(user_permission_overrides.banned, FALSE) END AS banned,
     CASE WHEN users.moderator THEN TRUE ELSE COALESCE(user_permission_overrides.read, rooms.read) END AS read,
@@ -328,19 +329,56 @@ SELECT
     CASE WHEN users.moderator THEN TRUE ELSE COALESCE(user_permission_overrides.moderator, FALSE) END AS moderator,
     CASE WHEN users.admin THEN TRUE ELSE COALESCE(user_permission_overrides.admin, FALSE) END AS admin,
     -- room_moderator will be TRUE if the user is specifically listed as a moderator of the room
-    COALESCE(user_permission_overrides.moderator OR user_permission_overrides.admin, FALSE) AS room_moderator,
+    COALESCE(user_permission_overrides.moderator, FALSE) AS room_moderator,
     -- global_moderator will be TRUE if the user is a global moderator/admin (note that this is
     -- *not* exclusive of room_moderator: a moderator/admin could be listed in both).
-    COALESCE(users.moderator OR users.admin, FALSE) as global_moderator,
+    users.moderator as global_moderator,
     -- visible_mod will be TRUE if this mod is a publicly viewable moderator of the room
     CASE
-        WHEN user_permission_overrides.moderator OR user_permission_overrides.admin THEN user_permission_overrides.visible_mod
-        WHEN users.moderator OR users.admin THEN users.visible_mod
+        WHEN user_permission_overrides.moderator THEN user_permission_overrides.visible_mod
+        WHEN users.moderator THEN users.visible_mod
         ELSE FALSE
     END AS visible_mod
 FROM
-    users JOIN rooms LEFT OUTER JOIN user_permission_overrides ON
-        (users.id = user_permission_overrides.user AND rooms.id = user_permission_overrides.room);
+    users CROSS JOIN rooms LEFT OUTER JOIN user_permission_overrides ON
+        (users.id = user_permission_overrides."user" AND rooms.id = user_permission_overrides.room);
+
+-- Used to accesses the moderator list for a room.  This view is considerably faster than querying
+-- the `user_permissions` table for a list of all moderators.
+CREATE VIEW room_moderators AS
+SELECT session_id, mods.* FROM (
+    SELECT
+        room,
+        "user",
+        -- visible_mod gets priority from the per-room row if it exists, so we use 3/2 for the
+        -- per-room value below, 1/0 for the global value, take the max, then look for an odd value
+        -- to give us the visibility bit:
+        MAX(visible_mod) & 1 AS visible_mod,
+        MAX(admin) AS admin,
+        MAX(room_moderator) AS room_moderator,
+        MAX(global_moderator) AS global_moderator
+    FROM (
+        SELECT
+            room,
+            "user",
+            CASE WHEN visible_mod THEN 3 ELSE 2 END AS visible_mod,
+            admin,
+            TRUE AS room_moderator,
+            FALSE AS global_moderator
+        FROM user_permission_overrides WHERE moderator
+
+        UNION ALL
+
+        SELECT
+            rooms.id AS room,
+            users.id as "user",
+            CASE WHEN visible_mod THEN 1 ELSE 0 END AS visible_mod,
+            admin,
+            FALSE as room_moderator,
+            TRUE as global_moderator
+        FROM users CROSS JOIN rooms WHERE moderator
+    ) m GROUP BY "user", room
+) mods JOIN users on "user" = users.id;
 
 -- Scheduled changes to user permissions.  For example, to implement a 2-day timeout you would set
 -- their user_permissions.write to false, then set a `write = true` entry with a +2d timestamp here.

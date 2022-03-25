@@ -374,7 +374,7 @@ def test_polling(client, room, user, user2, mod, admin, global_mod, global_admin
     info_up = r.json['info_updates']
     assert info_up == 2
 
-    basic = {'token': 'test-room', 'active_users': 1, 'read': True, 'write': True, 'upload': True}
+    basic = {'token': 'test-room', 'active_users': 0, 'read': True, 'write': True, 'upload': True}
     details = {
         "token": "test-room",
         "name": "Test room",
@@ -382,7 +382,7 @@ def test_polling(client, room, user, user2, mod, admin, global_mod, global_admin
         "info_updates": 2,
         "message_sequence": 0,
         "created": room.created,
-        "active_users": 1,
+        "active_users": 0,
         "active_users_cutoff": int(sogs.config.ROOM_DEFAULT_ACTIVE_THRESHOLD),
         "moderators": [mod.session_id],
         "admins": [admin.session_id],
@@ -396,6 +396,17 @@ def test_polling(client, room, user, user2, mod, admin, global_mod, global_admin
     assert r.status_code == 200
     assert r.json == basic
 
+    r = sogs_get(client, f"/room/test-room/pollInfo/{info_up}", user)
+    assert r.status_code == 200
+    assert r.json == basic
+
+    # We need to call the cleanup handler to update rooms.active_users
+    from sogs.cleanup import cleanup
+
+    cleanup()
+    basic['active_users'] += 1
+    details['active_users'] += 1
+
     # Make various changes that should each update the room info updates:
 
     # Changing name
@@ -407,17 +418,22 @@ def test_polling(client, room, user, user2, mod, admin, global_mod, global_admin
     assert r.json == {**basic, 'details': details}
 
     info_up += 1
+    cleanup()
     r = sogs_get(client, f"/room/test-room/pollInfo/{info_up}", mod)
-    basic['active_users'] += 1
-    details['active_users'] += 1
     assert r.status_code == 200
     assert r.json == {**basic, 'moderator': True, **defs}
 
-    r = sogs_get(client, f"/room/test-room/pollInfo/{info_up}", admin)
-    assert r.status_code == 200
+    cleanup()
     basic['active_users'] += 1
     details['active_users'] += 1
+
+    r = sogs_get(client, f"/room/test-room/pollInfo/{info_up}", admin)
+    assert r.status_code == 200
     assert r.json == {**basic, 'moderator': True, 'admin': True, **defs}
+
+    cleanup()
+    basic['active_users'] += 1
+    details['active_users'] += 1
 
     # Changing description
     room.description = 'Test suite testing room new desc'
