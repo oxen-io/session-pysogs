@@ -51,8 +51,18 @@ const setup = async () => {
                     {
                         throw Error(err);
                     }
-
+                    
                     const plain = Message.decode(data).dataMessage;
+                    console.log(plain)
+                    // if msg is a reply
+                    if (plain.quote){
+                        originalMsg = document.createElement('p');
+                        originalMsg.classList.add('text-sm', 'italic', 'border-l-2', 'border-sessionGreen', 'pl-2');
+                        authorId = plain.quote.author
+                        authorId = authorId.substr(authorId.length - 8);
+                        originalMsg.appendChild(document.createTextNode("..." + authorId +": "+plain.quote.text));
+                        e.appendChild(originalMsg);
+                    }
                     e.appendChild(document.createTextNode(plain.profile.displayName +": "+plain.body));
                     e.classList.add('bg-gray-300','dark:bg-lightGray', 'w-fit', 'rounded', 'p-2', 'my-2')
                     elem.appendChild(e);
