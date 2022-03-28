@@ -137,7 +137,7 @@ def legacy_serve_room_image(room):
 def legacy_member_count():
     user, room = legacy_check_user_room(accessible=True)
 
-    return jsonify({"status_code": http.OK, "member_count": room.active_users()})
+    return jsonify({"status_code": http.OK, "member_count": room.active_users})
 
 
 @legacy.post("/claim_auth_token")

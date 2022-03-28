@@ -84,6 +84,15 @@ def prune_room_activity():
 
     if count > 0:
         app.logger.info("Prune {} old room activity records".format(count))
+
+    query(
+        """
+        UPDATE rooms SET active_users = (
+            SELECT COUNT(*) FROM room_users WHERE room = rooms.id AND last_active >= :since)
+        """,
+        since=time.time() - config.ROOM_DEFAULT_ACTIVE_THRESHOLD,
+    )
+
     return count
 
 
