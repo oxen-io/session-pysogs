@@ -101,4 +101,7 @@ do_upgrades() {
     # This should exit cleanly to indicate no needed migrations (if it doesn't, i.e. we still
     # require migrations after doing a migration then Something Getting Wrong in migrations).
     python3 -msogs --check-upgrades
+
+    # Run the cleanup job to make sure we have the proper rooms.active_users values
+    python3 -c 'from sogs.cleanup import cleanup; cleanup()'
 }
