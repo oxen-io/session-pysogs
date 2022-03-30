@@ -20,6 +20,14 @@ def migrate(conn, *, check_only):
 
     changed = False
 
+    # Older version of the table edit migration didn't drop the old table:
+    if 'old_room_import_hacks' in db.metadata.tables:
+        logging.warning("Dropping old_room_import_hacks temporary table")
+        if check_only:
+            raise DatabaseUpgradeRequired("old_room_import_hacks")
+        conn.execute('DROP TABLE old_room_import_hacks')
+        changed = True
+
     if 'file_id_hacks' in db.metadata.tables:
         # If the table exists but is empty (i.e. because all the attachments expired) then we should
         # drop it.
@@ -108,6 +116,7 @@ CREATE TABLE room_import_hacks (
                         FROM old_room_import_hacks
                     """
                 )
+                conn.execute('DROP TABLE old_room_import_hacks')
 
                 changed = True
 
