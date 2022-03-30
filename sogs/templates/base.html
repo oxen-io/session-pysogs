@@ -1,5 +1,6 @@
 <html id="html" class="">
   <head>
+    
     <title> sogs </title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="{{ url_for('static', filename='main.css') }}">
@@ -29,15 +30,25 @@
     </script>
   </head>
   <body class="dark:bg-otherGray transition duration-500">
+    
+    {% block modal %}
+    {% endblock %}
+    
     <!-- header / navbar -->
-    <div class="px-5 flex justify-between items-center w-full h-32 
+    <div class="px-2 sm:px-5 flex justify-between items-center w-full max-h-32 
     bg-sessionGreen dark:bg-otherGray border-b-8 border-black dark:border-sessionGreen transition duration-500">
       <div class="text-black dark:text-white text-center">
         <h1 class="text-3xl xs:text-4xl sm:text-5xl">{% block heading %}{% endblock %}</h1>
         <p class="text-lg xs:text-xl sm:text-2xl">Session Open Group Server</p>
       </div>
-      <button id="moonIcon" class='px-1 rounded' onclick="toggleDarkMode()"><img src="{{ url_for('static', filename='moon-d-50-min.png') }}" alt="moon"></button>
-      <button id="sunIcon" style="display: none;" class='px-1 rounded' onclick="toggleDarkMode()"><img src="{{ url_for('static', filename='sun-w-50-min.png') }}" alt="sun"></button>
+      
+      <div class="flex space-x-4 ">
+        {% block invite %}
+        {% endblock %}
+        <button id="moonIcon" class='px-1 rounded' onclick="toggleDarkMode()"><img src="{{ url_for('static', filename='moon-d-50-min.png') }}" alt="moon"></button>
+        <button id="sunIcon" style="display: none;" class='px-1 rounded' onclick="toggleDarkMode()"><img src="{{ url_for('static', filename='sun-w-50-min.png') }}" alt="sun"></button>
+
+      </div>
     </div>
     
     <!-- content/body -->
@@ -72,6 +83,16 @@
           localStorage.theme = 'light'
           setPageTheme();
         }
+      }
+      
+      modal = document.getElementById('modal');
+      function handleOpenModalClick() {
+        modal.style.display = 'block';
+      }
+
+      function handleCloseModalClick() {
+        console.log("CLICKED CLICKED CLICKED CLICKED CLICKED CLICKED CLICKED")
+        modal.style.display = 'none';
       }
 
       setPageTheme();

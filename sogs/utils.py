@@ -15,6 +15,12 @@ def message_body(data: bytes):
     msg.ParseFromString(remove_session_message_padding(data))
     return msg.dataMessage.body
 
+def message_contents(data: bytes):
+    """given a bunch of bytes for a protobuf message return the entire message contents"""
+    msg = protobuf.Content()
+    msg.ParseFromString(remove_session_message_padding(data))
+    return msg
+
 
 def encode_base64(data: bytes):
     return base64.b64encode(data).decode()

@@ -53,7 +53,13 @@ const setup = async () => {
                     }
                     
                     const plain = Message.decode(data).dataMessage;
-                    console.log(plain)
+                    console.log("VERIFY:")
+                    console.log(data)
+                    console.log(Message.decode(data))
+                    console.log(Message.decode(data).dataMessage)
+                    console.log(Message)
+                    console.log(Message.verify)
+                    console.log(Message.verify(data))
                     // if msg is a reply
                     if (plain.quote){
                         originalMsg = document.createElement('p');
@@ -64,7 +70,7 @@ const setup = async () => {
                         e.appendChild(originalMsg);
                     }
                     e.appendChild(document.createTextNode(plain.profile.displayName +": "+plain.body));
-                    e.classList.add('bg-gray-300','dark:bg-lightGray', 'w-fit', 'rounded', 'p-2', 'my-2')
+                    e.classList.add('bg-gray-300','dark:bg-lightGray', 'w-fit', 'rounded-lg', 'p-2', 'my-2')
                     elem.appendChild(e);
 
                 }
