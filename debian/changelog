@@ -1,3 +1,11 @@
+session-pysogs (0.3.0-1) sid; urgency=medium
+
+  * Really fix deletion failure
+  * Fix python3-nacl version dependency
+  * Bump version to 0.3.0 final
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Wed, 30 Mar 2022 18:35:32 -0300
+
 session-pysogs (0.3.0~rc1-1) sid; urgency=medium
 
   [ Jason Rhinelander ]
