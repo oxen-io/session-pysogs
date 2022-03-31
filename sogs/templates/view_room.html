@@ -12,11 +12,11 @@
 </script>
 
 {% block modal %}
-<div id="modal" class="bg-green dark:bg-transparent w-screen h-screen">
-  <div style="display: none;" class="flex flex-col justify-center absolute bg-lightGray rounded-lg w-5/6 max-w-2xl aspect-square left-1/2 translate-x-[-50%] top-1/2 translate-y-[-50%]">
+<div id="modal" style="display: none;" class="bg-black bg-opacity-80 w-screen h-screen absolute">
+  <div onclick="handleCloseModalClick()" class="flex flex-col justify-center absolute bg-lightGray rounded-lg w-5/6 max-w-2xl aspect-square left-1/2 translate-x-[-50%] top-1/2 translate-y-[-50%] ">
     <div class="flex w-full justify-between ">
-      <pre class="dark:text-white break-all whitespace-normal m-2">{{room.url}}</pre>
-      <button onclick="handleCloseModalClick()" class="text-white bold text-center rounded px-1 m-2 "> X</button>
+      <pre class="text-white break-all whitespace-normal m-2">{{room.url}}</pre>
+      <button onclick="handleCloseModalClick()" class="text-white bold text-center rounded px-1 m-2 font-sans"> X</button>
     </div>
     <img class="aspect-square p-2" src="invite.png" />
   </div>
@@ -41,20 +41,11 @@
 
 
 {% block body %}
-<div class="flex justify-center align-center space-x-3">
-  <div class="w-2/3 md:w-5/6">
-    <button class="bg-black text-white dark:bg-sessionGreen dark:text-black rounded px-1 py-1 my-2" > <a href="/">< Back</a></button>
-    <pre class="text-sm break-all whitespace-normal">{{room.url}}</pre>
-    <pre class="text-sm break-all whitespace-normal">{{test}}</pre>
-  </div>
-  <div class="w-1/3 lg:w-auto  ">
-    <img class="aspect-square max-w-full max-h-40 " src="invite.png" />
-  </div>
-</div>
+  <!-- <button class="bg-black text-white dark:bg-sessionGreen dark:text-black rounded px-1 py-1 my-2" > <a href="/">< Back</a></button> -->
 
-<div class="flex">
+<section class="overflow-y-auto text-black dark:text-white flex flex-col-reverse ">
   {% if show_recent %}
-    <div id="messages-container" class=" overflow-y-auto border-2 rounded border-sessionGreen h-96 flex flex-col-reverse my-5 w-full" >
+    <div id="messages-container" class="m-5  flex flex-col-reverse " >
       <ul id="messages" class="m-2">
         <li>loading...</li>
       </ul>
@@ -66,7 +57,9 @@
     <script src="/static/protobuf.min.js"></script>
     <script src="/static/view_room.js"></script>
   {%endif%}
-</div>
+</section>
+
+
 
 
 {% endblock %}
