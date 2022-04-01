@@ -1,5 +1,5 @@
 module.exports = {
-  content: ["./sogs/**/*.{html,js}"],
+  content: ["./sogs/templates/**/*.{html,js}"],
   darkMode: 'class',
   theme: {
     extend: {

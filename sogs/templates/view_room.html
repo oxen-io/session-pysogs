@@ -45,9 +45,11 @@
 
 <section class="overflow-y-auto text-black dark:text-white flex flex-col-reverse items-center ">
   {% if show_recent %}
+
     <div id="messages-container" class=" m-2 flex flex-col-reverse w-[93vw] " >
       <ul id="messages" class="m-2">
-        <li>loading...</li>
+        <li id='messageTemplate' class='bg-gray-300, dark:bg-lightGray, w-fit, rounded-lg, p-2, my-2'>loading...</li>
+        <p id='replyTemplate' class="text-sm, italic, border-l-2, border-sessionGreen, pl-2"></p>
       </ul>
     </div>
     <script>
