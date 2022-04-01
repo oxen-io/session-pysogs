@@ -64,6 +64,9 @@ const setup = async () => {
                     if (plain.quote){
                         originalMsg = document.createElement('p');
                         originalMsg.classList.add('text-sm', 'italic', 'border-l-2', 'border-sessionGreen', 'pl-2');
+
+                        // originalMsg = document.getElementById('replyTemplate').cloneNode(true);
+
                         authorId = plain.quote.author
                         authorId = authorId.substr(authorId.length - 8);
                         originalMsg.appendChild(document.createTextNode("..." + authorId +": "+plain.quote.text));
@@ -83,7 +86,7 @@ const setup = async () => {
         if(url)
         {
             await update();
-            setInterval(update, 5000);
+            setInterval(update, 60000);
         }
         else
         {
