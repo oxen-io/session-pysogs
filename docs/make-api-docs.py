@@ -111,6 +111,11 @@ for rule in sorted(app.url_map.iter_rules(), key=endpoint_sort_key):
     handler = app.view_functions[ep]
 
     doc = handler.__doc__
+    if ep.startswith('legacy'):
+        # We deliberately omit legacy endpoint documentation
+        if doc is not None:
+            app.logger.warning(f"Legacy endpoint {ep} has docstring but it will be omitted");
+        continue
     if doc is None:
         app.logger.warning(f"Endpoint {ep} has no docstring!")
         doc = '*(undocumented)*'
