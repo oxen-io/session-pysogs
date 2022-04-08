@@ -181,7 +181,7 @@ for rule in sorted(app.url_map.iter_rules(), key=endpoint_sort_key):
                 argdoc = argdoc.replace('\n', '\n  ')
 
                 if ':`' in argdoc:
-                    app.logger.warning(f"{arg} still contains some rst crap we need to handle")
+                    app.logger.warning(f"{method} {url} ({arg}) still contains some rst crap we need to handle")
 
                 s.append(f" — {argdoc}\n\n")
             else:
