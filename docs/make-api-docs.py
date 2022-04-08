@@ -95,6 +95,8 @@ def endpoint_sort_key(rule):
 
 for rule in sorted(app.url_map.iter_rules(), key=endpoint_sort_key):
     ep = rule.endpoint
+    if ep == 'static':
+        continue
     methods = [m for m in rule.methods if m not in ('OPTIONS', 'HEAD')]
     if not methods:
         app.logger.warning(f"Endpoint {ep} has no useful method, skipping!")
