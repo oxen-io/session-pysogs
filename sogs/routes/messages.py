@@ -297,8 +297,6 @@ def edit_message(room, msg_id):
     """
     req = request.json
 
-    # TODO: files tracking
-
     room.edit_post(
         g.user,
         msg_id,
