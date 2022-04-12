@@ -24,7 +24,7 @@ Then, build the container image for pysogs-dev as
 ```
 git clone git@github.com:oxen-io/session-pysogs.git
 cd session-pysogs
-sudo docker build . -f docker/DockerFile.dev -t pysogs-dev
+sudo docker build . -f contrib/docker/DockerFile.dev -t pysogs-dev
 ```
 
 Before you can run the container you need to set the base config. You can do so by copying `sogs.ini.sample` to `sogs.ini` and replacing the line with base_url with `base_url = http://localhost`.

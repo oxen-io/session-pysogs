@@ -20,7 +20,7 @@ RUN apt -y install python3-oxenmq python3-oxenc python3-pyonionreq python3-color
 
 
 # just add an alias to the pysogs-start command
-RUN echo '#!/bin/bash\nuwsgi docker/uwsgi-sogs-docker.ini' > /usr/bin/pysogs && \
+RUN echo '#!/bin/bash\nuwsgi contrib/docker/uwsgi-sogs-docker.ini' > /usr/bin/pysogs && \
     chmod +x /usr/bin/pysogs
 
 
