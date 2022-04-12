@@ -2,8 +2,12 @@
 
 The file DockerFile.dev is specifically made for development if you are not running linux.
 It lets you create a docker running linux and the pysogs in it even if you are running Macos or Windows.
-It creates a docker container with the content of this git reposotiry mounted.
+It creates a docker container with the content of this git repository mounted.
 Basically, whatever you edit in this repository will be represented on the docker container. So when you run the container, it will run your code.
+
+# Not for production use
+
+This docker image is strictly for development use and not supported for production use.
 
 ## Build the container image
 

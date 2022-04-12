@@ -6,4 +6,5 @@ docker-compose*
 README.md
 LICENSE
 .vscode
+*.sock
 
