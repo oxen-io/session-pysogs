@@ -64,7 +64,7 @@ def load_config():
 
     logger.info(f"Loading config from {conf_ini}")
     cp = configparser.ConfigParser()
-    cp.read(conf_ini, encoding='utf-8')
+    cp.read(conf_ini)
 
     # Set log level up first (we'll set it again below, mainly to log it if we have debug logging
     # enabled).
