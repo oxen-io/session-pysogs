@@ -1,3 +1,24 @@
+# Docker for pysogs production
+
+Build the docker container image with
+
+```
+sudo docker build . -f contrib/docker/DockerFile -t pysogs-prod
+```
+
+Create docker volumes so we can persist data, config and key from the container to the host between container restarts
+
+```
+sudo docker volume create pysogs-data
+sudo docker volume create pysogs-config
+```
+
+Start the container and mount the volumes with
+
+```
+sudo docker run -i  -p 8080:80  -v pysogs-data:/var/lib/session-open-group-server -v pysogs-config:/etc/sogs/ -v pysogs-config:/etc/sogs/ -t pysogs-prod:latest
+```
+
 # Docker for pysogs development
 
 The file DockerFile.dev is specifically made for development if you are not running linux.
@@ -5,9 +26,7 @@ It lets you create a docker running linux and the pysogs in it even if you are r
 It creates a docker container with the content of this git repository mounted.
 Basically, whatever you edit in this repository will be represented on the docker container. So when you run the container, it will run your code.
 
-# Not for production use
-
-This docker image is strictly for development use and not supported for production use.
+> **WARNING**: Not for production use. This docker image is strictly for development use and not supported for production use.
 
 ## Build the container image
 
@@ -29,8 +48,9 @@ sudo docker build . -f contrib/docker/DockerFile.dev -t pysogs-dev
 
 Before you can run the container you need to set the base config. You can do so by copying `sogs.ini.sample` to `sogs.ini` and replacing the line with base_url with `base_url = http://localhost`.
 
-Next,
-You can run and attach to the container with
+> **WARNING**: Not for production use. This docker image is strictly for development use and not supported for production use.
+
+Next, you can run and attach to the container with
 
 ```
 sudo docker run -i -p 8080:80 -v $PWD:/session-pysogs -t pysogs-dev:latest
