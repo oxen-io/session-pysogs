@@ -1,3 +1,4 @@
-include sogs/schema.sql
+include sogs/schema.sqlite
+include sogs/schema.pgsql
 include sogs/static/*
 include sogs/templates/*
