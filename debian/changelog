@@ -1,3 +1,9 @@
+session-pysogs (0.3.0-2) sid; urgency=medium
+
+  * Fix missing packaged schema files
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Tue, 12 Apr 2022 22:23:04 -0300
+
 session-pysogs (0.3.0-1) sid; urgency=medium
 
   * Really fix deletion failure
