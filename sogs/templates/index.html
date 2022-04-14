@@ -9,14 +9,12 @@ Room Directory
 <section class="overflow-y-auto text-black dark:text-white shrink ">
   <div class="m-5 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-6 justify-items-center gap-y-2 gap-x-2">
     {% for room in rooms %}
-    {% for i in range(8) %}
-      <a class="px-5 flex flex-col justify-center items-center transition duration-500 text-center w-full h-24 
-      border-2 border-sessionGreen bg-gray-300 hover:bg-black hover:text-white md:h-28
-      dark:border-sessionGreen rounded-full dark:bg-otherGray dark:hover:bg-sessionGreen dark:hover:text-black " href="/r/{{room.token}}">
-        <p class=" text-2xl xs:text-3xl sm:text-4xl">{{room.token }}</p>
-        <p class="text-sm xs:text-lg sm:text-xl">{{room.active_users }} Active User{{'s' if room.active_users > 1}}</p>
-      </a>
-    {% endfor %}
+    <a class="px-5 flex flex-col justify-center items-center transition duration-500 text-center w-full h-24 
+    border-2 border-sessionGreen bg-gray-300 hover:bg-black hover:text-white md:h-28
+    dark:border-sessionGreen rounded-full dark:bg-otherGray dark:hover:bg-sessionGreen dark:hover:text-black " href="/r/{{room.token}}">
+      <p class=" text-2xl xs:text-3xl sm:text-4xl">{{room.token }}</p>
+      <p class="text-sm xs:text-lg sm:text-xl">{{room.active_users }} Active User{{'s' if room.active_users > 1}}</p>
+    </a>
     {% endfor %}
   </div>
 </section>
