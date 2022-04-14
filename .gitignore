@@ -12,3 +12,6 @@ node_modules
 
 # This file is for local config which we never want committed:
 /sogs.ini
+
+
+/.vscode/

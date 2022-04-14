@@ -1,4 +1,3 @@
-
 const makebuffer = (raw) => {
     let b = Uint8Array.from(window.atob(raw), (v) => v.charCodeAt(0));
     // This data is padded with a 0x80 delimiter followed by any number of 0x00 bytes, but these are
@@ -50,12 +49,12 @@ const setup = async () => {
 
             if(msgs.length === 0)
             {
-                elem.appendChild(document.createTextNode(`the ${window.view_room} room is empty`));
+                elem.appendChild(document.createTextNode(`the ${window.view_room_token} room is empty`));
             }
 
             for(let msg of msgs.reverse())
             {
-                let e = document.createElement("li")
+                let e = document.createElement("li");
                 try
                 {
                     const data = makebuffer(msg.data);
@@ -64,41 +63,42 @@ const setup = async () => {
                     {
                         throw Error(err);
                     }
-                    
+
                     const plain = Message.decode(data).dataMessage;
 
                     // reply
-                    if (plain.quote){
-                        originalMsg = document.createElement('p');
+                    if (plain.quote)
+                    {
+                        let originalMsg = document.createElement('p');
                         originalMsg.classList.add('text-sm', 'italic', 'border-l-2', 'border-accent', 'pl-2');
 
-                        authorId = plain.quote.author
+                        let authorId = plain.quote.author;
                         authorId = authorId.substr(authorId.length - 8);
                         originalMsg.appendChild(document.createTextNode("..." + authorId +": "+plain.quote.text));
                         e.appendChild(originalMsg);
                     }
-                    
+
                     // message body
                     e.appendChild(document.createTextNode(plain.profile.displayName +": "+plain.body));
                     e.classList.add('bg-gray-300','dark:bg-lightGray', 'w-fit', 'rounded-lg', 'p-2', 'my-2')
                     elem.appendChild(e);
-                    
-                    // attachments
-                    if (plain.attachments.length > 0){
-                        plain.attachments.forEach(attachment => {
-                            console.log(attachment);
-                            attachmentElement = document.createElement('p');
-                            attachmentElement.appendChild(document.createTextNode("📎\xa0\xa0\xa0"));
-                            
-                                                        attachmentLink = document.createElement('a');
-                                                        attachmentLink.appendChild(document.createTextNode((attachment.fileName || attachment.contentType) + ` (${formatBytes(attachment.size)})` ));
-                                                        attachmentLink.href = attachment.url;
-                                                        attachmentLink.download = (attachment.fileName || "");
-                            
-                            attachmentElement.appendChild(attachmentLink);
-                            attachmentElement.classList.add('text-sm', 'italic', 'pl-1');
-                            e.appendChild(attachmentElement);
-                        });
+
+                    // show attachments
+                    for(let attachment of plain.attachments)
+                    {
+
+                        let attachmentElement = document.createElement('p');
+                        attachmentElement.appendChild(document.createTextNode("📎\xa0\xa0\xa0"));
+
+                        let attachmentLink = document.createElement('a');
+                        attachmentLink.appendChild(document.createTextNode((attachment.fileName || attachment.contentType) + ` (${formatBytes(attachment.size)})` ));
+                        attachmentLink.href = attachment.url;
+                        attachmentLink.download = (attachment.fileName || "");
+
+                        attachmentElement.appendChild(attachmentLink);
+                        attachmentElement.classList.add('text-sm', 'italic', 'pl-1');
+                        e.appendChild(attachmentElement);
+
                     }
 
                 }
