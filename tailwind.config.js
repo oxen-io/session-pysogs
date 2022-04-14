@@ -4,9 +4,9 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        sessionGreen: '#00e97b',
+        accent: '#00e97b',
         lightGray: '#585858',
-        otherGray: '#272726'
+        darkGray: '#272726'
       }
     },
     screens : {
