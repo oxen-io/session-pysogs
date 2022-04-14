@@ -1,13 +1,8 @@
 from flask import abort, render_template, Response, Blueprint
 
-from ..utils import message_body, decode_base64, message_contents
 from .. import config, crypto, http
 from ..model.room import get_accessible_rooms
-from ..model.user import User
-from .messages import message_single, messages_recent
 from . import auth, converters  # noqa: F401
-from .. import session_pb2 as protobuf
-import time
 
 
 from io import BytesIO
@@ -41,7 +36,6 @@ def view_room(room):
         "view_room.html",
         room=room,
         show_recent=config.HTTP_SHOW_RECENT,
-        test='yeehaw'
     )
 
 

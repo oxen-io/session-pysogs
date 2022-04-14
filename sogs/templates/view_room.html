@@ -1,15 +1,6 @@
 {% extends "base.html" %}
 
-<script>
-  modal = document.getElementById('modal');
-  function handleOpenModalClick() {
-    modal.style.display = 'block';
-  }
-  
-  function handleCloseModalClick() {
-    modal.style.display = 'none';
-  }
-</script>
+<script src="{{ url_for('static', filename='invite_modal.js') }}"></script>
 
 {% block modal %}
 <div id="modal" style="display: none;" class="bg-black bg-opacity-80 w-screen h-screen absolute">
@@ -47,8 +38,8 @@
 
     <div id="messages-container" class=" m-2 flex flex-col-reverse w-[93vw] " >
       <ul id="messages" class="m-2">
-        <li id='messageTemplate' class='bg-gray-300, dark:bg-lightGray, w-fit, rounded-lg, p-2, my-2'>loading...</li>
-        <p id='replyTemplate' class="text-sm, italic, border-l-2, border-sessionGreen, pl-2"></p>
+        <!-- message styles applied in view_room.js -->
+        <li class='bg-gray-300, dark:bg-lightGray, w-fit, rounded-lg, p-2, my-2'>loading...</li>
       </ul>
     </div>
     <script>

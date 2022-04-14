@@ -66,20 +66,11 @@ const setup = async () => {
                     }
                     
                     const plain = Message.decode(data).dataMessage;
-                    // console.log("VERIFY:")
-                    // console.log(data)
-                    // console.log(Message.decode(data))
-                    // console.log(Message.decode(data).dataMessage)
-                    // console.log(Message)
-                    // console.log(Message.verify)
-                    // console.log(Message.verify(data))
 
                     // reply
                     if (plain.quote){
                         originalMsg = document.createElement('p');
-                        originalMsg.classList.add('text-sm', 'italic', 'border-l-2', 'border-sessionGreen', 'pl-2');
-
-                        // originalMsg = document.getElementById('replyTemplate').cloneNode(true);
+                        originalMsg.classList.add('text-sm', 'italic', 'border-l-2', 'border-accent', 'pl-2');
 
                         authorId = plain.quote.author
                         authorId = authorId.substr(authorId.length - 8);
