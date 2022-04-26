@@ -59,7 +59,7 @@ sudo docker run -i -p 8080:80 -v $PWD:/session-pysogs -t pysogs-dev:latest
 To start the pysogs once you have a shell in the container do:
 
 ```
-pysogs
+start-sogs-uwsgi
 ```
 
 To create a room once you have a shell inside the container do
@@ -67,5 +67,9 @@ To create a room once you have a shell inside the container do
 ```
 python3 -msogs --add-room fishing --name "Fish Talk"
 ```
+
+To play with Session and your own development pysogs you need to host you pysogs on a publicly accessible ip.
+So this docker needs to be deployed on a server of some sort. Then, you can open the folder remotely (with the ssh vscode extension) or edit the files directly over ssh.
+Using the vscode extension, you can also have a shell opened on the remote host, and so be able to quickly stop and restart the `start-sogs-uwsgi` command inside the container on code changes.
 
 More doc at https://github.com/oxen-io/session-pysogs/blob/dev/administration.md#sogs-administration
