@@ -53,7 +53,7 @@ const setup = async () => {
                     }
 
                     const plain = Message.decode(data).dataMessage;
-                    e.appendChild(document.createTextNode(plain.profile.displayName +": "+plain.body));
+                    e.appendChild(document.createTextNode(plain.profile.displayName +": "+plain.body.replace(/@05[\da-f]{64}/g, '@hidden')));
                     elem.appendChild(e);
 
                 }
