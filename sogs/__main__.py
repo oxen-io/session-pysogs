@@ -169,7 +169,7 @@ def print_room(room: Room):
     msgs_size /= 1_000_000
     files_size /= 1_000_000
 
-    active = [room.active_users_last(x * 86400) for x in (7, 14, 30)]
+    active = [room.active_users_last(x * 86400) for x in (1, 7, 14, 30)]
     m, a, hm, ha = room.get_all_moderators()
     admins = len(a) + len(ha)
     mods = len(m) + len(hm)
@@ -183,7 +183,7 @@ Description: {room.description}
 URL: {config.URL_BASE}/{room.token}?public_key={crypto.server_pubkey_hex}
 Messages: {msgs} ({msgs_size:.1f} MB)
 Attachments: {files} ({files_size:.1f} MB)
-Active users: {active[0]} (7d), {active[1]} (14d) {active[2]} (30d)
+Active users: {active[0]} (1d), {active[1]} (7d), {active[2]} (14d), {active[3]} (30d)
 Moderators: {admins} admins ({len(ha)} hidden), {mods} moderators ({len(hm)} hidden)""",
         end='',
     )
