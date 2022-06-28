@@ -23,6 +23,7 @@ export PYTHONPATH=.
 rm -rf rooms database.db files key_x25519 x25519_{public,private}_key.pem
 
 echo -e "[log]\nlevel = DEBUG" >sogs.ini
+echo -e "[rooms]\nactive_prune_threshold = 365000" >>sogs.ini
 if [ -n "$SOGS_PGSQL" ]; then
     echo -e "[db]\nurl = $SOGS_PGSQL" >>sogs.ini
     for table in rooms users messages message_history pinned_messages files room_users \
@@ -101,7 +102,4 @@ do_upgrades() {
     # This should exit cleanly to indicate no needed migrations (if it doesn't, i.e. we still
     # require migrations after doing a migration then Something Getting Wrong in migrations).
     python3 -msogs --check-upgrades
-
-    # Run the cleanup job to make sure we have the proper rooms.active_users values
-    python3 -c 'from sogs.cleanup import cleanup; cleanup()'
 }
