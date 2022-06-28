@@ -17,11 +17,6 @@ def get_caps():
     Return the list of server features/capabilities.  Optionally takes a required= parameter
     containing a comma-separated list of capabilites; if any are not satisfied we return a 412
     (Precondition Failed) response with missing requested capabilities in the `missing` key.
-
-    E.g.
-    `GET /capabilities` could return `{"capabilities": ["sogs", "batch"]}`
-    `GET /capabilities?required=magic,batch` could return:
-        `{"capabilities": ["sogs", "batch"], "missing": ["magic"]}`
     """
 
     res = {'capabilities': sorted(capabilities)}
@@ -38,26 +33,14 @@ def get_caps():
 
 
 batch_args = """
-    Each individual batch subrequest is a list of dicts containing keys:
-
-    - `method` is required and must be one of GET/DELETE/POST/PUT
-    - `path` is required and must begin with a /
-    - for POST/PUT requests there must be exactly one of:
-        - a json value under the `json` key
-        - a base64-encoded body under the `b64` key
-        - a raw bytes value under the `bytes` key (not recommended for json)
-    - `headers` may be provided, and must be a dict of k/v string pairs if provided.
-
-    If non-conforming data is encountered then the request is terminated with a Bad Request error
-    code.
 """
 
 
 def parse_batch_request(req):
-    f"""
+    """
     Checks a batch request dict for the required fields.
 
-    {batch_args}
+    See batch() body for arg details.
 
     Returns (method, path, headers, json, body).  `headers` will be a dict (empty if no headers were
     provided); `json`/`body` will be None for GET/DELETE requests; `json` will simply be the `json`
@@ -134,7 +117,18 @@ def batch(_sequential=False):
 
     # Body
 
-    {batch_args}
+    Each individual batch subrequest is a list of dicts containing keys:
+
+    - `method` is required and must be one of GET/DELETE/POST/PUT
+    - `path` is required and must begin with a /
+    - for POST/PUT requests there must be exactly one of:
+        - a json value under the `json` key
+        - a base64-encoded body under the `b64` key
+        - a raw bytes value under the `bytes` key (not recommended for json)
+    - `headers` may be provided, and must be a dict of k/v string pairs if provided.
+
+    If non-conforming data is encountered then the request is terminated with a Bad Request error
+    code.
 
     # Return value
 

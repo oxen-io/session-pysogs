@@ -9,16 +9,10 @@ from flask import abort, jsonify, g, Blueprint, request
 messages = Blueprint('messages', __name__)
 
 
-_query_limit_doc = """# Query Parameters
-
-The request takes an optional `limit` query parameter indicating the number of messages to
-return (up to 256).  If omitted, 100 messages are returned."""
-
-
 @messages.get("/room/<Room:room>/messages/since/<int:seqno>")
 @auth.read_required
 def messages_since(room, seqno):
-    f"""
+    """
     Retrieves message *updates* from a room.  This is the main message polling endpoint in SOGS.
 
     This endpoint retrieves new, edited, and deleted messages posted to this room since the given
@@ -34,7 +28,10 @@ def messages_since(room, seqno):
       retrieve from the beginning of the room's message history use a value of 0 (the first room
       post will always be >= 1).
 
-    {_query_limit_doc}
+    # Query Parameters
+
+    The request takes an optional `limit` query parameter indicating the number of messages to
+    return (up to 256).  If omitted, 100 messages are returned.
 
     # Return value
 
@@ -63,7 +60,7 @@ def messages_since(room, seqno):
 @messages.get("/room/<Room:room>/messages/before/<int:msg_id>")
 @auth.read_required
 def messages_before(room, msg_id):
-    f"""
+    """
     Retrieves messages from the room preceding a given id.
 
     This endpoint is intended to be used with `.../recent` to allow a client to retrieve the most
@@ -77,7 +74,10 @@ def messages_before(room, msg_id):
 
     - `msg_id` a numeric integer ID; the messages immediately *before* this ID are returned.
 
-    {_query_limit_doc}
+    # Query Parameters
+
+    The request takes an optional `limit` query parameter indicating the number of messages to
+    return (up to 256).  If omitted, 100 messages are returned.
 
     # Return value
 
@@ -100,7 +100,7 @@ def messages_before(room, msg_id):
 @messages.get("/room/<Room:room>/messages/recent")
 @auth.read_required
 def messages_recent(room):
-    f"""
+    """
     Retrieves recent messages posted to this room.
 
     Returns the most recent `limit` messages (100 if no limit is given).  This only returns extant
@@ -110,7 +110,10 @@ def messages_recent(room):
 
     # URL Parameters
 
-    {_query_limit_doc}
+    # Query Parameters
+
+    The request takes an optional `limit` query parameter indicating the number of messages to
+    return (up to 256).  If omitted, 100 messages are returned.
 
     # Return value
 
@@ -293,8 +296,6 @@ def edit_message(room, msg_id):
       they are not the original author or no longer have posting permission).
     """
     req = request.json
-
-    # TODO: files tracking
 
     room.edit_post(
         g.user,
