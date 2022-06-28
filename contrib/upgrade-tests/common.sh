@@ -23,6 +23,7 @@ export PYTHONPATH=.
 rm -rf rooms database.db files key_x25519 x25519_{public,private}_key.pem
 
 echo -e "[log]\nlevel = DEBUG" >sogs.ini
+echo -e "[rooms]\nactive_prune_threshold = 365000" >>sogs.ini
 if [ -n "$SOGS_PGSQL" ]; then
     echo -e "[db]\nurl = $SOGS_PGSQL" >>sogs.ini
     for table in rooms users messages message_history pinned_messages files room_users \
