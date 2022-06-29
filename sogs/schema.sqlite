@@ -32,7 +32,7 @@ END;
 CREATE TABLE messages (
     id INTEGER NOT NULL PRIMARY KEY,
     room INTEGER NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
-    user INTEGER NOT NULL REFERENCES users(id),
+    "user" INTEGER NOT NULL REFERENCES users(id),
     posted FLOAT NOT NULL DEFAULT ((julianday('now') - 2440587.5)*86400.0), /* unix epoch */
     edited FLOAT,
     seqno INTEGER NOT NULL DEFAULT 0, /* set to the room's `message_sequence` counter when posted/edited/deleted */
@@ -170,7 +170,7 @@ CREATE TABLE needs_blinding (
 CREATE VIEW message_details AS
 SELECT messages.*, uposter.session_id, uwhisper.session_id AS whisper_to
     FROM messages
-        JOIN users uposter ON messages.user = uposter.id
+        JOIN users uposter ON messages."user" = uposter.id
         LEFT JOIN users uwhisper ON messages.whisper = uwhisper.id;
 
 -- Delete trigger on message_details which lets us use a DELETE that gets transformed into an UPDATE
@@ -185,7 +185,7 @@ END;
 -- View of `messages` that is useful for manually inspecting table contents by only returning the
 -- length (rather than raw bytes) for data/signature.
 CREATE VIEW message_metadata AS
-SELECT id, room, user, session_id, posted, edited, seqno, filtered, whisper_to, whisper_mods,
+SELECT id, room, "user", session_id, posted, edited, seqno, filtered, whisper_to, whisper_mods,
         length(data) AS data_unpadded, data_size, length(signature) as signature_length
     FROM message_details;
 
@@ -193,9 +193,9 @@ SELECT id, room, user, session_id, posted, edited, seqno, filtered, whisper_to, 
 
 CREATE TABLE room_users (
     room INTEGER NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
-    user INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    "user" INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     last_active FLOAT NOT NULL DEFAULT ((julianday('now') - 2440587.5)*86400.0), /* unix epoch */
-    PRIMARY KEY(room, user)
+    PRIMARY KEY(room, "user")
 ) WITHOUT ROWID;
 CREATE INDEX room_users_room_activity ON room_users(room, last_active);
 CREATE INDEX room_users_activity ON room_users(last_active);
@@ -204,7 +204,7 @@ CREATE INDEX room_users_activity ON room_users(last_active);
 -- default".
 CREATE TABLE user_permission_overrides (
     room INTEGER NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
-    user INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    "user" INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     banned BOOLEAN NOT NULL DEFAULT FALSE, /* If true the user is banned */
     read BOOLEAN, /* If false the user may not fetch messages; null uses room default; true allows reading */
     accessible BOOLEAN, /* When read is false this controls whether room metadata is still visible */
@@ -213,7 +213,7 @@ CREATE TABLE user_permission_overrides (
     moderator BOOLEAN NOT NULL DEFAULT FALSE, /* If true the user may moderate non-moderators */
     admin BOOLEAN NOT NULL DEFAULT FALSE, /* If true the user may moderate anyone (including other moderators and admins) */
     visible_mod BOOLEAN NOT NULL DEFAULT TRUE, /* If true then this user (if a moderator) is included in the list of a room's public moderators */
-    PRIMARY KEY(room, user),
+    PRIMARY KEY(room, "user"),
     CHECK(NOT (banned AND (moderator OR admin))) /* Mods/admins cannot be banned */
 ) WITHOUT ROWID;
 CREATE INDEX user_permission_overrides_mods ON user_permission_overrides(room) WHERE moderator;
@@ -222,12 +222,12 @@ CREATE INDEX user_permission_overrides_mods ON user_permission_overrides(room) W
 CREATE TRIGGER user_perms_update_admins_are_mods AFTER UPDATE OF moderator, admin ON user_permission_overrides
 FOR EACH ROW WHEN NEW.admin AND NOT NEW.moderator
 BEGIN
-    UPDATE user_permission_overrides SET moderator = TRUE WHERE room = NEW.room AND user = NEW.user;
+    UPDATE user_permission_overrides SET moderator = TRUE WHERE room = NEW.room AND "user" = NEW."user";
 END;
 CREATE TRIGGER user_perms_insert_admins_are_mods AFTER INSERT ON user_permission_overrides
 FOR EACH ROW WHEN NEW.admin AND NOT NEW.moderator
 BEGIN
-    UPDATE user_permission_overrides SET moderator = TRUE WHERE room = NEW.room AND user = NEW.user;
+    UPDATE user_permission_overrides SET moderator = TRUE WHERE room = NEW.room AND "user" = NEW."user";
 END;
 
 -- Trigger that removes useless empty permission override rows (e.g. after a ban gets removed, and
@@ -236,14 +236,14 @@ CREATE TRIGGER user_perms_empty_cleanup AFTER UPDATE ON user_permission_override
 FOR EACH ROW WHEN NOT (NEW.banned OR NEW.moderator OR NEW.admin)
     AND COALESCE(NEW.accessible, NEW.read, NEW.write, NEW.upload) IS NULL
 BEGIN
-    DELETE from user_permission_overrides WHERE room = NEW.room AND user = NEW.user;
+    DELETE from user_permission_overrides WHERE room = NEW.room AND "user" = NEW."user";
 END;
 
 -- Triggers than remove a user from `room_users` when they are banned from the room
 CREATE TRIGGER room_users_remove_banned AFTER UPDATE OF banned ON user_permission_overrides
 FOR EACH ROW WHEN NEW.banned
 BEGIN
-    DELETE FROM room_users WHERE room = NEW.room AND user = NEW.user;
+    DELETE FROM room_users WHERE room = NEW.room AND "user" = NEW."user";
 END;
 
 
@@ -386,7 +386,7 @@ SELECT session_id, mods.* FROM (
 -- applied after a delay.
 CREATE TABLE user_permission_futures (
     room INTEGER NOT NULL REFERENCES rooms ON DELETE CASCADE,
-    user INTEGER NOT NULL REFERENCES users ON DELETE CASCADE,
+    "user" INTEGER NOT NULL REFERENCES users ON DELETE CASCADE,
     at FLOAT NOT NULL, /* when the change should take effect (unix epoch) */
     read BOOLEAN, /* Set this value @ at, if non-null */
     write BOOLEAN, /* Set this value @ at, if non-null */
@@ -400,21 +400,23 @@ CREATE INDEX user_permission_futures_room_user ON user_permission_futures(room, 
 -- unban.  (You can also schedule a future *ban* here, but the utility of that is less clear).
 CREATE TABLE user_ban_futures (
     room INTEGER REFERENCES rooms ON DELETE CASCADE,
-    user INTEGER NOT NULL REFERENCES users ON DELETE CASCADE,
+    "user" INTEGER NOT NULL REFERENCES users ON DELETE CASCADE,
     at FLOAT NOT NULL, /* when the change should take effect (unix epoch) */
     banned BOOLEAN NOT NULL /* if true then ban at `at`, if false then unban */
 );
 CREATE INDEX user_ban_futures_at ON user_ban_futures(at);
-CREATE INDEX user_ban_futures_room_user ON user_ban_futures(room, user);
+CREATE INDEX user_ban_futures_room_user ON user_ban_futures(room, "user");
 
 
 -- Nonce tracking to prohibit request signature nonce reuse (thus prevent replay attacks)
 CREATE TABLE user_request_nonces (
-    user INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    "user" INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     nonce BLOB NOT NULL UNIQUE,
     expiry FLOAT NOT NULL DEFAULT ((julianday('now') - 2440587.5 + 1.0)*86400.0) /* now + 24 hours */
 );
 CREATE INDEX user_request_nonces_expiry ON user_request_nonces(expiry);
+
+
 
 CREATE TABLE inbox (
     id INTEGER PRIMARY KEY,
@@ -425,5 +427,6 @@ CREATE TABLE inbox (
     expiry FLOAT DEFAULT ((julianday('now') - 2440587.5 + 15.0)*86400.0) /* now + 15 days */
 );
 CREATE INDEX inbox_recipient ON inbox(recipient);
+
 
 COMMIT;
