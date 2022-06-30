@@ -36,7 +36,9 @@ CREATE TABLE messages (
     "user" BIGINT NOT NULL, /* foreign key to users(id) */
     posted FLOAT NOT NULL DEFAULT (extract(epoch from now())),
     edited FLOAT,
-    seqno BIGINT NOT NULL DEFAULT 0, /* set to the room's `message_seqno` counter when posted/edited/deleted */
+    seqno BIGINT NOT NULL DEFAULT 0, /* set to the room's `message_sequence` counter when any of the individual seqno values are updated */
+    seqno_data BIGINT NOT NULL DEFAULT 0, /* updated when `data` changes (i.e. edits, deletions) */
+    seqno_reactions BIGINT NOT NULL DEFAULT 0, /* updated when reactions are added/removed */
     data BYTEA, /* Actual message content, not including trailing padding; set to null to delete a message */
     data_size BIGINT, /* The message size, including trailing padding (needed because the signature is over the padded data) */
     signature BYTEA, /* Signature of `data` by `public_key`; set to null when deleting a message */
@@ -57,12 +59,21 @@ CREATE TABLE message_history (
 CREATE INDEX message_history_message ON message_history(message);
 CREATE INDEX message_history_replaced ON message_history(replaced);
 
--- Trigger to increment a room's `message_sequence` counter and assign it to the messages `seqno`
+CREATE OR REPLACE FUNCTION increment_room_sequence(room_id BIGINT)
+RETURNS BIGINT LANGUAGE PLPGSQL AS $$
+DECLARE
+    new_seqno BIGINT;
+BEGIN
+    UPDATE rooms SET message_sequence = message_sequence + 1 WHERE id = room_id
+        RETURNING message_sequence INTO STRICT new_seqno;
+    RETURN new_seqno;
+END;$$;
+
+-- Trigger to increment a room's `message_sequence` counter and assign it to the message's `seqno`
 -- field for new messages.
 CREATE OR REPLACE FUNCTION trigger_messages_insert_counter()
 RETURNS TRIGGER LANGUAGE PLPGSQL AS $$BEGIN
-    UPDATE rooms SET message_sequence = message_sequence + 1 WHERE id = NEW.room;
-    UPDATE messages SET seqno = (SELECT message_sequence FROM rooms WHERE id = NEW.room) WHERE id = NEW.id;
+    UPDATE messages SET seqno_data = increment_room_sequence(NEW.room) WHERE id = NEW.id;
     RETURN NULL;
 END;$$;
 CREATE TRIGGER messages_insert_counter AFTER INSERT ON messages
@@ -71,14 +82,13 @@ FOR EACH ROW EXECUTE PROCEDURE trigger_messages_insert_counter();
 -- Trigger to do various tasks needed when a message is edited/deleted:
 -- * record the old value into message_history
 -- * update the room's `message_sequence` counter (so that clients can learn about the update)
--- * update the message's `seqno` value to that new counter
+-- * update the message's `seqno_data` value to that new counter
 -- * update the message's `edit` timestamp
 CREATE OR REPLACE FUNCTION trigger_messages_insert_history()
 RETURNS TRIGGER LANGUAGE PLPGSQL AS $$BEGIN
     INSERT INTO message_history (message, data, signature) VALUES (NEW.id, OLD.data, OLD.signature);
-    UPDATE rooms SET message_sequence = message_sequence + 1 WHERE id = NEW.room;
     UPDATE messages SET
-        seqno = (SELECT message_sequence FROM rooms WHERE id = NEW.room),
+        seqno_data = increment_room_sequence(NEW.room),
         edited = (extract(epoch from now()))
     WHERE id = NEW.id;
     RETURN NULL;
@@ -86,6 +96,18 @@ END;$$;
 CREATE TRIGGER messages_insert_history AFTER UPDATE OF data ON messages
 FOR EACH ROW WHEN (NEW.data IS DISTINCT FROM OLD.data)
 EXECUTE PROCEDURE trigger_messages_insert_history();
+
+-- Trigger to update seqno when any of the seqno_* indicators is updated, so that updating can
+-- update just the seqno_whatever and have the master seqno get updated automatically.
+CREATE OR REPLACE FUNCTION trigger_messages_seqno()
+RETURNS TRIGGER LANGUAGE PLPGSQL AS $$BEGIN
+    UPDATE messages SET seqno = GREATEST(seqno_data, seqno_reactions)
+        WHERE id = NEW.id;
+    RETURN NULL;
+END;$$;
+CREATE TRIGGER messages_seqno_updater
+AFTER INSERT OR UPDATE OF seqno_data, seqno_reactions ON messages
+FOR EACH ROW EXECUTE PROCEDURE trigger_messages_seqno();
 
 
 
@@ -184,6 +206,49 @@ CREATE TABLE needs_blinding (
 );
 
 
+-- Reactions
+CREATE TABLE reactions (
+    message BIGINT NOT NULL REFERENCES messages ON DELETE CASCADE,
+    reaction TEXT NOT NULL,
+    "user" BIGINT NOT NULL REFERENCES users ON DELETE CASCADE,
+    at FLOAT NOT NULL DEFAULT (extract(epoch from now())),
+    PRIMARY KEY(message, reaction, "user")
+);
+CREATE INDEX reactions_at ON reactions(message, reaction, at);
+CREATE INDEX reactions_user ON reactions("user", message);
+
+-- View used to select the first n reactors (using `WHERE _order <= 5`).
+CREATE VIEW first_reactors AS
+SELECT *, rank() OVER (PARTITION BY message, reaction ORDER BY at) AS _order
+FROM reactions;
+
+
+CREATE OR REPLACE FUNCTION trigger_reactions_seqno_insert()
+RETURNS TRIGGER LANGUAGE PLPGSQL AS $$
+DECLARE
+    room_id BIGINT;
+BEGIN
+    SELECT room INTO STRICT room_id FROM messages WHERE id = NEW.message;
+    UPDATE messages SET seqno_reactions = increment_room_sequence(room_id)
+        WHERE id = NEW.message;
+    RETURN NULL;
+END;$$;
+CREATE OR REPLACE FUNCTION trigger_reactions_seqno_delete()
+RETURNS TRIGGER LANGUAGE PLPGSQL AS $$
+DECLARE
+    room_id BIGINT;
+BEGIN
+    SELECT room INTO STRICT room_id FROM messages WHERE id = OLD.message;
+    UPDATE messages SET seqno_reactions = increment_room_sequence(room_id)
+        WHERE id = OLD.message;
+    RETURN NULL;
+END;$$;
+CREATE TRIGGER reactions_insert_seqno AFTER INSERT OR UPDATE ON reactions
+FOR EACH ROW EXECUTE PROCEDURE trigger_reactions_seqno_insert();
+CREATE TRIGGER reactions_delete_seqno AFTER DELETE OR UPDATE ON reactions
+FOR EACH ROW EXECUTE PROCEDURE trigger_reactions_seqno_delete();
+
+
 -- Effectively the same as `messages` except that it also includes the `session_id` from the users
 -- table of the user who posted it, and the session id of the whisper recipient (as `whisper_to`) if
 -- a directed whisper.
@@ -200,6 +265,7 @@ RETURNS TRIGGER LANGUAGE PLPGSQL AS $$BEGIN
     IF OLD.data IS NOT NULL THEN
         UPDATE messages SET data = NULL, data_size = NULL, signature = NULL
             WHERE id = OLD.id;
+        DELETE FROM reactions WHERE message = OLD.id;
     END IF;
     RETURN NULL;
 END;$$;
@@ -210,7 +276,8 @@ EXECUTE PROCEDURE trigger_message_details_deleter();
 -- View of `messages` that is useful for manually inspecting table contents by only returning the
 -- length (rather than raw bytes) for data/signature.
 CREATE VIEW message_metadata AS
-SELECT id, room, "user", session_id, posted, edited, seqno, filtered, whisper_to, whisper_mods,
+SELECT id, room, "user", session_id, posted, edited, seqno, seqno_data, seqno_reactions,
+        filtered, whisper_to, whisper_mods,
         length(data) AS data_unpadded, data_size, length(signature) as signature_length
     FROM message_details;
 

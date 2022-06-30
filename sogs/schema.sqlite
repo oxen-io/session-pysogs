@@ -35,7 +35,9 @@ CREATE TABLE messages (
     "user" INTEGER NOT NULL REFERENCES users(id),
     posted FLOAT NOT NULL DEFAULT ((julianday('now') - 2440587.5)*86400.0), /* unix epoch */
     edited FLOAT,
-    seqno INTEGER NOT NULL DEFAULT 0, /* set to the room's `message_sequence` counter when posted/edited/deleted */
+    seqno INTEGER NOT NULL DEFAULT 0, /* set to the room's `message_sequence` counter when any of the individual seqno values are updated */
+    seqno_data INTEGER NOT NULL DEFAULT 0, /* updated when `data` changes (i.e. edits, deletions) */
+    seqno_reactions INTEGER NOT NULL DEFAULT 0, /* updated when reactions are added/removed */
     data BLOB, /* Actual message content, not including trailing padding; set to null to delete a message */
     data_size INTEGER, /* The message size, including trailing padding (needed because the signature is over the padded data) */
     signature BLOB, /* Signature of `data` by `public_key`; set to null when deleting a message */
@@ -62,13 +64,13 @@ CREATE TRIGGER messages_insert_counter AFTER INSERT ON messages
 FOR EACH ROW
 BEGIN
     UPDATE rooms SET message_sequence = message_sequence + 1 WHERE id = NEW.room;
-    UPDATE messages SET seqno = (SELECT message_sequence FROM rooms WHERE id = NEW.room) WHERE id = NEW.id;
+    UPDATE messages SET seqno_data = (SELECT message_sequence FROM rooms WHERE id = NEW.room) WHERE id = NEW.id;
 END;
 
 -- Trigger to do various tasks needed when a message is edited/deleted:
 -- * record the old value into message_history
 -- * update the room's `message_sequence` counter (so that clients can learn about the update)
--- * update the message's `sequence` value to that new counter
+-- * update the message's `seqno_data` value to that new counter
 -- * update the message's `edit` timestamp
 CREATE TRIGGER messages_insert_history AFTER UPDATE OF data ON messages
 FOR EACH ROW WHEN NEW.data IS NOT OLD.data
@@ -76,10 +78,25 @@ BEGIN
     INSERT INTO message_history (message, data, signature) VALUES (NEW.id, OLD.data, OLD.signature);
     UPDATE rooms SET message_sequence = message_sequence + 1 WHERE id = NEW.room;
     UPDATE messages SET
-        seqno = (SELECT message_sequence FROM rooms WHERE id = NEW.room),
+        seqno_data = (SELECT message_sequence FROM rooms WHERE id = NEW.room),
         edited = (julianday('now') - 2440587.5)*86400.0
     WHERE id = NEW.id;
 END;
+
+-- Trigger to update seqno when any of the seqno_* indicators is updated, so that updating can
+-- update just the seqno_whatever and have the master seqno get updated automatically.
+CREATE TRIGGER messages_seqno_updater_ins AFTER INSERT ON messages
+FOR EACH ROW
+BEGIN
+    UPDATE messages SET seqno = max(seqno_data, seqno_reactions) WHERE id = NEW.id;
+END;
+CREATE TRIGGER messages_seqno_updater_upd AFTER UPDATE OF seqno_data, seqno_reactions ON messages
+FOR EACH ROW
+BEGIN
+    UPDATE messages SET seqno = max(seqno_data, seqno_reactions) WHERE id = NEW.id;
+END;
+
+
 
 CREATE TABLE pinned_messages (
     room INTEGER NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
@@ -164,6 +181,65 @@ CREATE TABLE needs_blinding (
 
 
 
+-- Reactions
+CREATE TABLE reactions (
+    message INTEGER NOT NULL REFERENCES messages ON DELETE CASCADE,
+    reaction TEXT NOT NULL,
+    "user" INTEGER NOT NULL REFERENCES users ON DELETE CASCADE,
+    at FLOAT NOT NULL DEFAULT ((julianday('now') - 2440587.5)*86400.0), /* unix epoch */
+    PRIMARY KEY(message, reaction, "user")
+);
+CREATE INDEX reactions_at ON reactions(message, reaction, at);
+CREATE INDEX reactions_user ON reactions("user", message);
+
+-- View used to select the first n reactors (using `WHERE _order <= 5`).
+CREATE VIEW first_reactors AS
+SELECT *, rank() OVER (PARTITION BY message, reaction ORDER BY at) AS _order
+FROM reactions;
+
+CREATE TRIGGER reactions_insert_seqno AFTER INSERT ON reactions
+FOR EACH ROW
+BEGIN
+    UPDATE rooms SET message_sequence = message_sequence + 1
+        WHERE id = (SELECT room FROM messages WHERE id = NEW.message);
+    UPDATE messages SET seqno_reactions = (
+        SELECT message_sequence FROM rooms JOIN messages ON messages.room = rooms.id
+            WHERE messages.id = NEW.message)
+        WHERE id = NEW.message;
+END;
+CREATE TRIGGER reactions_update_seqno AFTER UPDATE ON reactions
+FOR EACH ROW
+BEGIN
+    UPDATE rooms SET message_sequence = message_sequence + 1
+        WHERE id = (SELECT room FROM messages WHERE id = NEW.message);
+    UPDATE messages SET seqno_reactions = (
+        SELECT message_sequence FROM rooms JOIN messages ON messages.room = rooms.id
+            WHERE messages.id = NEW.message)
+        WHERE id = NEW.message;
+END;
+CREATE TRIGGER reactions_update_seqno_msg AFTER UPDATE ON reactions
+FOR EACH ROW WHEN NEW.message != OLD.message
+BEGIN
+    UPDATE rooms SET message_sequence = message_sequence + 1
+        WHERE id = (SELECT room FROM messages WHERE id = OLD.message);
+    UPDATE messages SET seqno_reactions = (
+        SELECT message_sequence FROM rooms JOIN messages ON messages.room = rooms.id
+            WHERE messages.id = OLD.message)
+        WHERE id = OLD.message;
+END;
+CREATE TRIGGER reactions_delete_seqno AFTER DELETE ON reactions
+FOR EACH ROW
+BEGIN
+    UPDATE rooms SET message_sequence = message_sequence + 1
+        WHERE id = (SELECT room FROM messages WHERE id = OLD.message);
+    UPDATE messages SET seqno_reactions = (
+        SELECT message_sequence FROM rooms JOIN messages ON messages.room = rooms.id
+            WHERE messages.id = OLD.message)
+        WHERE id = OLD.message;
+END;
+
+
+
 -- Effectively the same as `messages` except that it also includes the `session_id` from the users
 -- table of the user who posted it, and the session id of the whisper recipient (as `whisper_to`) if
 -- a directed whisper.
@@ -180,12 +256,14 @@ FOR EACH ROW WHEN OLD.data IS NOT NULL
 BEGIN
     UPDATE messages SET data = NULL, data_size = NULL, signature = NULL
         WHERE id = OLD.id;
+    DELETE FROM reactions WHERE message = OLD.id;
 END;
 
 -- View of `messages` that is useful for manually inspecting table contents by only returning the
 -- length (rather than raw bytes) for data/signature.
 CREATE VIEW message_metadata AS
-SELECT id, room, "user", session_id, posted, edited, seqno, filtered, whisper_to, whisper_mods,
+SELECT id, room, "user", session_id, posted, edited, seqno, seqno_data, seqno_reactions,
+        filtered, whisper_to, whisper_mods,
         length(data) AS data_unpadded, data_size, length(signature) as signature_length
     FROM message_details;
 

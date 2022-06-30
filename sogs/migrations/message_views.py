@@ -7,7 +7,7 @@ def migrate(conn, *, check_only):
 
     if 'message_metadata' in db.metadata.tables and all(
         x in db.metadata.tables['message_metadata'].c
-        for x in ('whisper_to', 'whisper_mods', 'filtered', 'seqno')
+        for x in ('whisper_to', 'whisper_mods', 'filtered', 'seqno', 'seqno_data')
     ):
         return False
 
@@ -19,6 +19,7 @@ def migrate(conn, *, check_only):
     conn.execute("DROP VIEW IF EXISTS message_details")
 
     if db.engine.name == "sqlite":
+        conn.execute("DROP TRIGGER IF EXISTS message_details_deleter")
         conn.execute(
             """
 CREATE VIEW message_details AS
@@ -35,13 +36,15 @@ FOR EACH ROW WHEN OLD.data IS NOT NULL
 BEGIN
     UPDATE messages SET data = NULL, data_size = NULL, signature = NULL
         WHERE id = OLD.id;
+    DELETE FROM reactions WHERE message = OLD.id;
 END
 """
         )
         conn.execute(
             """
 CREATE VIEW message_metadata AS
-SELECT id, room, "user", session_id, posted, edited, seqno, filtered, whisper_to, whisper_mods,
+SELECT id, room, "user", session_id, posted, edited, seqno, seqno_data, seqno_reactions,
+        filtered, whisper_to, whisper_mods,
         length(data) AS data_unpadded, data_size, length(signature) as signature_length
     FROM message_details
 """
@@ -66,9 +69,11 @@ RETURNS TRIGGER LANGUAGE PLPGSQL AS $$BEGIN
     IF OLD.data IS NOT NULL THEN
         UPDATE messages SET data = NULL, data_size = NULL, signature = NULL
             WHERE id = OLD.id;
+        DELETE FROM reactions WHERE message = OLD.id;
     END IF;
     RETURN NULL;
 END;$$;
+DROP TRIGGER IF EXISTS message_details_deleter ON message_details;
 CREATE TRIGGER message_details_deleter INSTEAD OF DELETE ON message_details
 FOR EACH ROW
 EXECUTE PROCEDURE trigger_message_details_deleter();
@@ -76,7 +81,8 @@ EXECUTE PROCEDURE trigger_message_details_deleter();
 -- View of `messages` that is useful for manually inspecting table contents by only returning the
 -- length (rather than raw bytes) for data/signature.
 CREATE VIEW message_metadata AS
-SELECT id, room, "user", session_id, posted, edited, seqno, filtered, whisper_to, whisper_mods,
+SELECT id, room, "user", session_id, posted, edited, seqno, seqno_data, seqno_reactions,
+        filtered, whisper_to, whisper_mods,
         length(data) AS data_unpadded, data_size, length(signature) as signature_length
     FROM message_details;
             """
