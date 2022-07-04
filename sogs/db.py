@@ -215,6 +215,7 @@ def check_needs_blinding(dbconn):
                 EXCEPT
                 SELECT "user" FROM needs_blinding
             )
+            AND session_id LIKE '05%'
             """,
             dbconn=dbconn,
         ):
