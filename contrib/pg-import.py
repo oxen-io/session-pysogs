@@ -54,6 +54,7 @@ TABLES = [
     "messages",
     "message_history",
     "pinned_messages",
+    "reactions",
     "files",
     "room_users",
     "user_permission_overrides",
