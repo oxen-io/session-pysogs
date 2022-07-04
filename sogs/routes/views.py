@@ -9,7 +9,12 @@ from io import BytesIO
 
 import qrencode
 
-from PIL.Image import NEAREST
+import PIL.Image
+
+if hasattr(PIL.Image, 'Resampling'):
+    NEAREST = PIL.Image.Resampling.NEAREST
+else:
+    NEAREST = PIL.Image.NEAREST
 
 
 views = Blueprint('views', __name__)
