@@ -282,6 +282,7 @@ elif args.add_moderators:
                 rooms = [Room(token=r) for r in args.rooms]
             except NoSuchRoom as nsr:
                 print(f"No such room: '{nsr.token}'", file=sys.stderr)
+                sys.exit(1)
 
         for sid in args.add_moderators:
             u = User(session_id=sid, try_blinding=True)
