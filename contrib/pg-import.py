@@ -54,6 +54,7 @@ TABLES = [
     "messages",
     "message_history",
     "pinned_messages",
+    "reactions",
     "files",
     "room_users",
     "user_permission_overrides",
@@ -201,8 +202,11 @@ with pgsql.transaction():
     started = time.time()
     count = 0
     count_total = curin.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
-    for row in curin.execute("SELECT id, seqno FROM messages"):
-        curout.execute("UPDATE messages SET seqno = %s WHERE id = %s", [row[1], row[0]])
+    for mid, seqno in curin.execute("SELECT id, seqno FROM messages"):
+        curout.execute(
+            "UPDATE messages SET seqno = %(seqno)s, seqno_data = %(seqno)s WHERE id = %(id)s",
+            {'id': mid, 'seqno': seqno},
+        )
         count += 1
         if count % 1000 == 0:
             if args.commit:
