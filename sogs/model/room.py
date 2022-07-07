@@ -529,16 +529,22 @@ class Room:
         recent: bool = False,
         single: Optional[int] = None,
         limit: int = 256,
+        reactions: bool = True,
+        reaction_updates: bool = True,
+        reactor_limit: int = 0,
     ):
         """
-        Returns up to `limit` messages that `user` should see: that is, all non-deleted room
-        messages plus any whispers directed to the user and, if the user is a moderator, any
-        whispers meant to be displayed to moderators.
+        Returns up to `limit` message updates that `user` should see:
+        - all non-deleted new room messages
+        - newly edited messages
+        - newly deleted messages
+        - whispers directed to the user
+        - whispers directed to moderators (only applicable if the user is a moderator)
+        - reaction updates (if `reaction_updates` is true, and using `sequence`)
 
-        Exactly one of `after`, `begin`, `recent` or `single` must be specified:
-        - `sequence=N` returns messages that have been posted, edited, or deleted since the given
-          `seqno` (that is: the have seqno greater than N).  Messages are returned in sequence
-          order.
+        Exactly one of `sequence`, `after`, `before`, `recent` or `single` must be specified:
+        - `sequence=N` returns updates made since the given `seqno` (that is: the have seqno greater
+          than N).  Messages and reactions are returned in sequence order.
         - `after=N` returns messages with ids greater than N in ascending order.  This is normally
           *not* what you want for fetching messages as it omits edits and deletions; typically you
           want to retrieve by seqno instead.
@@ -546,6 +552,21 @@ class Room:
         - `recent=True` returns the most recent messages in descending order
         - `single=123` returns a singleton list containing the single message with the given message
           id, or an empty list if the message doesn't exist or isn't readable by the user.
+
+        Other parameters:
+        - `reactions` controls whether reaction details are added to retrieved messages.  Defaults
+          to `True`.
+
+        - `reaction_updates` controls whether the result returns reaction-only message update rows:
+          these are dicts with only the id/seqno/reaction keys (rather than the full message
+          details) and are returned for messages that have had reactions changes since the requested
+          sequence value but are not otherwise changed.  Such reaction-only updates are returned
+          only when sequence polling (i.e.  using the `sequence` argument).
+
+          This field has no effect when `reactions` is false.
+
+        - `reactor_limit` controls how many of the reactor list to return with reaction info; this
+          is passed through to `get_reactions`.  This field has no effect when `reactions` is false.
 
         Note that data and signature are returned as bytes, *not* base64 encoded.  Session message
         padding *is* appended to the data field (i.e. this returns the full value, not the
@@ -565,6 +586,12 @@ class Room:
                 "Cannot specify more than one of sequence=, before=, after=, recent=, single="
             )
 
+        if sequence is None:
+            reaction_updates = False
+
+        if limit <= 0:
+            limit = 256
+
         # Handle id mapping from an old database import in case the client is requesting
         # messages since some id from the old db.
         if after is not None and db.ROOM_IMPORT_HACKS and self.id in db.ROOM_IMPORT_HACKS:
@@ -572,42 +599,57 @@ class Room:
             if after <= max_old_id:
                 after += offset
 
+        # We include deletions only if doing a sequence update request:
+        not_deleted_clause = '' if sequence is not None else 'AND data IS NOT NULL'
+        message_clause = (
+            'AND seqno > :sequence AND seqno_data > :sequence'
+            if sequence is not None and not reaction_updates
+            else 'AND seqno > :sequence'
+            if sequence is not None
+            else 'AND id > :after'
+            if after is not None
+            else 'AND id < :before'
+            if before is not None
+            else 'AND id = :single'
+            if single is not None
+            else ''
+        )
+
         whisper_clause = (
             # For a mod we want to see:
             # - all whisper_mods messsages
             # - anything directed to us specifically
             # - anything we sent (i.e. outbound whispers)
             # - non-whispers
-            'whisper_mods OR whisper = :user OR "user" = :user OR whisper IS NULL'
+            'AND (whisper_mods OR whisper = :user OR "user" = :user OR whisper IS NULL)'
             if mod
             # For a regular user we want to see:
             # - anything with whisper_to sent to us
             # - non-whispers
-            else "whisper = :user OR (whisper IS NULL AND NOT whisper_mods)"
+            else "AND (whisper = :user OR (whisper IS NULL AND NOT whisper_mods))"
             if user
             # Otherwise for public, non-user access we want to see:
             # - non-whispers
-            else "whisper IS NULL AND NOT whisper_mods"
+            else "AND whisper IS NULL AND NOT whisper_mods"
         )
 
+        order_limit = (
+            'ORDER BY seqno ASC LIMIT :limit'
+            if sequence is not None
+            else ''
+            if single is not None
+            else 'ORDER BY id ASC LIMIT :limit'
+            if after is not None
+            else 'ORDER BY id DESC LIMIT :limit'
+        )
         for row in query(
             f"""
             SELECT * FROM message_details
-            WHERE room = :r AND NOT filtered {'AND data IS NOT NULL' if sequence is None else ''}
-                {
-                    'AND seqno > :sequence' if sequence is not None else
-                    'AND id > :after' if after is not None else
-                    'AND id < :before' if before is not None else
-                    'AND id = :single' if single is not None else
-                    ''
-                }
-                AND ({whisper_clause})
-            {
-                '' if single is not None else
-                'ORDER BY seqno ASC LIMIT :limit' if sequence is not None else
-                'ORDER BY id ASC LIMIT :limit' if after is not None else
-                'ORDER BY id DESC LIMIT :limit'
-            }
+            WHERE room = :r AND NOT filtered
+                {not_deleted_clause}
+                {message_clause}
+                {whisper_clause}
+            {order_limit}
             """,
             r=self.id,
             sequence=sequence,
@@ -617,6 +659,12 @@ class Room:
             user=user.id if user else None,
             limit=limit,
         ):
+            if sequence and row['seqno_reactions'] > sequence >= row['seqno_data']:
+                # This is a reaction-only update, so we only want to include the reaction info
+                # (added later) but not the full details.
+                msgs.append({x: row[x] for x in ('id', 'seqno')})
+                continue
+
             msg = {x: row[x] for x in ('id', 'session_id', 'posted', 'seqno')}
             data = row['data']
             if data is None:
@@ -632,6 +680,21 @@ class Room:
                 if row['whisper_to'] is not None:
                     msg['whisper_to'] = row['whisper_to']
             msgs.append(msg)
+
+        if reactions:
+            reacts = self.get_reactions(
+                # Fetch reactions for messages that are either missing `data` entirely or have it
+                # non-None, so that we skip deleted messages which we already know won't have
+                # reactions.
+                [x['id'] for x in msgs if 'data' not in x or x['data'] is not None],
+                user,
+                reactor_limit=reactor_limit,
+                session_ids=True,
+            )
+            for msg in msgs:
+                r = reacts.get(msg['id'])
+                if r:
+                    msg['reactions'] = r
 
         return msgs
 
@@ -978,6 +1041,206 @@ class Room:
         return query(
             "SELECT COUNT(*), COALESCE(SUM(size), 0) FROM files WHERE room = :r", r=self.id
         ).first()[0:2]
+
+    def get_reactions(
+        self,
+        message_ids: List[int],
+        user: Optional[User] = None,
+        *,
+        reactor_limit: int = 0,
+        session_ids: bool = True,
+    ):
+        """
+        Returns reaction information for the given messages.  Returns a dict of message id ->
+        reaction info for any messages in the given list that have reactions.  The reaction info is
+        itself a dict where keys are reaction strings and values are a dict containing keys:
+
+        - `"count"` -- the total number of this reaction
+        - `"you"` -- boolean set to true if `user` is given and the user has applied this reaction;
+          omitted otherwise.
+        - `"reactors"` -- if the input parameter `reactor_limit` is greater than 0 then this is a
+          list of the session ids (if `session_ids`) or user ids (`session_ids` false) of the first
+          `reactor_limit` users that applied this reaction.  Omitted if `reactor_limit` is 0.
+
+        This method does *not* check for read access of the given messages: this is designed for
+        internal use from message ids that have already been permission checked.
+        """
+
+        reacts = {}
+        select_you = (
+            """
+            EXISTS(SELECT * FROM reactions WHERE message = r.message AND reaction = r.reaction
+                AND "user" = :uid) AS you
+            """
+            if user is not None
+            else 'FALSE AS you'
+        )
+        for msgid, react, count, you in query(
+            f"""
+            SELECT
+                message,
+                reaction,
+                COUNT(*) AS react_count,
+                {select_you}
+            FROM reactions r
+            WHERE message IN :msgs GROUP BY message, reaction
+            """,
+            bind_expanding=('msgs',),
+            msgs=message_ids,
+            uid=None if user is None else user.id,
+        ):
+            reacts.setdefault(msgid, {})[react] = (
+                {"count": count, "you": True} if you else {"count": count}
+            )
+
+        if reacts and reactor_limit > 0:
+            select_reactors = (
+                'SELECT message, reaction, session_id '
+                'FROM first_reactors JOIN users ON first_reactors."user" = users.id'
+                if session_ids
+                else 'SELECT reaction, "user" FROM first_reactors'
+            ) + " WHERE message IN :msgs AND _order <= :max_order"
+            for msgid, react, u in query(
+                select_reactors,
+                bind_expanding=['msgs'],
+                msgs=list(reacts.keys()),
+                max_order=reactor_limit,
+            ):
+                reacts[msgid][react].setdefault("reactors", []).append(u)
+
+        return reacts
+
+    def _check_reaction_request(
+        self, user, msg_id, reaction, *, user_required=True, mod_required=False, allow_none=False
+    ):
+        if reaction is None:
+            if not allow_none:
+                app.logger.warning("No reaction provided")
+                raise InvalidData()
+        elif not isinstance(reaction, str) or not 1 <= len(reaction) <= 12:
+            app.logger.warning("Invalid reaction string '{reaction}'")
+            raise InvalidData()
+
+        if user_required and not user:
+            app.logger.warning("Reaction request requires user authentication")
+            raise BadPermission()
+        if not (self.check_moderator(user) if mod_required else self.check_read(user)):
+            app.logger.warning("Reaction request requires moderator authentication")
+            raise BadPermission()
+
+        if not self.is_regular_message(msg_id):
+            raise NoSuchPost(msg_id)
+
+    def add_reaction(self, user: User, msg_id: int, reaction: str):
+        """
+        Adds a reaction to the given post.  Returns True if the reaction was added, False if the
+        reaction by this user was already present, throws on other errors.
+
+        SOGS requires that reactions be from 1 to 8 unicode characters long (throws InvalidData() if
+        not satisfied).
+
+        The post must exist in the room (throws NoSuchPost if it does not).
+
+        The user must have read permission in the room (throws BadPermission if not).
+        """
+
+        self._check_reaction_request(user, msg_id, reaction)
+
+        try:
+            query(
+                'INSERT INTO reactions (message, reaction, "user") VALUES (:msg, :react, :user)',
+                msg=msg_id,
+                react=reaction,
+                user=user.id,
+            )
+        except sqlalchemy.exc.IntegrityError:
+            return False
+        return True
+
+    def delete_reaction(self, user: User, msg_id: int, reaction: str):
+        """
+        Removes a reaction from the given post.  Returns True if the reaction was removed, False if
+        the reaction was not present, throws on other errors.
+
+        The requirements (and thrown exceptions) are the same as add_reaction.
+        """
+
+        self._check_reaction_request(user, msg_id, reaction)
+        return (
+            query(
+                'DELETE FROM reactions WHERE message = :m AND reaction = :r AND "user" = :u',
+                m=msg_id,
+                r=reaction,
+                u=user.id,
+            ).rowcount
+            > 0
+        )
+
+    def delete_all_reactions(self, mod: User, msg_id: int, reaction: Optional[str] = None):
+        """
+        Removes all reactions from a post.  Supports removing all of a single reaction, or all
+        reactions of any time.
+
+        The caller must have moderator permissions in the room.
+
+        Params:
+        mod - the moderator performing the removal
+        msg_id - the post id from which reactions are to be removed
+        reaction - optional reaction string to remove.  If None, remove all reactions from the post.
+
+        The reaction, if given, must be between 1 and 8 unicode characters.  The post must be a
+        regular message (i.e. not a whisper, not deleted).
+
+        Returns the total number of deleted reactions.
+        """
+
+        self._check_reaction_request(mod, msg_id, reaction, allow_none=True, mod_required=True)
+
+        return query(
+            f"""
+            DELETE FROM reactions WHERE
+                message = :m
+                {'AND reaction = :r' if reaction is not None else ''}
+            """,
+            m=msg_id,
+            r=reaction,
+        ).rowcount
+
+    def get_reactors(
+        self,
+        message_id: int,
+        reaction: str,
+        user: Optional[User] = None,
+        *,
+        session_ids: bool = True,
+        limit: Optional[int] = None,
+    ):
+        """
+        Returns all of the reactors for a single reaction of a single message.  Returns a list of
+        pairs containing the user (session id (if `session_ids`) or user id (if `not session_ids`))
+        as first element and unix timestamp when reacted as second element.
+
+        The returned ids are ordered by reaction time (oldest to most recent).
+        """
+
+        self._check_reaction_request(user, message_id, reaction, user_required=False)
+
+        users = []
+        for user, at in query(
+            (
+                'SELECT session_id, at FROM reactions JOIN users ON reactions.user = users.id'
+                if session_ids
+                else 'SELECT "user", at FROM reactions'
+            )
+            + " WHERE reactions.message = :msg AND reactions.reaction = :reaction ORDER BY at"
+            + (" LIMIT :limit" if limit is not None and limit > 0 else ''),
+            msg=message_id,
+            reaction=reaction,
+            limit=limit,
+        ):
+            users.append((user, at))
+
+        return users
 
     def get_mods(self, user=None):
         """
@@ -1481,6 +1744,21 @@ class Room:
                     pass
             raise
 
+    def is_regular_message(self, msg_id: int):
+        """
+        Returns true if the given id is a regular (i.e. not deleted, not a whisper) message of this
+        room.
+        """
+        return query(
+            """
+            SELECT COUNT(*) FROM messages
+            WHERE room = :r AND id = :m AND data IS NOT NULL
+                AND NOT filtered AND whisper IS NULL AND NOT whisper_mods
+            """,
+            r=self.id,
+            m=msg_id,
+        ).first()[0]
+
     def pin(self, msg_id: int, admin: User):
         """
         Pins a message to this room.  Requires admin room permissions.
@@ -1496,15 +1774,7 @@ class Room:
 
         with db.transaction():
             # Make sure the given messages actually exist in this room:
-            if not query(
-                """
-                SELECT COUNT(*) FROM messages
-                WHERE room = :r AND id = :m AND data IS NOT NULL
-                    AND NOT filtered AND whisper IS NULL AND NOT whisper_mods
-                """,
-                r=self.id,
-                m=msg_id,
-            ).first()[0]:
+            if not self.is_regular_message(msg_id):
                 raise NoSuchPost(msg_id)
 
             query(

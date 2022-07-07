@@ -268,7 +268,7 @@ def import_from_0_1_x(conn):
                     )
 
                 db.query(
-                    "UPDATE messages SET seqno = :s WHERE id = :m",
+                    "UPDATE messages SET seqno = :s, seqno_data = :s WHERE id = :m",
                     s=seqno,
                     m=id + id_offset,
                     dbconn=conn,
