@@ -74,7 +74,7 @@ def extract_rooms_or_global(req, admin=True):
     return (None, True)
 
 
-@users.post("/user/<SessionID:sid>/moderator")
+@users.post("/user/<AnySessionID:sid>/moderator")
 @auth.user_required
 def set_mod(sid):
     """
@@ -238,7 +238,7 @@ def set_mod(sid):
     return jsonify({})
 
 
-@users.post("/user/<SessionID:sid>/ban")
+@users.post("/user/<AnySessionID:sid>/ban")
 @auth.user_required
 def ban_user(sid):
     """
@@ -315,7 +315,7 @@ def ban_user(sid):
     return {}
 
 
-@users.post("/user/<SessionID:sid>/unban")
+@users.post("/user/<AnySessionID:sid>/unban")
 @auth.user_required
 def unban_user(sid):
     """

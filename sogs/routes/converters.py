@@ -64,3 +64,4 @@ app.url_map.converters['UnblindedSessionID'] = UnblindedSessionIDConverter
 app.url_map.converters['SessionID'] = (
     BlindSessionIDConverter if config.REQUIRE_BLIND_KEYS else AnySessionIDConverter
 )
+app.url_map.converters['AnySessionID'] = AnySessionIDConverter

@@ -88,11 +88,14 @@ def make_subrequest(
             app.logger.warning(
                 f"Sub-request for {method} {path} returned status {response.status_code}"
             )
-        return response, {
-            k.lower(): v
-            for k, v in response.get_wsgi_headers(subreq_env)
-            if k.lower() != 'content-length'
-        }
+        return (
+            response,
+            {
+                k.lower(): v
+                for k, v in response.get_wsgi_headers(subreq_env)
+                if k.lower() != 'content-length'
+            },
+        )
 
     except Exception:
         app.logger.warning(f"Sub-request for {method} {path} failed: {traceback.format_exc()}")
