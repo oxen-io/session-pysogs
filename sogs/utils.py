@@ -9,11 +9,16 @@ import json
 from typing import Union, Tuple
 
 
-def message_body(data: bytes):
-    """given a bunch of bytes for a protobuf message return the message's body"""
+def parse_message(data: bytes):
+    """given a bunch of bytes for a protobuf message return the entire parsed message"""
     msg = protobuf.Content()
     msg.ParseFromString(remove_session_message_padding(data))
-    return msg.dataMessage.body
+    return msg
+
+
+def message_body(data: bytes):
+    """given a bunch of bytes for a protobuf message return the message's body"""
+    return parse_message(data).body
 
 
 def encode_base64(data: bytes):
