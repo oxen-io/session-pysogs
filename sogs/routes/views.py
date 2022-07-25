@@ -47,11 +47,7 @@ def view_room(room):
     if not room.default_read:
         abort(http.FORBIDDEN)
 
-    return render_template(
-        "view_room.html",
-        room=room,
-        show_recent=config.HTTP_SHOW_RECENT,
-    )
+    return render_template("view_room.html", room=room, show_recent=config.HTTP_SHOW_RECENT)
 
 
 @views.get("/r/<Room:room>/invite.png")
