@@ -1,9 +1,42 @@
-<html>
+<html id="html" class="dark">
   <head>
+    
     <title> sogs </title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="{{ url_for('static', filename='main.min.css') }}">
   </head>
-  <body>
+  <body class="dark:bg-darkGray transition duration-250 h-full flex flex-col overflow-hidden">
+    
+    {% block modal %}
+    {% endblock %}
+    
+    <!-- header / navbar -->
+    <div class="px-2 sm:px-5 flex-none flex justify-around sm:justify-between items-center w-full h-32 max-h-32 
+    bg-white dark:bg-darkGray border-b-2 border-black dark:border-lightGray transition duration-250">
+      <div class="text-black text-center">
+        <button>
+          <a href="/">
+            <h1 class="  dark:text-white text-3xl xs:text-4xl sm:text-5xl decoration-black dark:decoration-white decoration-2">{% block heading %}{% endblock %}</h1>
+            <div class="flex flex-col sm:flex-row pl-3 sm:pl-0">
+              <p class=" font-bold text-accent dark:text-accent text-lg xs:text-xl sm:text-2xl">Session Open&nbsp</p>
+              <p class=" font-bold text-accent dark:text-accent text-lg xs:text-xl sm:text-2xl">Group Server</p>
+            </div>
+          </a>
+        </button>
+      </div>
+      
+      <div class="flex space-x-4 ">
+        {% block invite %}
+        {% endblock %}
+        <button id="moonIcon" class='px-1 rounded' onclick="toggleDarkMode()"><img src="{{ url_for('static', filename='moon-icon.svg') }}" alt="moon" width="50px" height="50px"></button>
+        <button id="sunIcon" style="display: none;" class='px-1 rounded' onclick="toggleDarkMode()"><img src="{{ url_for('static', filename='sun-icon.svg') }}" alt="sun" width="50px" height="50px"></button>
+      </div>
+    </div>
+    
+    <!-- content/body -->
     {% block body %}
     {% endblock %}
   </body>
+  <!-- dark mode toggle js -->
+  <script src="{{ url_for('static', filename='dark_mode_toggle.js') }}"></script>
 </html>
