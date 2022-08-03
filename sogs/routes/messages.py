@@ -237,7 +237,7 @@ def message_single(room, msg_id):
 
       This dict contains keys:
 
-      - `"total"` — the total number of the given reaction, e.g. 27 if 27 different users have added
+      - `"count"` — the total number of the given reaction, e.g. 27 if 27 different users have added
         the given reaction.
       - `"reactors"` — the session IDs of the first *N* users to use this reaction.  `N` can be
         controlled using the `reactors` query string parameter.  If `reactors` is 0 then this field
@@ -253,7 +253,7 @@ def message_single(room, msg_id):
         "seqno": 5717578,
         "reactions": {
           "👍": {
-            "total": 150,
+            "count": 150,
             "reactors": [
               "058328640343b91c03d393b8dc6ce15c8f93b191ff78054b6ae2c8030e2680b4d6",
               "05d782a81448199aea940f496cc70dc644c269e5979e472536ea03a067bf46d54a",
@@ -263,7 +263,7 @@ def message_single(room, msg_id):
             "you": true
           },
           "👎": {
-            "total": 27,
+            "count": 27,
             "reactors": [
               "05ca519a397a1aa8a7a1515ff433dd2784cbcbb31c358b1a6e97fb758ceab44dca",
               "055297c3dc032bef33a21dcb1b76265c8319e53ed0867accd3c274c25ae33c1731",
@@ -272,7 +272,7 @@ def message_single(room, msg_id):
             ]
           },
           "🍆": {
-            "total": 1,
+            "count": 1,
             "reactors": [
               "051234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
             ],
