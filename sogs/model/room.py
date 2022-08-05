@@ -683,18 +683,15 @@ class Room:
 
         if reactions:
             reacts = self.get_reactions(
-                # Fetch reactions for messages that are either missing `data` entirely or have it
-                # non-None, so that we skip deleted messages which we already know won't have
-                # reactions.
-                [x['id'] for x in msgs if 'data' not in x or x['data'] is not None],
+                # Fetch reactions for messages, but skip deleted messages (that have data set to an
+                # explicit None) since we already know they don't have reactions.
+                [x['id'] for x in msgs if not ('data' in x and x['data'] is None)],
                 user,
                 reactor_limit=reactor_limit,
                 session_ids=True,
             )
             for msg in msgs:
-                r = reacts.get(msg['id'])
-                if r:
-                    msg['reactions'] = r
+                msg['reactions'] = reacts.get(msg['id'], {})
 
         return msgs
 
@@ -837,6 +834,7 @@ class Room:
                 'seqno': row[1],
                 'data': data,
                 'signature': sig,
+                'reactions': {},
             }
             if whisper_to or whisper_mods:
                 msg['whisper'] = True

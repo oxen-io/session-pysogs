@@ -14,7 +14,7 @@ def test_reactions(client, room, room2, user, user2, mod, admin, global_mod, glo
     assert isinstance(r.json, list)
     assert len(r.json) == 9
     assert [x['id'] for x in r.json] == [1, 2, 3, 4, 6, 7, 8, 9, 10]
-    assert [x.get('reactions') for x in r.json] == [None] * 9
+    assert [x.get('reactions') for x in r.json] == [{}] * 9
 
     seqno = r.json[-1]["seqno"]
 
@@ -160,13 +160,13 @@ def test_reactions(client, room, room2, user, user2, mod, admin, global_mod, glo
     assert r.json["removed"] == n_other
 
     r = sogs_get(client, f"/room/test-room/messages/since/{seqno}?t=r&reactors=0", user2)
-    assert r.json == [{'id': 4, 'seqno': seqno + n_other}]
+    assert r.json == [{'id': 4, 'reactions': {}, 'seqno': seqno + n_other}]
     seqno += n_other
 
     # Other posts shouldn't have been affected
     r = sogs_get(client, "/room/test-room/messages/since/0?t=r&reactors=0", user2).json
     assert [x['id'] for x in r] == [1, 2, 3, 6, 7, 8, 9, 10, 4]
-    assert [x['id'] for x in r if 'reactions' in x] == [10]
+    assert [x['id'] for x in r if x['reactions']] == [10]
     assert r[7]['reactions'] == {'🍍': {'count': 1}}
 
     assert not sogs_delete(client, "/room/test-room/reaction/10/🍍", global_mod).json['removed']
@@ -184,7 +184,7 @@ def test_reactions(client, room, room2, user, user2, mod, admin, global_mod, glo
 
     assert len(r) == 2
     assert r[0]['id'] == 10
-    assert 'reactions' not in r[0]  # We removed the last 🍍 reaction above
+    assert not r[0]['reactions']  # We removed the last 🍍 reaction above
     # seqno went up because we removed one and added two reactions:
     seqno += 3
     assert r[1] == {'id': 9, 'seqno': seqno, 'reactions': {'🍍': {'count': 2, 'you': True}}}
@@ -199,4 +199,10 @@ def test_reactions(client, room, room2, user, user2, mod, admin, global_mod, glo
     seqno += 3
     del r['posted']
     del r['edited']
-    assert r == {'id': 9, 'data': None, 'seqno': seqno, 'session_id': user.session_id}
+    assert r == {
+        'id': 9,
+        'data': None,
+        'seqno': seqno,
+        'session_id': user.session_id,
+        'reactions': {},
+    }
