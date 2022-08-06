@@ -59,7 +59,8 @@ def messages_since(room, seqno):
     - a message row, returning the most recent version of the message (as would be returned by [the
       single message retrieval endpoint](#get-roomroommessagemsg_id)).  This is used for new
       messages, for edited messages, and for deletions.  In the case of a deletion, the `"data"`
-      element will be set to null, and the `"signature"` key will be omitted.
+      element will be set to null, the `"signature"` key will be omitted, and an extra element
+      `"deleted"` will be set to `true`.
 
       This message type can be definitively identified by the presence of a `"data"` key (which can
       be null, but will still be present).

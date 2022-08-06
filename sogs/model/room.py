@@ -669,6 +669,7 @@ class Room:
             data = row['data']
             if data is None:
                 msg['data'] = None
+                msg['deleted'] = True
             else:
                 msg['data'] = utils.add_session_message_padding(data, row['data_size'])
                 msg['signature'] = row['signature']

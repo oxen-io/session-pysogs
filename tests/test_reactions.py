@@ -209,6 +209,7 @@ def test_reactions(client, room, room2, user, user2, mod, admin, global_mod, glo
     assert r == {
         'id': 9,
         'data': None,
+        'deleted': True,
         'seqno': seqno,
         'session_id': user.session_id,
         'reactions': {},
