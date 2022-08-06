@@ -70,17 +70,18 @@ def test_reactions(client, room, room2, user, user2, mod, admin, global_mod, glo
     assert r.json['added']
 
     exp_reactions = {
-        'abcdefghijkl': {'count': 1, 'reactors': [user.session_id]},
-        'f': {'count': 1, 'reactors': [user.session_id]},
-        'y/n': {'count': 1, 'reactors': [user.session_id]},
-        '🍆': {'count': 1, 'reactors': [user.session_id]},
+        'abcdefghijkl': {'index': 4, 'count': 1, 'reactors': [user.session_id]},
+        'f': {'index': 2, 'count': 1, 'reactors': [user.session_id]},
+        'y/n': {'index': 3, 'count': 1, 'reactors': [user.session_id]},
+        '🍆': {'index': 1, 'count': 1, 'reactors': [user.session_id]},
         '🍍': {
+            'index': 5,
             'count': 6,
             'reactors': [u.session_id for u in (user, user2, global_admin, mod)],
             'you': True,
         },
-        '🖕': {'count': 2, 'reactors': [user.session_id, user2.session_id], 'you': True},
-        '🦒🦍🐍🐊🦢🦁🦎': {'count': 1, 'reactors': [user.session_id]},
+        '🖕': {'index': 0, 'count': 2, 'reactors': [user.session_id, user2.session_id], 'you': True},
+        '🦒🦍🐍🐊🦢🦁🦎': {'index': 6, 'count': 1, 'reactors': [user.session_id]},
     }
 
     r = sogs_get(client, f"/room/test-room/messages/since/{seqno}?t=r", user2).json
@@ -148,7 +149,9 @@ def test_reactions(client, room, room2, user, user2, mod, admin, global_mod, glo
     assert r.status_code == 200
     n_pineapples = exp_reactions["🍍"]["count"]
     assert r.json["removed"] == n_pineapples
+    assert r.json["removed"] == 5
     del exp_reactions["🍍"]
+    exp_reactions["🦒🦍🐍🐊🦢🦁🦎"]["index"] -= 1
 
     r = sogs_get(client, f"/room/test-room/messages/since/{seqno}?t=r&reactors=0", user2)
     assert r.json == [{'id': 4, 'seqno': seqno + 5, 'reactions': exp_reactions}]
@@ -167,7 +170,7 @@ def test_reactions(client, room, room2, user, user2, mod, admin, global_mod, glo
     r = sogs_get(client, "/room/test-room/messages/since/0?t=r&reactors=0", user2).json
     assert [x['id'] for x in r] == [1, 2, 3, 6, 7, 8, 9, 10, 4]
     assert [x['id'] for x in r if x['reactions']] == [10]
-    assert r[7]['reactions'] == {'🍍': {'count': 1}}
+    assert r[7]['reactions'] == {'🍍': {'count': 1, 'index': 0}}
 
     assert not sogs_delete(client, "/room/test-room/reaction/10/🍍", global_mod).json['removed']
     assert sogs_delete(client, "/room/test-room/reaction/10/🍍", user).json['removed']
@@ -177,7 +180,7 @@ def test_reactions(client, room, room2, user, user2, mod, admin, global_mod, glo
     r = sogs_get(client, "/room/test-room/message/9", mod).json
     assert 'reactions' in r
     assert r.get('reactions') == {
-        '🍍': {"count": 2, "reactors": [user.session_id, user2.session_id]}
+        '🍍': {"count": 2, "index": 0, "reactors": [user.session_id, user2.session_id]}
     }
 
     r = sogs_get(client, f"/room/test-room/messages/since/{seqno}?t=r&reactors=0", user2).json
@@ -187,7 +190,11 @@ def test_reactions(client, room, room2, user, user2, mod, admin, global_mod, glo
     assert not r[0]['reactions']  # We removed the last 🍍 reaction above
     # seqno went up because we removed one and added two reactions:
     seqno += 3
-    assert r[1] == {'id': 9, 'seqno': seqno, 'reactions': {'🍍': {'count': 2, 'you': True}}}
+    assert r[1] == {
+        'id': 9,
+        'seqno': seqno,
+        'reactions': {'🍍': {'index': 0, 'count': 2, 'you': True}},
+    }
 
     assert sogs_delete(client, "/room/test-room/message/9", admin).status_code == 200
     r = sogs_get(client, f"/room/test-room/messages/since/{seqno}?t=r", user2).json
@@ -206,3 +213,92 @@ def test_reactions(client, room, room2, user, user2, mod, admin, global_mod, glo
         'session_id': user.session_id,
         'reactions': {},
     }
+
+
+def test_reaction_ordering(client, room, user, user2):
+    for i in (1, 2):
+        room.add_post(user, f"fake data {i}".encode(), pad64(f"fake sig {i}"))
+    seqno = 2
+
+    for x in ("🖕", "f", "🍆", "y/n", "abcdefghijkl", "🍍"):
+        r = sogs_put(client, f"/room/test-room/reaction/1/{x}", {}, user)
+        assert r.status_code == 200
+        assert r.json["added"]
+        seqno += 1
+
+    for x in ("‽", "abcdefghijkl", "f", "🍍", "🖕"):
+        r = sogs_put(client, f"/room/test-room/reaction/2/{x}", {}, user2)
+        assert r.status_code == 200
+        assert r.json["added"]
+        seqno += 1
+
+    for x in ("🖕", "f", "🍆", "y/n", "abcdefghijkl", "🍍", "🫑"):
+        r = sogs_put(client, f"/room/test-room/reaction/2/{x}", {}, user)
+        assert r.status_code == 200
+        assert r.json["added"]
+        seqno += 1
+    seqno_2 = seqno
+
+    for x in ("abcdefghijkl", "f", "🍍", "🖕", "🎂"):
+        r = sogs_put(client, f"/room/test-room/reaction/1/{x}", {}, user2)
+        assert r.status_code == 200
+        assert r.json["added"]
+        seqno += 1
+
+    u1 = [user.session_id]
+    u2 = [user2.session_id]
+    u1u2 = u1 + u2
+    u2u1 = u2 + u1
+    exp_reacts_1 = {
+        "🖕": {'index': 0, 'count': 2, 'reactors': u1u2, 'you': True},
+        "f": {'index': 1, 'count': 2, 'reactors': u1u2, 'you': True},
+        "🍆": {'index': 2, 'count': 1, 'reactors': u1},
+        "y/n": {'index': 3, 'count': 1, 'reactors': u1},
+        "abcdefghijkl": {'index': 4, 'count': 2, 'reactors': u1u2, 'you': True},
+        "🍍": {'index': 5, 'count': 2, 'reactors': u1u2, 'you': True},
+        "🎂": {'index': 6, 'count': 1, 'reactors': u2, 'you': True},
+    }
+    exp_reacts_2 = {
+        "‽": {'index': 0, 'count': 1, 'reactors': u2, 'you': True},
+        "abcdefghijkl": {'index': 1, 'count': 2, 'reactors': u2u1, 'you': True},
+        "f": {'index': 2, 'count': 2, 'reactors': u2u1, 'you': True},
+        "🍍": {'index': 3, 'count': 2, 'reactors': u2u1, 'you': True},
+        "🖕": {'index': 4, 'count': 2, 'reactors': u2u1, 'you': True},
+        "🍆": {'index': 5, 'count': 1, 'reactors': u1},
+        "y/n": {'index': 6, 'count': 1, 'reactors': u1},
+        "🫑": {'index': 7, 'count': 1, 'reactors': u1},
+    }
+
+    r = sogs_get(client, "/room/test-room/messages/since/2?t=r", user2)
+    assert r.json == [
+        {'id': 2, 'reactions': exp_reacts_2, 'seqno': seqno_2},
+        {'id': 1, 'reactions': exp_reacts_1, 'seqno': seqno},
+    ]
+
+    # Deleting a user reaction while the post has other user reactions should not affect the order:
+    assert sogs_delete(client, "/room/test-room/reaction/1/f", user).json['removed']
+    seqno += 1
+    exp_reacts_1["f"]["count"] -= 1
+    exp_reacts_1["f"]["reactors"] = u2
+
+    r = sogs_get(client, "/room/test-room/messages/since/2?t=r", user2)
+    assert r.json == [
+        {'id': 2, 'reactions': exp_reacts_2, 'seqno': seqno_2},
+        {'id': 1, 'reactions': exp_reacts_1, 'seqno': seqno},
+    ]
+
+    # Deleting the last reaction and then adding it again should put it back at the *end*, not in
+    # its original position:
+    assert sogs_delete(client, "/room/test-room/reaction/1/f", user2).json['removed']
+    assert sogs_put(client, "/room/test-room/reaction/1/f", {}, user2).json['added']
+    seqno += 2
+
+    for v in exp_reacts_1.values():
+        if v["index"] > exp_reacts_1["f"]["index"]:
+            v["index"] -= 1
+    exp_reacts_1["f"]["index"] = len(exp_reacts_1) - 1
+    r = sogs_get(client, "/room/test-room/messages/since/2?t=r", user2)
+    assert r.json == [
+        {'id': 2, 'reactions': exp_reacts_2, 'seqno': seqno_2},
+        {'id': 1, 'reactions': exp_reacts_1, 'seqno': seqno},
+    ]

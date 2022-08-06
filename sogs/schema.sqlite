@@ -180,62 +180,79 @@ CREATE TABLE needs_blinding (
 );
 
 
-
 -- Reactions
 CREATE TABLE reactions (
+    id INTEGER NOT NULL PRIMARY KEY,
     message INTEGER NOT NULL REFERENCES messages ON DELETE CASCADE,
-    reaction TEXT NOT NULL,
+    reaction TEXT NOT NULL
+);
+CREATE UNIQUE INDEX reactions_message ON reactions (message, reaction);
+
+CREATE TABLE user_reactions (
+    reaction INTEGER NOT NULL REFERENCES reactions,
     "user" INTEGER NOT NULL REFERENCES users ON DELETE CASCADE,
     at FLOAT NOT NULL DEFAULT ((julianday('now') - 2440587.5)*86400.0), /* unix epoch */
-    PRIMARY KEY(message, reaction, "user")
+    PRIMARY KEY(reaction, "user")
 );
-CREATE INDEX reactions_at ON reactions(message, reaction, at);
-CREATE INDEX reactions_user ON reactions("user", message);
+CREATE INDEX user_reactions_at ON user_reactions(reaction, at);
+
+CREATE VIEW message_reactions AS
+SELECT reactions.*, user_reactions.user, user_reactions.at
+FROM reactions JOIN user_reactions ON user_reactions.reaction = reactions.id;
+
+CREATE TRIGGER message_reactions_insert INSTEAD OF INSERT ON message_reactions
+FOR EACH ROW
+BEGIN
+    INSERT INTO reactions (message, reaction) VALUES (NEW.message, NEW.reaction)
+        ON CONFLICT (message, reaction) DO NOTHING;
+    INSERT INTO user_reactions (reaction, "user") VALUES (
+        (SELECT id FROM reactions WHERE message = NEW.message AND reaction = NEW.reaction),
+        NEW."user");
+END;
 
 -- View used to select the first n reactors (using `WHERE _order <= 5`).
 CREATE VIEW first_reactors AS
-SELECT *, rank() OVER (PARTITION BY message, reaction ORDER BY at) AS _order
-FROM reactions;
+SELECT *, rank() OVER (PARTITION BY reaction ORDER BY at) AS _order
+FROM user_reactions;
 
-CREATE TRIGGER reactions_insert_seqno AFTER INSERT ON reactions
+CREATE TRIGGER reactions_no_update BEFORE UPDATE ON reactions
+FOR EACH ROW
+BEGIN
+    SELECT RAISE(ABORT, 'reactions is not UPDATEable');
+END;
+CREATE TRIGGER user_reactions_insert_seqno AFTER INSERT ON user_reactions
 FOR EACH ROW
 BEGIN
     UPDATE rooms SET message_sequence = message_sequence + 1
-        WHERE id = (SELECT room FROM messages WHERE id = NEW.message);
+        WHERE id = (SELECT room FROM messages WHERE id = (SELECT message FROM reactions WHERE id = NEW.reaction));
     UPDATE messages SET seqno_reactions = (
-        SELECT message_sequence FROM rooms JOIN messages ON messages.room = rooms.id
-            WHERE messages.id = NEW.message)
-        WHERE id = NEW.message;
+            SELECT message_sequence FROM rooms JOIN messages ON messages.room = rooms.id
+            WHERE messages.id = (SELECT message FROM reactions WHERE id = NEW.reaction)
+        )
+        WHERE id = (SELECT message FROM reactions WHERE id = NEW.reaction);
 END;
-CREATE TRIGGER reactions_update_seqno AFTER UPDATE ON reactions
+CREATE TRIGGER user_reactions_no_update BEFORE UPDATE ON user_reactions
+FOR EACH ROW
+BEGIN
+    SELECT RAISE(ABORT, 'user_reactions is not UPDATEable');
+END;
+CREATE TRIGGER reactions_delete_seqno BEFORE DELETE ON user_reactions
 FOR EACH ROW
 BEGIN
     UPDATE rooms SET message_sequence = message_sequence + 1
-        WHERE id = (SELECT room FROM messages WHERE id = NEW.message);
+        WHERE id = (SELECT room FROM messages WHERE id = (SELECT message FROM reactions WHERE id = OLD.reaction));
     UPDATE messages SET seqno_reactions = (
-        SELECT message_sequence FROM rooms JOIN messages ON messages.room = rooms.id
-            WHERE messages.id = NEW.message)
-        WHERE id = NEW.message;
+            SELECT message_sequence FROM rooms JOIN messages ON messages.room = rooms.id
+            WHERE messages.id = (SELECT message FROM reactions WHERE id = OLD.reaction)
+        )
+        WHERE id = (SELECT message FROM reactions WHERE id = OLD.reaction);
 END;
-CREATE TRIGGER reactions_update_seqno_msg AFTER UPDATE ON reactions
-FOR EACH ROW WHEN NEW.message != OLD.message
-BEGIN
-    UPDATE rooms SET message_sequence = message_sequence + 1
-        WHERE id = (SELECT room FROM messages WHERE id = OLD.message);
-    UPDATE messages SET seqno_reactions = (
-        SELECT message_sequence FROM rooms JOIN messages ON messages.room = rooms.id
-            WHERE messages.id = OLD.message)
-        WHERE id = OLD.message;
-END;
-CREATE TRIGGER reactions_delete_seqno AFTER DELETE ON reactions
+-- Trigger to delete the reactions row when we delete the last referencing user reaction
+CREATE TRIGGER reactions_cleanup_empty AFTER DELETE ON user_reactions
 FOR EACH ROW
 BEGIN
-    UPDATE rooms SET message_sequence = message_sequence + 1
-        WHERE id = (SELECT room FROM messages WHERE id = OLD.message);
-    UPDATE messages SET seqno_reactions = (
-        SELECT message_sequence FROM rooms JOIN messages ON messages.room = rooms.id
-            WHERE messages.id = OLD.message)
-        WHERE id = OLD.message;
+    DELETE FROM reactions WHERE id = OLD.reaction
+        AND NOT EXISTS(SELECT * FROM user_reactions WHERE reaction = reactions.id);
 END;
 
 
@@ -256,7 +273,8 @@ FOR EACH ROW WHEN OLD.data IS NOT NULL
 BEGIN
     UPDATE messages SET data = NULL, data_size = NULL, signature = NULL
         WHERE id = OLD.id;
-    DELETE FROM reactions WHERE message = OLD.id;
+    DELETE FROM user_reactions WHERE reaction IN (
+        SELECT id FROM reactions WHERE message = OLD.id);
 END;
 
 -- View of `messages` that is useful for manually inspecting table contents by only returning the

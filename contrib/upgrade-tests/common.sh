@@ -26,9 +26,9 @@ echo -e "[log]\nlevel = DEBUG" >sogs.ini
 echo -e "[rooms]\nactive_prune_threshold = 365000" >>sogs.ini
 if [ -n "$SOGS_PGSQL" ]; then
     echo -e "[db]\nurl = $SOGS_PGSQL" >>sogs.ini
-    for table in rooms users messages message_history pinned_messages reactions files room_users \
-        user_permission_overrides user_permission_futures user_ban_futures user_request_nonces \
-        inbox room_import_hacks file_id_hacks; do
+    for table in rooms users messages message_history pinned_messages reactions user_reactions \
+        files room_users user_permission_overrides user_permission_futures user_ban_futures \
+        user_request_nonces inbox room_import_hacks file_id_hacks; do
         echo "DROP TABLE IF EXISTS $table CASCADE;"
     done | psql "$SOGS_PGSQL"
 else

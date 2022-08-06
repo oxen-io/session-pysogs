@@ -1064,47 +1064,60 @@ class Room:
         internal use from message ids that have already been permission checked.
         """
 
-        reacts = {}
+        reacts = {}  # {msgid => {"🍍": {reactioninfo...}, ...}}, to get returned
+        react_vals = {}  # {id => {reactioninfo...}, ...}, references to the above
         select_you = (
-            """
-            EXISTS(SELECT * FROM reactions WHERE message = r.message AND reaction = r.reaction
-                AND "user" = :uid) AS you
-            """
+            'EXISTS(SELECT * FROM user_reactions WHERE reaction = r.id AND "user" = :uid) AS you'
             if user is not None
             else 'FALSE AS you'
         )
-        for msgid, react, count, you in query(
+        for reactid, msgid, react, count, you in query(
             f"""
             SELECT
+                id,
                 message,
                 reaction,
-                COUNT(*) AS react_count,
+                (SELECT COUNT(*) FROM user_reactions WHERE reaction = r.id) AS react_count,
                 {select_you}
             FROM reactions r
-            WHERE message IN :msgs GROUP BY message, reaction
+            WHERE message IN :msgs
+            ORDER BY id
             """,
             bind_expanding=('msgs',),
             msgs=message_ids,
             uid=None if user is None else user.id,
         ):
-            reacts.setdefault(msgid, {})[react] = (
-                {"count": count, "you": True} if you else {"count": count}
-            )
+            val = {"count": count}
+            if you:
+                val["you"] = True
+            msg_reacts = reacts.setdefault(msgid, {})
+            # We order by id to get insertion order, but we don't want to expose ids externally, so
+            # use a simple counter here:
+            val["index"] = len(msg_reacts)
+
+            msg_reacts[react] = val
+            if reactor_limit > 0:
+                react_vals[reactid] = val
 
         if reacts and reactor_limit > 0:
             select_reactors = (
-                'SELECT message, reaction, session_id '
-                'FROM first_reactors JOIN users ON first_reactors."user" = users.id'
-                if session_ids
-                else 'SELECT reaction, "user" FROM first_reactors'
-            ) + " WHERE message IN :msgs AND _order <= :max_order"
-            for msgid, react, u in query(
+                (
+                    """
+                    SELECT reaction, session_id
+                    FROM first_reactors JOIN users ON first_reactors."user" = users.id
+                    """
+                    if session_ids
+                    else 'SELECT reaction, "user" FROM first_reactors '
+                )
+                + "WHERE reaction IN :reactids AND _order <= :max_order ORDER BY at"
+            )
+            for reactid, u in query(
                 select_reactors,
-                bind_expanding=['msgs'],
-                msgs=list(reacts.keys()),
+                bind_expanding=['reactids'],
+                reactids=list(react_vals.keys()),
                 max_order=reactor_limit,
             ):
-                reacts[msgid][react].setdefault("reactors", []).append(u)
+                react_vals[reactid].setdefault("reactors", []).append(u)
 
         return reacts
 
@@ -1134,8 +1147,8 @@ class Room:
         Adds a reaction to the given post.  Returns True if the reaction was added, False if the
         reaction by this user was already present, throws on other errors.
 
-        SOGS requires that reactions be from 1 to 8 unicode characters long (throws InvalidData() if
-        not satisfied).
+        SOGS requires that reactions be from 1 to 12 unicode characters long (throws InvalidData()
+        if not satisfied).
 
         The post must exist in the room (throws NoSuchPost if it does not).
 
@@ -1146,7 +1159,10 @@ class Room:
 
         try:
             query(
-                'INSERT INTO reactions (message, reaction, "user") VALUES (:msg, :react, :user)',
+                """
+                INSERT INTO message_reactions (message, reaction, "user")
+                VALUES (:msg, :react, :user)
+                """,
                 msg=msg_id,
                 react=reaction,
                 user=user.id,
@@ -1166,7 +1182,11 @@ class Room:
         self._check_reaction_request(user, msg_id, reaction)
         return (
             query(
-                'DELETE FROM reactions WHERE message = :m AND reaction = :r AND "user" = :u',
+                """
+                DELETE FROM user_reactions
+                WHERE reaction = (SELECT id FROM reactions WHERE message = :m AND reaction = :r)
+                    AND "user" = :u
+                """,
                 m=msg_id,
                 r=reaction,
                 u=user.id,
@@ -1196,9 +1216,10 @@ class Room:
 
         return query(
             f"""
-            DELETE FROM reactions WHERE
-                message = :m
-                {'AND reaction = :r' if reaction is not None else ''}
+            DELETE FROM user_reactions WHERE
+                reaction IN (SELECT id FROM reactions WHERE
+                    message = :m
+                    {'AND reaction = :r' if reaction is not None else ''})
             """,
             m=msg_id,
             r=reaction,
@@ -1226,11 +1247,11 @@ class Room:
         users = []
         for user, at in query(
             (
-                'SELECT session_id, at FROM reactions JOIN users ON reactions.user = users.id'
+                'SELECT session_id, at FROM message_reactions r JOIN users ON r.user = users.id'
                 if session_ids
-                else 'SELECT "user", at FROM reactions'
+                else 'SELECT "user", at FROM message_reactions r'
             )
-            + " WHERE reactions.message = :msg AND reactions.reaction = :reaction ORDER BY at"
+            + " WHERE r.message = :msg AND r.reaction = :reaction ORDER BY at"
             + (" LIMIT :limit" if limit is not None and limit > 0 else ''),
             msg=message_id,
             reaction=reaction,

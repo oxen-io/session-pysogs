@@ -237,6 +237,9 @@ def message_single(room, msg_id):
 
       This dict contains keys:
 
+      - `"index"` — contains the order sequence of the reactions indicating the order in which the
+        reactions are meant to be displayed (i.e. the first-reaction-added order).  The value is
+        numeric, from 0 to N-1 for the N reactions returned.
       - `"count"` — the total number of the given reaction, e.g. 27 if 27 different users have added
         the given reaction.
       - `"reactors"` — the session IDs of the first *N* users to use this reaction.  `N` can be
@@ -253,6 +256,7 @@ def message_single(room, msg_id):
         "seqno": 5717578,
         "reactions": {
           "👍": {
+            "index": 1,
             "count": 150,
             "reactors": [
               "058328640343b91c03d393b8dc6ce15c8f93b191ff78054b6ae2c8030e2680b4d6",
@@ -263,6 +267,7 @@ def message_single(room, msg_id):
             "you": true
           },
           "👎": {
+            "index": 0,
             "count": 27,
             "reactors": [
               "05ca519a397a1aa8a7a1515ff433dd2784cbcbb31c358b1a6e97fb758ceab44dca",
@@ -272,6 +277,7 @@ def message_single(room, msg_id):
             ]
           },
           "🍆": {
+            "index": 2,
             "count": 1,
             "reactors": [
               "051234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
