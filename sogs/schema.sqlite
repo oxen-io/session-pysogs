@@ -32,10 +32,12 @@ END;
 CREATE TABLE messages (
     id INTEGER NOT NULL PRIMARY KEY,
     room INTEGER NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
-    user INTEGER NOT NULL REFERENCES users(id),
+    "user" INTEGER NOT NULL REFERENCES users(id),
     posted FLOAT NOT NULL DEFAULT ((julianday('now') - 2440587.5)*86400.0), /* unix epoch */
     edited FLOAT,
-    seqno INTEGER NOT NULL DEFAULT 0, /* set to the room's `message_sequence` counter when posted/edited/deleted */
+    seqno INTEGER NOT NULL DEFAULT 0, /* set to the room's `message_sequence` counter when any of the individual seqno values are updated */
+    seqno_data INTEGER NOT NULL DEFAULT 0, /* updated when `data` changes (i.e. edits, deletions) */
+    seqno_reactions INTEGER NOT NULL DEFAULT 0, /* updated when reactions are added/removed */
     data BLOB, /* Actual message content, not including trailing padding; set to null to delete a message */
     data_size INTEGER, /* The message size, including trailing padding (needed because the signature is over the padded data) */
     signature BLOB, /* Signature of `data` by `public_key`; set to null when deleting a message */
@@ -62,13 +64,13 @@ CREATE TRIGGER messages_insert_counter AFTER INSERT ON messages
 FOR EACH ROW
 BEGIN
     UPDATE rooms SET message_sequence = message_sequence + 1 WHERE id = NEW.room;
-    UPDATE messages SET seqno = (SELECT message_sequence FROM rooms WHERE id = NEW.room) WHERE id = NEW.id;
+    UPDATE messages SET seqno_data = (SELECT message_sequence FROM rooms WHERE id = NEW.room) WHERE id = NEW.id;
 END;
 
 -- Trigger to do various tasks needed when a message is edited/deleted:
 -- * record the old value into message_history
 -- * update the room's `message_sequence` counter (so that clients can learn about the update)
--- * update the message's `sequence` value to that new counter
+-- * update the message's `seqno_data` value to that new counter
 -- * update the message's `edit` timestamp
 CREATE TRIGGER messages_insert_history AFTER UPDATE OF data ON messages
 FOR EACH ROW WHEN NEW.data IS NOT OLD.data
@@ -76,10 +78,25 @@ BEGIN
     INSERT INTO message_history (message, data, signature) VALUES (NEW.id, OLD.data, OLD.signature);
     UPDATE rooms SET message_sequence = message_sequence + 1 WHERE id = NEW.room;
     UPDATE messages SET
-        seqno = (SELECT message_sequence FROM rooms WHERE id = NEW.room),
+        seqno_data = (SELECT message_sequence FROM rooms WHERE id = NEW.room),
         edited = (julianday('now') - 2440587.5)*86400.0
     WHERE id = NEW.id;
 END;
+
+-- Trigger to update seqno when any of the seqno_* indicators is updated, so that updating can
+-- update just the seqno_whatever and have the master seqno get updated automatically.
+CREATE TRIGGER messages_seqno_updater_ins AFTER INSERT ON messages
+FOR EACH ROW
+BEGIN
+    UPDATE messages SET seqno = max(seqno_data, seqno_reactions) WHERE id = NEW.id;
+END;
+CREATE TRIGGER messages_seqno_updater_upd AFTER UPDATE OF seqno_data, seqno_reactions ON messages
+FOR EACH ROW
+BEGIN
+    UPDATE messages SET seqno = max(seqno_data, seqno_reactions) WHERE id = NEW.id;
+END;
+
+
 
 CREATE TABLE pinned_messages (
     room INTEGER NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
@@ -163,6 +180,82 @@ CREATE TABLE needs_blinding (
 );
 
 
+-- Reactions
+CREATE TABLE reactions (
+    id INTEGER NOT NULL PRIMARY KEY,
+    message INTEGER NOT NULL REFERENCES messages ON DELETE CASCADE,
+    reaction TEXT NOT NULL
+);
+CREATE UNIQUE INDEX reactions_message ON reactions (message, reaction);
+
+CREATE TABLE user_reactions (
+    reaction INTEGER NOT NULL REFERENCES reactions,
+    "user" INTEGER NOT NULL REFERENCES users ON DELETE CASCADE,
+    at FLOAT NOT NULL DEFAULT ((julianday('now') - 2440587.5)*86400.0), /* unix epoch */
+    PRIMARY KEY(reaction, "user")
+);
+CREATE INDEX user_reactions_at ON user_reactions(reaction, at);
+
+CREATE VIEW message_reactions AS
+SELECT reactions.*, user_reactions.user, user_reactions.at
+FROM reactions JOIN user_reactions ON user_reactions.reaction = reactions.id;
+
+CREATE TRIGGER message_reactions_insert INSTEAD OF INSERT ON message_reactions
+FOR EACH ROW
+BEGIN
+    INSERT INTO reactions (message, reaction) VALUES (NEW.message, NEW.reaction)
+        ON CONFLICT (message, reaction) DO NOTHING;
+    INSERT INTO user_reactions (reaction, "user") VALUES (
+        (SELECT id FROM reactions WHERE message = NEW.message AND reaction = NEW.reaction),
+        NEW."user");
+END;
+
+-- View used to select the first n reactors (using `WHERE _order <= 5`).
+CREATE VIEW first_reactors AS
+SELECT *, rank() OVER (PARTITION BY reaction ORDER BY at) AS _order
+FROM user_reactions;
+
+CREATE TRIGGER reactions_no_update BEFORE UPDATE ON reactions
+FOR EACH ROW
+BEGIN
+    SELECT RAISE(ABORT, 'reactions is not UPDATEable');
+END;
+CREATE TRIGGER user_reactions_insert_seqno AFTER INSERT ON user_reactions
+FOR EACH ROW
+BEGIN
+    UPDATE rooms SET message_sequence = message_sequence + 1
+        WHERE id = (SELECT room FROM messages WHERE id = (SELECT message FROM reactions WHERE id = NEW.reaction));
+    UPDATE messages SET seqno_reactions = (
+            SELECT message_sequence FROM rooms JOIN messages ON messages.room = rooms.id
+            WHERE messages.id = (SELECT message FROM reactions WHERE id = NEW.reaction)
+        )
+        WHERE id = (SELECT message FROM reactions WHERE id = NEW.reaction);
+END;
+CREATE TRIGGER user_reactions_no_update BEFORE UPDATE ON user_reactions
+FOR EACH ROW
+BEGIN
+    SELECT RAISE(ABORT, 'user_reactions is not UPDATEable');
+END;
+CREATE TRIGGER reactions_delete_seqno BEFORE DELETE ON user_reactions
+FOR EACH ROW
+BEGIN
+    UPDATE rooms SET message_sequence = message_sequence + 1
+        WHERE id = (SELECT room FROM messages WHERE id = (SELECT message FROM reactions WHERE id = OLD.reaction));
+    UPDATE messages SET seqno_reactions = (
+            SELECT message_sequence FROM rooms JOIN messages ON messages.room = rooms.id
+            WHERE messages.id = (SELECT message FROM reactions WHERE id = OLD.reaction)
+        )
+        WHERE id = (SELECT message FROM reactions WHERE id = OLD.reaction);
+END;
+-- Trigger to delete the reactions row when we delete the last referencing user reaction
+CREATE TRIGGER reactions_cleanup_empty AFTER DELETE ON user_reactions
+FOR EACH ROW
+BEGIN
+    DELETE FROM reactions WHERE id = OLD.reaction
+        AND NOT EXISTS(SELECT * FROM user_reactions WHERE reaction = reactions.id);
+END;
+
+
 
 -- Effectively the same as `messages` except that it also includes the `session_id` from the users
 -- table of the user who posted it, and the session id of the whisper recipient (as `whisper_to`) if
@@ -170,7 +263,7 @@ CREATE TABLE needs_blinding (
 CREATE VIEW message_details AS
 SELECT messages.*, uposter.session_id, uwhisper.session_id AS whisper_to
     FROM messages
-        JOIN users uposter ON messages.user = uposter.id
+        JOIN users uposter ON messages."user" = uposter.id
         LEFT JOIN users uwhisper ON messages.whisper = uwhisper.id;
 
 -- Delete trigger on message_details which lets us use a DELETE that gets transformed into an UPDATE
@@ -180,12 +273,15 @@ FOR EACH ROW WHEN OLD.data IS NOT NULL
 BEGIN
     UPDATE messages SET data = NULL, data_size = NULL, signature = NULL
         WHERE id = OLD.id;
+    DELETE FROM user_reactions WHERE reaction IN (
+        SELECT id FROM reactions WHERE message = OLD.id);
 END;
 
 -- View of `messages` that is useful for manually inspecting table contents by only returning the
 -- length (rather than raw bytes) for data/signature.
 CREATE VIEW message_metadata AS
-SELECT id, room, user, session_id, posted, edited, seqno, filtered, whisper_to, whisper_mods,
+SELECT id, room, "user", session_id, posted, edited, seqno, seqno_data, seqno_reactions,
+        filtered, whisper_to, whisper_mods,
         length(data) AS data_unpadded, data_size, length(signature) as signature_length
     FROM message_details;
 
@@ -193,9 +289,9 @@ SELECT id, room, user, session_id, posted, edited, seqno, filtered, whisper_to, 
 
 CREATE TABLE room_users (
     room INTEGER NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
-    user INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    "user" INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     last_active FLOAT NOT NULL DEFAULT ((julianday('now') - 2440587.5)*86400.0), /* unix epoch */
-    PRIMARY KEY(room, user)
+    PRIMARY KEY(room, "user")
 ) WITHOUT ROWID;
 CREATE INDEX room_users_room_activity ON room_users(room, last_active);
 CREATE INDEX room_users_activity ON room_users(last_active);
@@ -204,7 +300,7 @@ CREATE INDEX room_users_activity ON room_users(last_active);
 -- default".
 CREATE TABLE user_permission_overrides (
     room INTEGER NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
-    user INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    "user" INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     banned BOOLEAN NOT NULL DEFAULT FALSE, /* If true the user is banned */
     read BOOLEAN, /* If false the user may not fetch messages; null uses room default; true allows reading */
     accessible BOOLEAN, /* When read is false this controls whether room metadata is still visible */
@@ -213,7 +309,7 @@ CREATE TABLE user_permission_overrides (
     moderator BOOLEAN NOT NULL DEFAULT FALSE, /* If true the user may moderate non-moderators */
     admin BOOLEAN NOT NULL DEFAULT FALSE, /* If true the user may moderate anyone (including other moderators and admins) */
     visible_mod BOOLEAN NOT NULL DEFAULT TRUE, /* If true then this user (if a moderator) is included in the list of a room's public moderators */
-    PRIMARY KEY(room, user),
+    PRIMARY KEY(room, "user"),
     CHECK(NOT (banned AND (moderator OR admin))) /* Mods/admins cannot be banned */
 ) WITHOUT ROWID;
 CREATE INDEX user_permission_overrides_mods ON user_permission_overrides(room) WHERE moderator;
@@ -222,12 +318,12 @@ CREATE INDEX user_permission_overrides_mods ON user_permission_overrides(room) W
 CREATE TRIGGER user_perms_update_admins_are_mods AFTER UPDATE OF moderator, admin ON user_permission_overrides
 FOR EACH ROW WHEN NEW.admin AND NOT NEW.moderator
 BEGIN
-    UPDATE user_permission_overrides SET moderator = TRUE WHERE room = NEW.room AND user = NEW.user;
+    UPDATE user_permission_overrides SET moderator = TRUE WHERE room = NEW.room AND "user" = NEW."user";
 END;
 CREATE TRIGGER user_perms_insert_admins_are_mods AFTER INSERT ON user_permission_overrides
 FOR EACH ROW WHEN NEW.admin AND NOT NEW.moderator
 BEGIN
-    UPDATE user_permission_overrides SET moderator = TRUE WHERE room = NEW.room AND user = NEW.user;
+    UPDATE user_permission_overrides SET moderator = TRUE WHERE room = NEW.room AND "user" = NEW."user";
 END;
 
 -- Trigger that removes useless empty permission override rows (e.g. after a ban gets removed, and
@@ -236,14 +332,14 @@ CREATE TRIGGER user_perms_empty_cleanup AFTER UPDATE ON user_permission_override
 FOR EACH ROW WHEN NOT (NEW.banned OR NEW.moderator OR NEW.admin)
     AND COALESCE(NEW.accessible, NEW.read, NEW.write, NEW.upload) IS NULL
 BEGIN
-    DELETE from user_permission_overrides WHERE room = NEW.room AND user = NEW.user;
+    DELETE from user_permission_overrides WHERE room = NEW.room AND "user" = NEW."user";
 END;
 
 -- Triggers than remove a user from `room_users` when they are banned from the room
 CREATE TRIGGER room_users_remove_banned AFTER UPDATE OF banned ON user_permission_overrides
 FOR EACH ROW WHEN NEW.banned
 BEGIN
-    DELETE FROM room_users WHERE room = NEW.room AND user = NEW.user;
+    DELETE FROM room_users WHERE room = NEW.room AND "user" = NEW."user";
 END;
 
 
@@ -386,7 +482,7 @@ SELECT session_id, mods.* FROM (
 -- applied after a delay.
 CREATE TABLE user_permission_futures (
     room INTEGER NOT NULL REFERENCES rooms ON DELETE CASCADE,
-    user INTEGER NOT NULL REFERENCES users ON DELETE CASCADE,
+    "user" INTEGER NOT NULL REFERENCES users ON DELETE CASCADE,
     at FLOAT NOT NULL, /* when the change should take effect (unix epoch) */
     read BOOLEAN, /* Set this value @ at, if non-null */
     write BOOLEAN, /* Set this value @ at, if non-null */
@@ -400,21 +496,23 @@ CREATE INDEX user_permission_futures_room_user ON user_permission_futures(room, 
 -- unban.  (You can also schedule a future *ban* here, but the utility of that is less clear).
 CREATE TABLE user_ban_futures (
     room INTEGER REFERENCES rooms ON DELETE CASCADE,
-    user INTEGER NOT NULL REFERENCES users ON DELETE CASCADE,
+    "user" INTEGER NOT NULL REFERENCES users ON DELETE CASCADE,
     at FLOAT NOT NULL, /* when the change should take effect (unix epoch) */
     banned BOOLEAN NOT NULL /* if true then ban at `at`, if false then unban */
 );
 CREATE INDEX user_ban_futures_at ON user_ban_futures(at);
-CREATE INDEX user_ban_futures_room_user ON user_ban_futures(room, user);
+CREATE INDEX user_ban_futures_room_user ON user_ban_futures(room, "user");
 
 
 -- Nonce tracking to prohibit request signature nonce reuse (thus prevent replay attacks)
 CREATE TABLE user_request_nonces (
-    user INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    "user" INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     nonce BLOB NOT NULL UNIQUE,
     expiry FLOAT NOT NULL DEFAULT ((julianday('now') - 2440587.5 + 1.0)*86400.0) /* now + 24 hours */
 );
 CREATE INDEX user_request_nonces_expiry ON user_request_nonces(expiry);
+
+
 
 CREATE TABLE inbox (
     id INTEGER PRIMARY KEY,
@@ -425,5 +523,6 @@ CREATE TABLE inbox (
     expiry FLOAT DEFAULT ((julianday('now') - 2440587.5 + 15.0)*86400.0) /* now + 15 days */
 );
 CREATE INDEX inbox_recipient ON inbox(recipient);
+
 
 COMMIT;

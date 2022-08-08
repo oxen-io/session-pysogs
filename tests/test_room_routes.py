@@ -584,6 +584,7 @@ def test_fetch_since(client, room, user, no_rate_limit):
                     'data',
                     'signature',
                     'posted',
+                    'reactions',
                 }
                 assert post['session_id'] == user.session_id
                 assert post['seqno'] == j
@@ -801,6 +802,7 @@ def test_posting(client, room, user, user2, mod, global_mod):
         'session_id': user.session_id,
         'data': d,
         'signature': s,
+        'reactions': {},
     }
     assert p1['posted'] == from_now.now()
 
@@ -831,6 +833,7 @@ def test_whisper_to(client, room, user, user2, mod, global_mod):
         'whisper': True,
         'whisper_mods': False,
         'whisper_to': user2.session_id,
+        'reactions': {},
     }
     assert msg['posted'] == from_now.now()
 
@@ -877,6 +880,7 @@ def test_whisper_mods(client, room, user, user2, mod, global_mod, admin):
         'signature': s,
         'whisper': True,
         'whisper_mods': True,
+        'reactions': {},
     }
     assert msg['posted'] == from_now.now()
 
@@ -911,6 +915,7 @@ def test_whisper_both(client, room, user, user2, mod, admin):
         'session_id': user.session_id,
         'data': d,
         'signature': s,
+        'reactions': {},
     }
 
     # Regular users can't post mod whispers:
@@ -939,6 +944,7 @@ def test_whisper_both(client, room, user, user2, mod, admin):
             'session_id': user.session_id,
             'data': utils.encode_base64('offensive post!'.encode()),
             'signature': utils.encode_base64(pad64('sig')),
+            'reactions': {},
         },
         {
             'id': 2,
@@ -948,6 +954,7 @@ def test_whisper_both(client, room, user, user2, mod, admin):
             'signature': utils.encode_base64(pad64('sig2')),
             'whisper': True,
             'whisper_mods': True,
+            'reactions': {},
         },
         {
             'id': 3,
@@ -958,6 +965,7 @@ def test_whisper_both(client, room, user, user2, mod, admin):
             'whisper': True,
             'whisper_mods': True,
             'whisper_to': user.session_id,
+            'reactions': {},
         },
         {
             'id': 4,
@@ -965,6 +973,7 @@ def test_whisper_both(client, room, user, user2, mod, admin):
             'session_id': user.session_id,
             'data': utils.encode_base64("No please I'm sorry!!!".encode()),
             'signature': utils.encode_base64(pad64('sig4')),
+            'reactions': {},
         },
     ]
 
@@ -997,6 +1006,7 @@ def test_edits(client, room, user, user2, mod, global_admin):
         'session_id': user.session_id,
         'data': d,
         'signature': s,
+        'reactions': {},
     }
     assert p1['posted'] == from_now.now()
 
@@ -1041,6 +1051,7 @@ def test_edits(client, room, user, user2, mod, global_admin):
         'session_id': user2.session_id,
         'data': d,
         'signature': s,
+        'reactions': {},
     }
     assert p2['posted'] == from_now.now()
 
