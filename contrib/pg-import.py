@@ -48,17 +48,14 @@ if not args.drop_tables:
 
 pg_schema = importlib.resources.read_text('sogs', 'schema.pgsql')
 
-old = sqlite3.connect(f"file:{args.sogs_db[0]}?mode=ro", uri=True)
-old.row_factory = sqlite3.Row
-
-pgsql = psycopg.connect(args.postgresql_url[0], autocommit=True)
-
 TABLES = [
     "rooms",
     "users",
     "messages",
     "message_history",
     "pinned_messages",
+    "reactions",
+    "user_reactions",
     "files",
     "room_users",
     "user_permission_overrides",
@@ -68,6 +65,25 @@ TABLES = [
     "inbox",
     "needs_blinding",
 ]
+
+import_tables = set(TABLES)
+schema_tables = set(re.findall(r'^CREATE TABLE (\w+)', pg_schema, re.M))
+if schema_tables != import_tables:
+    print("Error: pg-import script table mismatch:", file=sys.stderr)
+    missing_here = import_tables - schema_tables
+    missing_there = schema_tables - import_tables
+    if missing_here:
+        print(f"Not in schema: {' '.join(missing_here)}", file=sys.stderr)
+    if missing_there:
+        print(f"Not in import: {' '.join(missing_there)}", file=sys.stderr)
+    sys.exit(1)
+
+
+old = sqlite3.connect(f"file:{args.sogs_db[0]}?mode=ro", uri=True)
+old.row_factory = sqlite3.Row
+
+pgsql = psycopg.connect(args.postgresql_url[0], autocommit=True)
+
 
 with pgsql.transaction():
 
@@ -187,8 +203,11 @@ with pgsql.transaction():
     started = time.time()
     count = 0
     count_total = curin.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
-    for row in curin.execute("SELECT id, seqno FROM messages"):
-        curout.execute("UPDATE messages SET seqno = %s WHERE id = %s", [row[1], row[0]])
+    for mid, seqno in curin.execute("SELECT id, seqno FROM messages"):
+        curout.execute(
+            "UPDATE messages SET seqno = %(seqno)s, seqno_data = %(seqno)s WHERE id = %(id)s",
+            {'id': mid, 'seqno': seqno},
+        )
         count += 1
         if count % 1000 == 0:
             if args.commit:

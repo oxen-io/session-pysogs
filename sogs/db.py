@@ -215,10 +215,16 @@ def check_needs_blinding(dbconn):
                 EXCEPT
                 SELECT "user" FROM needs_blinding
             )
+            AND session_id LIKE '05%'
             """,
             dbconn=dbconn,
         ):
-            pos_derived = crypto.compute_blinded_abs_id(sid)
+            try:
+                pos_derived = crypto.compute_blinded_abs_id(sid)
+            except Exception as e:
+                logging.warning(f"Failed to blind session_id {sid}: {e}")
+                continue
+
             query(
                 'INSERT INTO needs_blinding (blinded_abs, "user") VALUES (:blinded, :uid)',
                 blinded=pos_derived,

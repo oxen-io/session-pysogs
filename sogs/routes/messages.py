@@ -9,39 +9,66 @@ from flask import abort, jsonify, g, Blueprint, request
 messages = Blueprint('messages', __name__)
 
 
-_query_limit_doc = """# Query Parameters
-
-The request takes an optional `limit` query parameter indicating the number of messages to
-return (up to 256).  If omitted, 100 messages are returned."""
+def qs_reactors():
+    return utils.get_int_param('reactors', 4, min=0, max=20, truncate=True)
 
 
 @messages.get("/room/<Room:room>/messages/since/<int:seqno>")
 @auth.read_required
 def messages_since(room, seqno):
-    f"""
+    """
     Retrieves message *updates* from a room.  This is the main message polling endpoint in SOGS.
 
-    This endpoint retrieves new, edited, and deleted messages posted to this room since the given
-    message sequence counter.  Returns `limit` messages at a time (100 if no limit is given).
-    Returned messages include any new messages, updates to existing messages (i.e.  edits), and
-    message deletions made to the room since the given update id.  Messages are returned in "update"
-    order, that is, in the order in which the change was applied to the room, from oldest the
-    newest.
+    This endpoint retrieves new, edited, and deleted messages or message reactions posted to this
+    room since the given message sequence counter.  Returns `limit` messages at a time (100 if no
+    limit is given).  Returned messages include any new messages, updates to existing messages (i.e.
+    edits), and message deletions made to the room since the given update id.  Messages are returned
+    in "update" order, that is, in the order in which the change was applied to the room, from
+    oldest the newest.
 
     # URL Parameters
 
-    - `seqno` — the integer `seqno` value of the most recent message retrieves from this room.  To
-      retrieve from the beginning of the room's message history use a value of 0 (the first room
-      post will always be >= 1).
+    - `seqno` — the integer `seqno` value of the most recent message or reaction retrieved from this
+      room via this endpoint.  To retrieve from the beginning of the room's message history use a
+      value of 0 (the first room post will always be >= 1).
 
-    {_query_limit_doc}
+    # Query Parameters
+
+    - `limit` — if specified this indicates the number of messages to return (up to 256).  If
+      omitted, 100 messages are returned.
+
+    - `t` — string indicating the types of updates that the client supports, thus allowing the
+      client to opt-out of update types that it does not yet support.  Each letter of the string is
+      a flag; flags may be specified in any order, and are case-sensistive.  Unknown flags are
+      ignored by SOGS (to allow for backwards compatibility). Current flags:
+
+      - `r` — include message reaction updates
+
+      Note that flags may be removed in the future, once a given feature is supported by all known
+      clients.
+
+    - `reactors` — maximum number of reactors to return for emoji reactions.  Can be set to a value
+      from 0 to 20; the default, if omitted, is 4.  If 0 then the `"reactors"` field (see below) is
+      omitted entirely.
 
     # Return value
 
-    On success this returns a JSON array of message update objects.  Each element is an object as
-    would be returned by [the single message retrieval endpoint](#get-roomroommessagemsg_id), except
-    that updates for *deleted* messages are also included with the `"data"` key set to `null` and
-    the `"signature"` key omitted.
+    On success this returns a JSON array of message update objects.  There are, currently, two types
+    of updates:
+
+    - a message row, returning the most recent version of the message (as would be returned by [the
+      single message retrieval endpoint](#get-roomroommessagemsg_id)).  This is used for new
+      messages, for edited messages, and for deletions.  In the case of a deletion, the `"data"`
+      element will be set to null, the `"signature"` key will be omitted, and an extra element
+      `"deleted"` will be set to `true`.
+
+      This message type can be definitively identified by the presence of a `"data"` key (which can
+      be null, but will still be present).
+
+    - message reaction details when a message has had changes to its reactions.  (Requires using the
+      `t=r` query parameters).  This consists of an object containing the message id (`"id"` key)
+      and the `"reactions"` key, as would be returned by the single message retrieval endpoint, but
+      without any of the other message data.
 
     The endpoint always returns `limit` (or 100, if unspecified) message updates if they are
     available, so that a caller can determine whether it needs to issue additional room updates by
@@ -57,13 +84,23 @@ def messages_since(room, seqno):
 
     limit = utils.get_int_param('limit', 100, min=1, max=256, truncate=True)
 
-    return utils.jsonify_with_base64(room.get_messages_for(g.user, limit=limit, sequence=seqno))
+    flags = request.args.get('t', '')
+
+    return utils.jsonify_with_base64(
+        room.get_messages_for(
+            g.user,
+            limit=limit,
+            sequence=seqno,
+            reaction_updates='r' in flags,
+            reactor_limit=qs_reactors(),
+        )
+    )
 
 
 @messages.get("/room/<Room:room>/messages/before/<int:msg_id>")
 @auth.read_required
 def messages_before(room, msg_id):
-    f"""
+    """
     Retrieves messages from the room preceding a given id.
 
     This endpoint is intended to be used with `.../recent` to allow a client to retrieve the most
@@ -77,7 +114,11 @@ def messages_before(room, msg_id):
 
     - `msg_id` a numeric integer ID; the messages immediately *before* this ID are returned.
 
-    {_query_limit_doc}
+    # Query Parameters
+
+    - `limit` — maximum number of messages to return; defaults to 100, maximum is 256.
+
+    - `reactors` — how many reactors to include in message reaction data.  Defaults to 4.
 
     # Return value
 
@@ -94,13 +135,15 @@ def messages_before(room, msg_id):
 
     limit = utils.get_int_param('limit', 100, min=1, max=256, truncate=True)
 
-    return utils.jsonify_with_base64(room.get_messages_for(g.user, limit=limit, before=msg_id))
+    return utils.jsonify_with_base64(
+        room.get_messages_for(g.user, limit=limit, before=msg_id, reactor_limit=qs_reactors())
+    )
 
 
 @messages.get("/room/<Room:room>/messages/recent")
 @auth.read_required
 def messages_recent(room):
-    f"""
+    """
     Retrieves recent messages posted to this room.
 
     Returns the most recent `limit` messages (100 if no limit is given).  This only returns extant
@@ -110,7 +153,11 @@ def messages_recent(room):
 
     # URL Parameters
 
-    {_query_limit_doc}
+    # Query Parameters
+
+    - `limit` — maximum number of messages to return; defaults to 100, maximum is 256.
+
+    - `reactors` — how many reactors to include in message reaction data.  Defaults to 4.
 
     # Return value
 
@@ -127,7 +174,9 @@ def messages_recent(room):
 
     limit = utils.get_int_param('limit', 100, min=1, max=256, truncate=True)
 
-    return utils.jsonify_with_base64(room.get_messages_for(g.user, limit=limit, recent=True))
+    return utils.jsonify_with_base64(
+        room.get_messages_for(g.user, limit=limit, recent=True, reactor_limit=qs_reactors())
+    )
 
 
 @messages.get("/room/<Room:room>/message/<int:msg_id>")
@@ -139,6 +188,12 @@ def message_single(room, msg_id):
     # URL Parameters
 
     - `msg_id` the numeric integer ID of the message to retrieve.
+
+    # Query Parameters
+
+    - `reactors` — optional parameter that controls how many reactor session IDs to include in the
+      `"reactions"` field.  Can be 0 to 20; the default, if omitted, is 4.  If 0 then the
+      `"reactors"` key will be omitted entirely from the `"reactions"` field.
 
     # Return value
 
@@ -175,6 +230,64 @@ def message_single(room, msg_id):
       Ed25519 key in the blinded session ID.  For unblinded IDs (`05...`) the signature is
       verifiable using the XEd25519-specified converted pubkey of the Session ID.  If `data` is null
       this field (i.e. for a deletion update) this field is omitted.
+    - `reactions` — A dict of reaction information for this message; the returned information is
+      always current (i.e. requesting the same thing more than once can give different reaction
+      information if reaction changes occur between requests).  Note that, when polling for message
+      updates including reactions, *only* this key and `id` will be included in the response for
+      reactions-only updates.
+
+      This dict contains keys:
+
+      - `"index"` — contains the order sequence of the reactions indicating the order in which the
+        reactions are meant to be displayed (i.e. the first-reaction-added order).  The value is
+        numeric, from 0 to N-1 for the N reactions returned.
+      - `"count"` — the total number of the given reaction, e.g. 27 if 27 different users have added
+        the given reaction.
+      - `"reactors"` — the session IDs of the first *N* users to use this reaction.  `N` can be
+        controlled using the `reactors` query string parameter.  If `reactors` is 0 then this field
+        is omitted entirely.
+      - `"you"` — will be present and set to true if the user making the request has applied the
+        given reaction.  Omitted if the user has not (or if the request does not have a user).
+
+      For example, one reaction detail (with the default reactors size) might consist of:
+
+      ```json
+      {
+        "id": 147176,
+        "seqno": 5717578,
+        "reactions": {
+          "👍": {
+            "index": 1,
+            "count": 150,
+            "reactors": [
+              "058328640343b91c03d393b8dc6ce15c8f93b191ff78054b6ae2c8030e2680b4d6",
+              "05d782a81448199aea940f496cc70dc644c269e5979e472536ea03a067bf46d54a",
+              "05233432db6edcd320a06b550d4dcf1a06cc486c58f8017a565f6f7dc0fc8b9512",
+              "05ca519a397a1aa8a7a1515ff433dd2784cbcbb31c358b1a6e97fb758ceab44dca"
+            ],
+            "you": true
+          },
+          "👎": {
+            "index": 0,
+            "count": 27,
+            "reactors": [
+              "05ca519a397a1aa8a7a1515ff433dd2784cbcbb31c358b1a6e97fb758ceab44dca",
+              "055297c3dc032bef33a21dcb1b76265c8319e53ed0867accd3c274c25ae33c1731",
+              "05986c4e7fec0ac1a3a544d84367b2e995f85a6356be8d082724781a9ff699ac7a",
+              "0537f1727302b70be32fc371523097bcdbc3e681f947a68ef5e3ea1365a689666a"
+            ]
+          },
+          "🍆": {
+            "index": 2,
+            "count": 1,
+            "reactors": [
+              "051234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+            ],
+            "you": true
+          }
+        }
+      }
+      ```
 
     # Error status codes
 
@@ -188,7 +301,7 @@ def message_single(room, msg_id):
     if g.user:
         g.user.update_room_activity(room)
 
-    msgs = room.get_messages_for(g.user, single=msg_id)
+    msgs = room.get_messages_for(g.user, single=msg_id, reactor_limit=qs_reactors())
     if not msgs:
         abort(http.NOT_FOUND)
 
@@ -293,8 +406,6 @@ def edit_message(room, msg_id):
       they are not the original author or no longer have posting permission).
     """
     req = request.json
-
-    # TODO: files tracking
 
     room.edit_post(
         g.user,
@@ -425,3 +536,161 @@ def message_unpin_all(room):
     """
     room.unpin_all(g.user)
     return jsonify({})
+
+
+@messages.put("/room/<Room:room>/reaction/<int:msg_id>/<path:reaction>")
+@auth.user_required
+@auth.read_required
+def message_react(room, msg_id, reaction):
+    """
+    Adds a reaction to the given message in this room.  The user must have read access in the room.
+
+    Reactions are short strings of 1-12 unicode codepoints, typically emoji (or character sequences
+    to produce an emoji variant, such as 👨🏿‍🦰, which is composed of 4 unicode "characters"
+    but usually renders as a single emoji "Man: Dark Skin Tone, Red Hair").
+
+    # URL Parameters
+
+    - `msg_id` — The message ID on which the reaction should be applied.  The message must be in
+      this room, must not be deleted, and must be a regular message (i.e. not a whisper).
+
+    - `reaction` — The reaction to be added, as a UTF-8 string. It is recommended to use a
+      URL-encoded UTF-8 byte sequence (e.g. `%f0%9f%8d%86` for `🍆`); many HTTP libraries will do
+      this encoding automatically.
+
+    # JSON parameters
+
+    Takes an empty JSON object as the request body.  All values in the object are reserved for
+    possible future use.
+
+    # Return value
+
+    On success returns a 200 status code and a JSON object response body with keys:
+
+    - `"added"` — boolean value indicating whether the reaction was added (true) or already present
+      (false).
+
+    # Error status codes
+
+    - 403 Forbidden — returned if the user doesn't have read permission in the room.
+    - 404 Not Found — returned if the given post does not exist
+    - 400 Bad Request — if the input does not contain a valid reaction
+
+    Note that it is *not* an error to attempt to add a reaction that the user has already added
+    (instead in such a case the success response return value includes `"added": false`).
+    """
+
+    added = room.add_reaction(g.user, msg_id, reaction)
+    return jsonify({"added": added})
+
+
+@messages.delete("/room/<Room:room>/reaction/<int:msg_id>/<path:reaction>")
+@auth.user_required
+@auth.read_required
+def message_unreact(room, msg_id, reaction):
+    """
+    Removes a reaction from a post this room.  The user must have read access in the room.  This
+    only removes the user's own reaction but does not affect the reactions of other users.
+
+    # URL Parameters
+
+    - `msg_id` — The message ID from which the reaction should be removed.  The message must be in
+      this room, must not be deleted, and must be a regular message (i.e. not a whisper).
+
+    - `reaction` — The UTF-8 reaction string. It is recommended to use a URL-encoded UTF-8 byte
+      sequence (e.g. `%f0%9f%8d%86` for `🍆`); many HTTP libraries will do this encoding
+      automatically.
+
+    # Return value
+
+    On success returns a 200 status code and a JSON object response body with keys:
+
+    - `"removed"` — boolean value indicating whether the reaction was removed (true) or was not
+      present to begin with (false).
+
+    # Error status codes
+
+    - 403 Forbidden — returned if the user doesn't have read permission in the room.
+    - 404 Not Found — returned if the given post does not exist
+    - 400 Bad Request — if the input does not contain a valid reaction
+
+    Note that it is *not* an error to attempt to remove a reaction that does not exist (instead in
+    such a case the success response return value includes `"removed": false`).
+    """
+    removed = room.delete_reaction(g.user, msg_id, reaction)
+    return jsonify({"removed": removed})
+
+
+@messages.delete("/room/<Room:room>/reactions/<int:msg_id>/<path:reaction>")
+@messages.delete("/room/<Room:room>/reactions/<int:msg_id>")
+@auth.mod_required
+def message_delete_reactions(room, msg_id, reaction=None):
+    """
+    Removes all reactions of all users from a post in this room.  The calling must have moderator
+    permissions in the room.  This endpoint can either remove a single reaction (e.g. remove all 🍆
+    reactions) by specifying it after the message id (following a /), or remove *all* reactions from
+    the post by not including the `/<reaction>` suffix of the URL.
+
+    # URL Parameters
+
+    - `msg_id` — The message ID from which the reactions should be removed.  The message must be in
+      this room, must not be deleted, and must be a regular message (i.e. not a whisper).
+
+    - `reaction` — The optional UTF-8 reaction string. If specified then all reactions of this type
+      are removed; if omitted then *all* reactions are removed from the post.  It is recommended to
+      use a URL-encoded UTF-8 byte sequence (e.g. `%f0%9f%8d%86` for `🍆`); many HTTP libraries will
+      do this encoding automatically.
+
+    # Return value
+
+    On success returns a 200 status code and a JSON object response body with key:
+
+    - `"removed"` — the total number of reactions that were deleted.
+
+    # Error status codes
+
+    - 403 Forbidden — if not a moderator
+    - 404 Not Found — if the referenced post does not exist or is not a regular message
+    - 400 Bad Request — if the input does not contain a valid reaction *or* `"all": true`.
+    """
+    removed = room.delete_all_reactions(g.user, msg_id, reaction)
+    return jsonify({"removed": removed})
+
+
+@messages.get("/room/<Room:room>/reactors/<int:msg_id>/<path:reaction>")
+@auth.read_required
+def message_get_reactors(room, msg_id, reaction):
+    """
+    Returns the list of all reactors who have added a particular reaction to a particular message.
+
+    # URL Parameters
+
+    - `msg_id` — The message ID in this room for which reactions are being queried.  The message
+      must be in this room, must not be deleted, and must be a regular message (i.e. not a whisper).
+
+    - `reaction` — The UTF-8 reaction string. It is recommended to use a URL-encoded UTF-8 byte
+      sequence (e.g. `%f0%9f%8d%86` for `🍆`); many HTTP libraries will do this encoding
+      automatically.
+
+    # Query Parameters
+
+    - `limit` — if specified this indicates the maximum number of reactor IDs to return.  If omitted
+      or specified as <= 0 then there is no limit.
+
+    # Return value
+
+    On success returns a 200 status code with a body consisting of a JSON list of [session ID,
+    timestamp] pairs containing the users who added this reaction, and the unix timestamp at which
+    they added the reaction.
+
+    # Error status codes
+
+    - 403 Forbidden — if the caller does not have read access to the room
+    - 404 Not Found — if the referenced post does not exist or is not a regular message
+    - 400 Bad Request — if the `reaction` value is not a valid reaction
+    """
+
+    limit = utils.get_int_param('limit', 0)
+    if limit <= 0:
+        limit = None
+    return jsonify(room.get_reactors(msg_id, reaction, g.user, limit=limit))

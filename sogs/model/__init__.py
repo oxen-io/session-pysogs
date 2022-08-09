@@ -14,6 +14,7 @@ if config.PROFANITY_FILTER:
 # to identify the server's capabilities and act accordingly.
 capabilities = {
     'sogs',  # Basic sogs capabilities
+    'reactions',  # Reactions, added in 0.3.1
     # 'newcap',  # Add here
 }
 

@@ -6,6 +6,7 @@ import re
 import os
 import argparse
 import sys
+import shutil
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
@@ -19,10 +20,17 @@ parser.add_argument(
     "3 would start with `###`, sub-headings would be `####`, etc.",
 )
 parser.add_argument(
+    "-m",
+    "--multi-file",
+    action="store_true",
+    help="Write to one markdown file per section, rather than one single large file",
+)
+parser.add_argument(
     "-o",
     "--output",
     type=str,
-    help="Specify output file; specifing a - or omitting outputs to stdout",
+    help="Specify output file (or directory, when using -m); specifing a - or omitting outputs to "
+    "stdout, but is not accepted in multi-file (-m) mode.",
 )
 parser.add_argument(
     "-W",
@@ -34,7 +42,11 @@ parser.add_argument(
 args = parser.parse_args()
 
 out_file = False
-if args.output and args.output != '-':
+if args.multi_file and (not args.output or args.output == '-'):
+    print("-o must specify a directory when using -m")
+    sys.exit(1)
+
+if not args.multi_file and args.output and args.output != '-':
     if not args.overwrite and os.path.exists(args.output):
         print(f"{args.output} already exists; remove it first or use --overwrite/-W to overwrite")
         sys.exit(1)
@@ -71,10 +83,11 @@ def read_snippet(markdown, depth=args.markdown_level):
     return None
 
 
-section_list, sections = [], {}
+section_list, section_names, section_snips, sections = [], [], [], {}
 for name, bp in app.blueprints.items():
     s = []
     section_list.append(s)
+    section_names.append(name)
     sections[name] = s
     snip = read_snippet(f'{name}.md')
     if snip:
@@ -82,9 +95,11 @@ for name, bp in app.blueprints.items():
     else:
         s.append(f"{h1} {name.title()}\n\n")
         app.logger.warning(f"{name}.md not found: adding stub '{name.title()}' section")
+    section_snips.append(snip)
 
 # Last section is for anything with a not found category:
 section_list.append([])
+section_names.append('uncategorized')
 
 
 # Sort endpoints within a section by the number of URL parts, first, then alphabetically because we
@@ -95,6 +110,8 @@ def endpoint_sort_key(rule):
 
 for rule in sorted(app.url_map.iter_rules(), key=endpoint_sort_key):
     ep = rule.endpoint
+    if ep == 'static':
+        continue
     methods = [m for m in rule.methods if m not in ('OPTIONS', 'HEAD')]
     if not methods:
         app.logger.warning(f"Endpoint {ep} has no useful method, skipping!")
@@ -109,6 +126,11 @@ for rule in sorted(app.url_map.iter_rules(), key=endpoint_sort_key):
     handler = app.view_functions[ep]
 
     doc = handler.__doc__
+    if ep.startswith('legacy'):
+        # We deliberately omit legacy endpoint documentation
+        if doc is not None:
+            app.logger.warning(f"Legacy endpoint {ep} has docstring but it will be omitted")
+        continue
     if doc is None:
         app.logger.warning(f"Endpoint {ep} has no docstring!")
         doc = '*(undocumented)*'
@@ -174,7 +196,9 @@ for rule in sorted(app.url_map.iter_rules(), key=endpoint_sort_key):
                 argdoc = argdoc.replace('\n', '\n  ')
 
                 if ':`' in argdoc:
-                    app.logger.warning(f"{arg} still contains some rst crap we need to handle")
+                    app.logger.warning(
+                        f"{method} {url} ({arg}) still contains some rst crap we need to handle"
+                    )
 
                 s.append(f" — {argdoc}\n\n")
             else:
@@ -189,30 +213,90 @@ for rule in sorted(app.url_map.iter_rules(), key=endpoint_sort_key):
 
     more = read_snippet(f'{ep}.md', depth=3)
     if more:
+        s.append("\n\n")
         s.append(more)
 
     s.append("\n\n\n")
 
 
-out = open(args.output, 'w') if out_file else sys.stdout
+out = open(args.output, 'w') if out_file else sys.stdout if not args.multi_file else None
 
 if section_list[-1]:
     # We have some uncategorized entries, so load the .md for it
     other = read_snippet('uncategorized.md')
-    if other:
-        section_list[-1].insert(0, other)
-    else:
+    if not other:
         app.logger.warning(
             "Found uncategorized sections, but uncategorized.md not found; inserting stub"
         )
-        section_list[-1].insert(0, "# Uncategorized Endpoints\n\n")
+        other = "# Uncategorized Endpoints\n\n"
 
-for s in section_list:
-    for x in s:
+    section_list[-1].insert(0, other)
+    section_snips.append(other)
+
+else:
+    section_list.pop()
+    section_names.pop()
+
+if args.multi_file:
+    if not os.path.exists(args.output):
+        os.makedirs(args.output)
+    if not args.overwrite and os.path.exists(args.output + '/index.md'):
+        print(f"{args.output}/index.md already exists; remove it first or use --overwrite/-W")
+        sys.exit(1)
+
+    api_readme_f = open(args.output + '/index.md', 'w')
+
+section_order = range(0, len(section_list))
+if args.multi_file:
+    # In multi-file mode we take the order for the index file section from the order it is listed in
+    # sidebar.md:
+    sidebar = read_snippet('sidebar.md')
+    shutil.copy(snippets + '/sidebar.md', args.output + '/sidebar.md')
+
+    def pos(i):
+        x = sidebar.find(section_names[i])
+        return x if x >= 0 else len(sidebar)
+
+    section_order = sorted(section_order, key=pos)
+
+for i in section_order:
+    if args.multi_file:
+        filename = args.output + '/' + section_names[i] + '.md'
+        if not args.overwrite and os.path.exists(filename):
+            print(f"{filename} already exists; remove it first or use --overwrite/-W to overwrite")
+            sys.exit(1)
+        if out is not None:
+            out.close()
+        out = open(filename, 'w')
+
+        if section_names[i] + '.md' not in sidebar:
+            app.logger.warning(
+                f"{section_names[i]}.md not found in snippets/sidebar.md: "
+                "section will be missing from the sidebar!"
+            )
+
+        snip = section_snips[i]
+        if snip.startswith(f'{h1} '):
+            preamble = snip.find(f'{h2}')
+            if preamble == -1:
+                preamble = snip
+            else:
+                preamble = snip[:preamble]
+            print(
+                re.sub(fr'^{h1} (.*)', fr'{h1} [\1]({section_names[i]}.md)', preamble),
+                file=api_readme_f,
+            )
+        else:
+            app.logger.warning(
+                f"{section_names[i]} section didn't start with expected '# Title', "
+                f"cannot embed section link in {args.output}/index.md"
+            )
+
+    for x in section_list[i]:
         print(x, end='', file=out)
     print("\n\n", file=out)
 
-if out_file:
+if out is not None and out != sys.stdout:
     out.close()
 
 app.logger.info("API doc created successfully!")
