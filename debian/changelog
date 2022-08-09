@@ -1,3 +1,44 @@
+session-pysogs (0.3.1-1) sid; urgency=medium
+
+  [ Jason Rhinelander ]
+  * Fix missing packaged schema files
+
+  [ Ian Macdonald ]
+  * Make sogs also display the number of users active in the last day.
+
+  [ Jason Rhinelander ]
+  * Override active prune threshold to 1000 years in upgrade tests
+  * Remove non-working cleanup
+  * Doc generation: Omit the static handler endpoint
+  * Remove legacy docs
+  * Improve doc gen error message
+  * Un-DRY query parameter docstrings
+  * Remove done TODO
+  * Document public rooms
+  * Convert generation to use docsify
+  * Catch exception when blinding fails
+  * Don't try blinding already-blinded users
+  * Exit after a no-such-room error
+  * Avoid PIL deprecation warning
+  * Quote "user" and other sync ups with postgresql schema
+  * Reactions
+  * Add reaction tests
+  * Detect missing tables in pg import script
+
+  [ Audric Ackermann ]
+  * make ban/unban and mod endpoint accept blinded or not id
+
+  [ Jason Rhinelander ]
+  * add reactions to pg import
+  * Add reactions capability
+  * Fix docs to match what is actually returned
+  * Include `reactions` key even when there are no reactions
+  * Reactions ordering
+  * Add "deleted": true when a message is deleted
+  * Bump stable version
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Mon, 08 Aug 2022 21:18:10 -0300
+
 session-pysogs (0.3.0-2) sid; urgency=medium
 
   * Fix missing packaged schema files
