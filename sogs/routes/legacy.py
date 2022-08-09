@@ -94,7 +94,7 @@ def legacy_check_user_room(
 
 @legacy.get("/rooms")
 def get_rooms():
-    """serve public room list for user"""
+    # serve public room list for user
 
     return jsonify(
         {
@@ -107,7 +107,8 @@ def get_rooms():
 
 @legacy.get("/rooms/<Room:room>")
 def get_room_info(room):
-    """serve room metadata"""
+    # serve room metadata
+
     # This really should be authenticated but legacy Session just doesn't pass along auth info.
     # legacy_check_user_room(room=room, update_activity=False, accessible=True)
 
@@ -120,7 +121,8 @@ def get_room_info(room):
 
 @legacy.get("/rooms/<Room:room>/image")
 def legacy_serve_room_image(room):
-    """serve room icon"""
+    # serve room icon
+
     # This really should be authenticated but legacy Session just doesn't pass along auth info.
     # legacy_check_user_room(room=room, update_activity=False, accessible=True)
 
@@ -142,16 +144,15 @@ def legacy_member_count():
 
 @legacy.post("/claim_auth_token")
 def legacy_claim_auth():
-    """this does nothing but needs to exist for backwards compat"""
+    # this does nothing but needs to exist for backwards compat
+
     return jsonify({'status_code': http.OK})
 
 
 @legacy.get("/auth_token_challenge")
 def legacy_auth_token_challenge():
-    """
-    legacy endpoint to give back an encrypted auth token bundle for the client to use to
-    authenticate.
-    """
+    # legacy endpoint to give back an encrypted auth token bundle for the client to use to
+    # authenticate.
 
     user, room = legacy_check_user_room(request.args.get("public_key", ""), read=False)
 

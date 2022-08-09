@@ -1,0 +1,8 @@
+- [General](general.md)
+- [Rooms](rooms.md)
+- [Messages](messages.md)
+- [User management](users.md)
+- [Direct messages](dm.md)
+- [Onion requests](onion_request.md)
+- [Web viewer](views.md)
+- [Deprecated legacy SOGS](legacy.md)
