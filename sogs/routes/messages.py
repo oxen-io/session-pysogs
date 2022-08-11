@@ -554,9 +554,12 @@ def message_react(room, msg_id, reaction):
     - `msg_id` — The message ID on which the reaction should be applied.  The message must be in
       this room, must not be deleted, and must be a regular message (i.e. not a whisper).
 
-    - `reaction` — The reaction to be added, as a UTF-8 string. It is recommended to use a
-      URL-encoded UTF-8 byte sequence (e.g. `%f0%9f%8d%86` for `🍆`); many HTTP libraries will do
-      this encoding automatically.
+    - `reaction` — The reaction to be added, as a UTF-8 string. When making a direct HTTP request it
+      is strongly recommended to use a URL-encoded UTF-8 byte sequence (e.g. `%f0%9f%8d%86` for
+      `🍆`); many HTTP libraries will do this encoding automatically.  When making an onion request
+      you can use the UTF-8 value directly in the path if that is simpler than URL-encoding.  Note
+      that regardless of whether URL-encoding is used or not, the X-SOGS-Signature value must sign
+      the unencoded value (i.e. `🍆` not `%f0%9f%8d%86`).
 
     # JSON parameters
 
@@ -597,9 +600,7 @@ def message_unreact(room, msg_id, reaction):
     - `msg_id` — The message ID from which the reaction should be removed.  The message must be in
       this room, must not be deleted, and must be a regular message (i.e. not a whisper).
 
-    - `reaction` — The UTF-8 reaction string. It is recommended to use a URL-encoded UTF-8 byte
-      sequence (e.g. `%f0%9f%8d%86` for `🍆`); many HTTP libraries will do this encoding
-      automatically.
+    - `reaction` — The UTF-8 reaction string.  See the PUT endpoint for encoding information.
 
     # Return value
 
@@ -637,9 +638,8 @@ def message_delete_reactions(room, msg_id, reaction=None):
       this room, must not be deleted, and must be a regular message (i.e. not a whisper).
 
     - `reaction` — The optional UTF-8 reaction string. If specified then all reactions of this type
-      are removed; if omitted then *all* reactions are removed from the post.  It is recommended to
-      use a URL-encoded UTF-8 byte sequence (e.g. `%f0%9f%8d%86` for `🍆`); many HTTP libraries will
-      do this encoding automatically.
+      are removed; if omitted then *all* reactions are removed from the post.  See the PUT endpoint
+      for encoding information.
 
     # Return value
 
@@ -668,9 +668,7 @@ def message_get_reactors(room, msg_id, reaction):
     - `msg_id` — The message ID in this room for which reactions are being queried.  The message
       must be in this room, must not be deleted, and must be a regular message (i.e. not a whisper).
 
-    - `reaction` — The UTF-8 reaction string. It is recommended to use a URL-encoded UTF-8 byte
-      sequence (e.g. `%f0%9f%8d%86` for `🍆`); many HTTP libraries will do this encoding
-      automatically.
+    - `reaction` — The UTF-8 reaction string.  See the PUT endpoint for encoding information.
 
     # Query Parameters
 

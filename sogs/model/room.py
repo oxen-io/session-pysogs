@@ -1130,7 +1130,7 @@ class Room:
                 app.logger.warning("No reaction provided")
                 raise InvalidData()
         elif not isinstance(reaction, str) or not 1 <= len(reaction) <= 12:
-            app.logger.warning("Invalid reaction string '{reaction}'")
+            app.logger.warning(f"Invalid reaction string '{reaction}'")
             raise InvalidData()
 
         if user_required and not user:
