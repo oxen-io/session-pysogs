@@ -1,3 +1,10 @@
+session-pysogs (0.3.2-1) sid; urgency=medium
+
+  * Bump dev version
+  * Unicode onion request and auth fixes
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Thu, 11 Aug 2022 14:51:22 -0300
+
 session-pysogs (0.3.1-1) sid; urgency=medium
 
   [ Jason Rhinelander ]
