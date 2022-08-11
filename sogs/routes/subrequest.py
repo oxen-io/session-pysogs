@@ -4,6 +4,7 @@ from flask import request, g
 from io import BytesIO
 import traceback
 from typing import Optional, Union
+import urllib.parse
 
 
 def make_subrequest(
@@ -66,11 +67,22 @@ def make_subrequest(
     else:
         query_string = ''
 
+    if '%' in path:
+        path = urllib.parse.unquote(path, errors='strict')
+
+    # Werkzeug has some screwy internals: it requires PATH_INFO to be a bastardized string
+    # masquerading as bytes: it encodes the string as latin1, then decodes *those* bytes to utf-8.
+    # So we have to muck around here to get our unicode as utf-8 bytes then shove those into a
+    # latin1 string.  WTF.
+    monkey_path = path
+    if any(ord(c) > 127 for c in path):
+        monkey_path = path.encode('utf-8').decode('latin1')
+
     # Set up the wsgi environ variables for the subrequest (see PEP 0333)
     subreq_env = {
         **request.environ,
         "REQUEST_METHOD": method,
-        "PATH_INFO": path,
+        "PATH_INFO": monkey_path,
         "QUERY_STRING": query_string,
         "CONTENT_TYPE": content_type,
         "CONTENT_LENGTH": content_length,

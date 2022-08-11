@@ -120,6 +120,11 @@ def handle_v4_onionreq_plaintext(body):
     needs to be accessed through a v4 request for some reason then it can be accessed via the
     "/legacy/whatever" endpoint).
 
+    If an "endpoint" contains unicode characters then it is recommended to provide it as direct
+    UTF-8 values (rather than URL-encoded UTF-8).  Both approaches will work, but the X-SOGS-*
+    authentication headers will always apply on the final, URL-decoded value and so avoiding
+    URL-encoding in the first place will typically simplify client implementations.
+
     The "headers" field typically carries X-SOGS-* authentication headers as well as fields like
     Content-Type.  Note that, unlike v3 requests, the Content-Type does *not* have any default and
     should also be specified, often as `application/json`.  Unlike HTTP requests, Content-Length is

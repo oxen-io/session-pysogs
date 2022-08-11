@@ -268,3 +268,51 @@ def test_v4_post_body(room, user, client):
 
     assert info == {'code': 200, 'headers': {'content-type': 'text/plain; charset=utf-8'}}
     assert body == b'not json (x-omg/all-your-base): ' + content
+
+
+@app.put("/test_encoding/<path:p>")
+def onion_test_encoding_endpoint(p):
+    from flask import jsonify
+
+    return jsonify({"p": p})
+
+
+def test_onion_url_encoding(room, user, client):
+    req1 = {'method': 'PUT', 'endpoint': "/test_encoding/%E2%9D%A4%EF%B8%8F"}
+    req2 = {'method': 'PUT', 'endpoint': "/test_encoding/❤️"}
+
+    # The signature should be on the URL-decoded value, and so with the same nonce we should get the
+    # same signature for the two requests above.  (We can't submit them for the test below, though,
+    # because we'd hit the nonce replay filter).
+    def fixed_sig(req):
+        return auth.x_sogs(
+            user.ed_key,
+            crypto.server_pubkey,
+            req['method'],
+            req['endpoint'],
+            body=b'{}',
+            nonce=b'0123456789abcdef',
+        )['X-SOGS-Signature']
+
+    assert fixed_sig(req1) == fixed_sig(req2)
+
+    for req in (req1, req2):
+        req['headers'] = auth.x_sogs(
+            user.ed_key, crypto.server_pubkey, req['method'], req['endpoint'], body=b'{}'
+        )
+        req['headers']['content-type'] = 'application/json'
+
+    data1 = build_payload(req1, b'{}', v=4, enc_type="xchacha20")
+    data2 = build_payload(req2, b'{}', v=4, enc_type="xchacha20")
+
+    r = client.post("/oxen/v4/lsrpc", data=data1)
+    assert r.status_code == 200
+    info, body = decrypt_reply(r.data, v=4, enc_type="xchacha20")
+    assert info == {'code': 200, 'headers': {'content-type': 'application/json'}}
+    assert json.loads(body) == {"p": "❤️"}
+
+    r = client.post("/oxen/v4/lsrpc", data=data2)
+    assert r.status_code == 200
+    info, body = decrypt_reply(r.data, v=4, enc_type="xchacha20")
+    assert info == {'code': 200, 'headers': {'content-type': 'application/json'}}
+    assert json.loads(body) == {"p": "❤️"}

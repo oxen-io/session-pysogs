@@ -5,6 +5,7 @@ import time
 from sogs.hashing import blake2b, sha512
 import nacl.bindings as sodium
 from nacl.utils import random
+import urllib.parse
 
 import sogs.utils
 import sogs.crypto
@@ -24,6 +25,7 @@ def x_sogs_raw(
     b64_nonce: bool = True,
     blinded: bool = False,
     timestamp_off: int = 0,
+    nonce: bytes = None,
 ):
     """
     Calculates X-SOGS-* headers.
@@ -32,7 +34,7 @@ def x_sogs_raw(
 
     Use x_sogs(...) instead if you don't need the nonce/timestamp/signature values.
     """
-    n = x_sogs_nonce()
+    n = nonce if nonce else x_sogs_nonce()
     ts = int(time.time()) + timestamp_off
 
     if blinded:
@@ -45,6 +47,9 @@ def x_sogs_raw(
         pubkey = '15' + kA.hex()
     else:
         pubkey = '00' + s.verify_key.encode().hex()
+
+    if '%' in full_path:
+        full_path = urllib.parse.unquote(full_path)
 
     to_sign = [B.encode(), n, str(ts).encode(), method.encode(), full_path.encode()]
     if body:
