@@ -216,6 +216,45 @@ def test_reactions(client, room, room2, user, user2, mod, admin, global_mod, glo
     }
 
 
+def test_reaction_encoding(client, room, user, user2):
+    room.add_post(user, b"fake data", pad64("fake sig"))
+
+    r = sogs_put(client, "/room/test-room/reaction/1/🍍", {}, user)
+    assert r.status_code == 200
+    r.json == {}
+
+    r = sogs_put(client, "/room/test-room/reaction/1/%F0%9F%8D%8D", {}, user2)
+    assert r.status_code == 200
+    r.json == {}
+
+    r = sogs_put(client, "/room/test-room/reaction/1/❤️", {}, user2)
+    assert r.status_code == 200
+    r.json == {}
+
+    r = sogs_put(client, "/room/test-room/reaction/1/%E2%9D%A4%EF%B8%8F", {}, user)
+    assert r.status_code == 200
+    r.json == {}
+
+    r = sogs_get(client, "/room/test-room/messages/since/0?t=r&reactors=0", user)
+    assert r.status_code == 200
+    r = r.json
+    assert len(r) == 1
+    del r[0]['posted']
+    assert r == [
+        {
+            'data': 'ZmFrZSBkYXRh',  # fake data
+            'id': 1,
+            'seqno': 5,
+            'session_id': user.session_id,
+            'signature': 'ZmFrZSBzaWc' + 'A' * 75 + '==',
+            'reactions': {
+                '❤️': {'count': 2, 'index': 1, 'you': True},
+                '🍍': {'count': 2, 'index': 0, 'you': True},
+            },
+        }
+    ]
+
+
 def test_reaction_ordering(client, room, user, user2):
     for i in (1, 2):
         room.add_post(user, f"fake data {i}".encode(), pad64(f"fake sig {i}"))

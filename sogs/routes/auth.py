@@ -80,6 +80,15 @@ from functools import wraps
 # For batch requests the X-SOGS-* headers are applied once, on the outermost batch request, *not* on
 # the individual subrequests; the authorization applies to all subrequests.
 #
+# If `PATH` contains URL-encoded characters then the signature applies to the post-decoded value,
+# e.g. a request for `GET /foo/%F0%9F%8D%8D%20%20%20%f0%9f%8d%8c` would expect the PATH component in
+# the signature to be the utf8-encoded bytes of `/foo/🍍   🍌`.  (This is unfortunately necessary
+# because HTTP request URL encoding rules are non-unique and could get converted between equivalent
+# representations in transit).  If passing through an *onion request* then you may optionally avoid
+# URL-encoding entirely: the endpoint of the onion request explicitly allows raw utf-8 characters in
+# the path.  For direct requests, however, you should use the raw unicode value in the signature,
+# but URL-encode the value in the actual HTTP request path.
+#
 # NB: legacy sogs endpoints (that is: endpoint paths without a leading /) require specifying the
 # path in the signature message as `/legacy/whatever` even if just `whatever` is being used in the
 # onion request "endpoint" parameter).
