@@ -1,3 +1,10 @@
+session-pysogs (0.3.3-1) sid; urgency=medium
+
+  * Fix wrong reference in upgraded sqlite `files` table
+  * Version bump
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Mon, 15 Aug 2022 02:46:43 -0300
+
 session-pysogs (0.3.2-1) sid; urgency=medium
 
   * Bump dev version
