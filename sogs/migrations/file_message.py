@@ -6,16 +6,46 @@ def migrate(conn, *, check_only):
 
     from .. import db
 
+    fix_fk = False
     if 'message' in db.metadata.tables['files'].c:
-        return False
+        if db.engine.name == "sqlite" and db.metadata.tables['files'].c['message'].references(
+            db.metadata.tables['rooms'].c['id']
+        ):
+            fix_fk = True
+        else:
+            return False
 
     logging.warning("DB migration: adding message/file association")
     if check_only:
         raise DatabaseUpgradeRequired("Add message/file association")
 
-    if db.engine.name == "sqlite":
+    if db.engine.name == "sqlite" and fix_fk:
+        # Prior versions of this script created the column referencing rooms(id) instead of
+        # messages; we need to rewrite the schema to fix it.  This schema updating feel janky, but
+        # is the officially documented method (https://www.sqlite.org/lang_altertable.html)
+        conn.execute("UPDATE files SET message = NULL")
+        schema_ver = conn.execute("PRAGMA schema_version").first()[0]
+        files_sql = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'files'"
+        ).first()[0]
+        broken = 'message INTEGER REFERENCES rooms(id)'
+        fixed = 'message INTEGER REFERENCES messages(id)'
+        if broken not in files_sql:
+            raise RuntimeError(
+                "Didn't find expected schema in files table; cannot proceed with upgrade!"
+            )
+        files_sql = files_sql.replace(broken, fixed)
+        conn.execute("PRAGMA writable_schema=ON")
         conn.execute(
-            "ALTER TABLE files ADD COLUMN message INTEGER REFERENCES rooms(id) ON DELETE SET NULL"
+            "UPDATE sqlite_master SET sql = ? WHERE type = 'table' AND name = 'files'", (files_sql,)
+        )
+        conn.execute(f"PRAGMA schema_version={schema_ver+1}")
+        conn.execute("PRAGMA writable_schema=OFF")
+
+    elif db.engine.name == "sqlite":
+        conn.execute(
+            "ALTER TABLE files ADD COLUMN message INTEGER REFERENCES messages(id)"
+            " ON DELETE SET NULL"
         )
         conn.execute("CREATE INDEX files_message ON files(message)")
         conn.execute("DROP TRIGGER IF EXISTS messages_after_delete")
