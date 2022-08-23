@@ -9,7 +9,24 @@ def migrate(conn, *, check_only):
         x in db.metadata.tables['message_metadata'].c
         for x in ('whisper_to', 'whisper_mods', 'filtered', 'seqno', 'seqno_data')
     ):
-        return False
+        query_bad_trigger = (
+            """
+            SELECT COUNT(*) FROM sqlite_master
+                WHERE type = 'trigger' AND name = 'message_details_deleter'
+                AND sql LIKE :like_bad
+            """
+            if db.engine.name == "sqlite"
+            else """
+            SELECT COUNT(*) FROM information_schema.routines
+                WHERE routine_name = 'trigger_message_details_deleter'
+                AND routine_definition LIKE :like_bad
+            """
+        )
+        if (
+            db.query(query_bad_trigger, dbconn=conn, like_bad='%DELETE FROM reactions%').first()[0]
+            == 0
+        ):
+            return False
 
     logging.warning("DB migration: recreating message_metadata/message_details views")
     if check_only:
@@ -36,7 +53,8 @@ FOR EACH ROW WHEN OLD.data IS NOT NULL
 BEGIN
     UPDATE messages SET data = NULL, data_size = NULL, signature = NULL
         WHERE id = OLD.id;
-    DELETE FROM reactions WHERE message = OLD.id;
+    DELETE FROM user_reactions WHERE reaction IN (
+        SELECT id FROM reactions WHERE message = OLD.id);
 END
 """
         )
@@ -69,7 +87,8 @@ RETURNS TRIGGER LANGUAGE PLPGSQL AS $$BEGIN
     IF OLD.data IS NOT NULL THEN
         UPDATE messages SET data = NULL, data_size = NULL, signature = NULL
             WHERE id = OLD.id;
-        DELETE FROM reactions WHERE message = OLD.id;
+        DELETE FROM user_reactions WHERE reaction IN (
+            SELECT id FROM reactions WHERE message = OLD.id);
     END IF;
     RETURN NULL;
 END;$$;
