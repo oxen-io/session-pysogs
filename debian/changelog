@@ -1,3 +1,9 @@
+session-pysogs (0.3.4-1) sid; urgency=medium
+
+  * Fix upgraded database not allowing deletion of reacted messages
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Mon, 22 Aug 2022 23:47:40 -0300
+
 session-pysogs (0.3.3-1) sid; urgency=medium
 
   * Fix wrong reference in upgraded sqlite `files` table
