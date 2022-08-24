@@ -77,6 +77,16 @@ def test_reactions(client, room, room2, user, user2, mod, admin, global_mod, glo
     r = sogs_put(client, "/room/test-room/reaction/4/🦒🦍🐍🐊🦢🦁🦎", {}, user)
     assert r.json == {'added': True, "seqno": new_seqno + 1}
 
+    # user2 is the fourth reactor (of 5) and so should get ourself last in the truncated reactor
+    # list:
+    for u in (user, mod, global_mod, user2, admin):
+        r = sogs_put(client, "/room/test-room/reaction/4/🂤", {}, u)
+
+    # user2 is fifth (of 5) and so should not be in the truncated reactor list (but should still get
+    # "you"):
+    for u in (user, mod, global_mod, global_admin, user2):
+        r = sogs_put(client, "/room/test-room/reaction/4/🂵", {}, u)
+
     exp_reactions = {
         'abcdefghijkl': {'index': 4, 'count': 1, 'reactors': [user.session_id]},
         'f': {'index': 2, 'count': 1, 'reactors': [user.session_id]},
@@ -90,6 +100,18 @@ def test_reactions(client, room, room2, user, user2, mod, admin, global_mod, glo
         },
         '🖕': {'index': 0, 'count': 2, 'reactors': [user.session_id, user2.session_id], 'you': True},
         '🦒🦍🐍🐊🦢🦁🦎': {'index': 6, 'count': 1, 'reactors': [user.session_id]},
+        '🂤': {
+            'index': 7,
+            'count': 5,
+            'reactors': [u.session_id for u in (user, mod, global_mod, user2)],
+            'you': True,
+        },
+        '🂵': {
+            'index': 8,
+            'count': 5,
+            'reactors': [u.session_id for u in (user, mod, global_mod, global_admin)],
+            'you': True,
+        },
     }
 
     r = sogs_get(client, f"/room/test-room/messages/since/{seqno}?t=r", user2).json
@@ -101,7 +123,7 @@ def test_reactions(client, room, room2, user, user2, mod, admin, global_mod, glo
             'id': 4,
             'data': 'ZWRpdGVkIGZha2UgZGF0YSA0',
             'signature': 'ZmFrZSBzaWcgNGI' + 'A' * 71 + '==',
-            'seqno': seqno + 7,
+            'seqno': seqno + 17,
             'session_id': mod.session_id,
             'reactions': exp_reactions,
         }
@@ -110,9 +132,9 @@ def test_reactions(client, room, room2, user, user2, mod, admin, global_mod, glo
     # If we fetch just after the edit, we should only get the reactions:
 
     r = sogs_get(client, f"/room/test-room/messages/since/{seqno+1}?t=r", user2)
-    assert r.json == [{'id': 4, 'seqno': seqno + 7, 'reactions': exp_reactions}]
+    assert r.json == [{'id': 4, 'seqno': seqno + 17, 'reactions': exp_reactions}]
 
-    seqno += 7
+    seqno += 17
 
     # Fetch the *full* list of reactors
     r = sogs_get(client, "/room/test-room/reactors/4/🍍", user).json
@@ -136,6 +158,11 @@ def test_reactions(client, room, room2, user, user2, mod, admin, global_mod, glo
     del exp_reactions['🍍']['reactors'][0]
     exp_reactions['🍍']['count'] -= 1
 
+    # We're reducing the reactor limit below, so chop off the last reactor from these in the
+    # expected result:
+    for card in '🂤🂵':
+        del exp_reactions[card]['reactors'][-1]
+
     # Also tests that the `reactors` query param is working right
     r = sogs_get(client, f"/room/test-room/messages/since/{seqno}?t=r&reactors=3", user2)
     assert r.json == [{'id': 4, 'seqno': seqno + 1, 'reactions': exp_reactions}]
@@ -158,7 +185,8 @@ def test_reactions(client, room, room2, user, user2, mod, admin, global_mod, glo
     assert exp_reactions["🍍"]["count"] == 5
     assert r.json == {"removed": 5, "seqno": seqno + 5}
     del exp_reactions["🍍"]
-    exp_reactions["🦒🦍🐍🐊🦢🦁🦎"]["index"] -= 1
+    for reaction in ("🦒🦍🐍🐊🦢🦁🦎", '🂤', '🂵'):
+        exp_reactions[reaction]["index"] -= 1
 
     r = sogs_get(client, f"/room/test-room/messages/since/{seqno}?t=r&reactors=0", user2)
     assert r.json == [{'id': 4, 'seqno': seqno + 5, 'reactions': exp_reactions}]
