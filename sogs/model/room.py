@@ -1374,9 +1374,8 @@ class Room:
                     admin=admin,
                     visible=visible,
                 )
-                if u.id in self._perm_cache:
-                    del self._perm_cache[u.id]
 
+                self._refresh()
                 if u.id in self._perm_cache:
                     del self._perm_cache[u.id]
 
@@ -1395,19 +1394,21 @@ class Room:
         if not self.check_admin(removed_by):
             raise BadPermission()
 
-        query(
-            f"""
-            UPDATE user_permission_overrides
-            SET admin = FALSE
-                {', moderator = FALSE, visible_mod = TRUE' if not remove_admin_only else ''}
-            WHERE room = :r AND "user" = :u
-            """,
-            r=self.id,
-            u=user.id,
-        )
+        with db.transaction():
+            query(
+                f"""
+                UPDATE user_permission_overrides
+                SET admin = FALSE
+                    {', moderator = FALSE, visible_mod = TRUE' if not remove_admin_only else ''}
+                WHERE room = :r AND "user" = :u
+                """,
+                r=self.id,
+                u=user.id,
+            )
 
-        if user.id in self._perm_cache:
-            del self._perm_cache[user.id]
+            self._refresh()
+            if user.id in self._perm_cache:
+                del self._perm_cache[user.id]
 
         app.logger.info(f"{removed_by} removed {user} as mod/admin of {self}")
 
@@ -1826,7 +1827,7 @@ class Room:
                 a=admin.id,
                 now=time.time(),
             )
-        self._pinned = None
+            self._refresh()
 
     def unpin_all(self, admin: User):
         """
@@ -1855,8 +1856,9 @@ class Room:
             if unpinned_files:
                 File.reset_expiries(unpinned_files)
 
-        if count != 0:
-            self._pinned = None
+            if count != 0:
+                self._refresh()
+
         return count
 
     def unpin(self, msg_id: int, admin: User):
@@ -1884,8 +1886,9 @@ class Room:
             if unpinned_files:
                 File.reset_expiries(unpinned_files)
 
-        if count != 0:
-            self._pinned = None
+            if count != 0:
+                self._refresh()
+
         return count
 
     @property

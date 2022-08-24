@@ -466,7 +466,8 @@ def test_polling(client, room, user, user2, mod, admin, global_mod, global_admin
     assert img.expiry == from_now.hours(1)
     r = sogs_put(client, f'/room/{room.token}', {'image': img.id}, admin)
     assert r.status_code == 200
-    assert r.json == dict()
+    assert r.json == {"info_updates": info_up + 1}
+
     img = File(id=img.id)
     assert img.expiry is None
 
