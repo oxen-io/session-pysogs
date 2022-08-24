@@ -1,8 +1,18 @@
 session-pysogs (0.3.4-1) sid; urgency=medium
 
+  [ Jason Rhinelander ]
   * Fix upgraded database not allowing deletion of reacted messages
+  * Return new seqno from reaction-modifying endpoints
 
- -- Jason Rhinelander <jason@imaginary.ca>  Mon, 22 Aug 2022 23:47:40 -0300
+  [ Jeff ]
+  * check post body and post username when checking profanity filter
+
+  [ Jason Rhinelander ]
+  * Return info_updates from room-modifying endpoints
+  * Add "you" reactor threshold test case
+  * Fix info_updates not updating on hidden global mod changes
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Wed, 24 Aug 2022 18:12:59 -0300
 
 session-pysogs (0.3.3-1) sid; urgency=medium
 
