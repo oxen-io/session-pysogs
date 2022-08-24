@@ -5,6 +5,7 @@ from .. import config
 
 from . import (
     file_message,
+    fix_info_update_triggers,
     import_hacks,
     message_views,
     new_columns,
@@ -46,6 +47,7 @@ def migrate(conn, *, check_only=False):
         room_moderators,
         user_permissions,
         file_message,
+        fix_info_update_triggers,
         import_hacks,
     ):
         changes = False
