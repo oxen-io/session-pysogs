@@ -473,7 +473,10 @@ def message_pin(room, msg_id):
 
     # Return value
 
-    On success returns a 200 status code and returns an empty JSON object as response.
+    On success returns a 200 status code and returns a JSON object as response containing keys:
+
+    - `info_updates` -- the new info_updates value of the room; a client can use this to avoid
+      race conditions with room info polling that might not yet include the updated value(s).
 
     # Error status codes
 
@@ -483,7 +486,7 @@ def message_pin(room, msg_id):
       pinning (e.g. a whisper or deleted post).
     """
     room.pin(msg_id, g.user)
-    return jsonify({})
+    return jsonify({"info_updates": room.info_updates})
 
 
 @messages.post("/room/<Room:room>/unpin/<int:msg_id>")
@@ -504,14 +507,20 @@ def message_unpin(room, msg_id):
 
     # Return value
 
-    On success returns a 200 status code and returns an empty JSON object as response body.
+    On success returns a 200 status code and returns an JSON object as response body containing
+    keys:
+
+    - `unpinned` - boolean value indicating whether the message was pinned and has now been unpinned
+      (true), or was already unpinned (false).
+    - `info_updates` - the new info_updates value for the room.  This value will only change if the
+      given message was actually pinned (i.e. it does not increment when `unpinned` is false).
 
     # Error status codes
 
     - 403 Forbidden — returned if the invoking user does not have admin permission in this room.
     """
-    room.unpin(msg_id, g.user)
-    return jsonify({})
+    count = room.unpin(msg_id, g.user)
+    return jsonify({"unpinned": count > 0, "info_updates": room.info_updates})
 
 
 @messages.post("/room/<Room:room>/unpin/all")
@@ -527,15 +536,18 @@ def message_unpin_all(room):
 
     # Return value
 
-    On success returns a 200 status code with an empty JSON object as response body.  All pinned
-    messages have been removed.
+    On success returns a 200 status code with an JSON object as response body containing keys:
+
+    - `unpinned` - count of how many pinned messages were removed.
+    - `info_updates` - new `info_updates` property for the room.  This value is only incremented by
+      this operation if at least one message was found and unpinned (i.e. if `unpinned > 0`).
 
     # Error status codes
 
     - 403 Forbidden — returned if the invoking user does not have admin permission in this room.
     """
-    room.unpin_all(g.user)
-    return jsonify({})
+    count = room.unpin_all(g.user)
+    return jsonify({"unpinned": count, "info_updates": room.info_updates})
 
 
 @messages.put("/room/<Room:room>/reaction/<int:msg_id>/<path:reaction>")
@@ -572,6 +584,10 @@ def message_react(room, msg_id, reaction):
 
     - `"added"` — boolean value indicating whether the reaction was added (true) or already present
       (false).
+    - `"seqno"` — the message's new seqno value.  This can be used to identify stale reaction
+      updates when polling and reactions can race: if an in-progress poll returns a reaction update
+      for the message with a seqno less than this value then the client can know that that reaction
+      update won't yet have the reaction added here.
 
     # Error status codes
 
@@ -583,8 +599,8 @@ def message_react(room, msg_id, reaction):
     (instead in such a case the success response return value includes `"added": false`).
     """
 
-    added = room.add_reaction(g.user, msg_id, reaction)
-    return jsonify({"added": added})
+    added, seqno = room.add_reaction(g.user, msg_id, reaction)
+    return jsonify({"added": added, "seqno": seqno})
 
 
 @messages.delete("/room/<Room:room>/reaction/<int:msg_id>/<path:reaction>")
@@ -608,6 +624,7 @@ def message_unreact(room, msg_id, reaction):
 
     - `"removed"` — boolean value indicating whether the reaction was removed (true) or was not
       present to begin with (false).
+    - `"seqno"` — the message's new seqno value.  (See description in the put reaction endpoint).
 
     # Error status codes
 
@@ -618,8 +635,8 @@ def message_unreact(room, msg_id, reaction):
     Note that it is *not* an error to attempt to remove a reaction that does not exist (instead in
     such a case the success response return value includes `"removed": false`).
     """
-    removed = room.delete_reaction(g.user, msg_id, reaction)
-    return jsonify({"removed": removed})
+    removed, seqno = room.delete_reaction(g.user, msg_id, reaction)
+    return jsonify({"removed": removed, "seqno": seqno})
 
 
 @messages.delete("/room/<Room:room>/reactions/<int:msg_id>/<path:reaction>")
@@ -643,9 +660,10 @@ def message_delete_reactions(room, msg_id, reaction=None):
 
     # Return value
 
-    On success returns a 200 status code and a JSON object response body with key:
+    On success returns a 200 status code and a JSON object response body with keys:
 
     - `"removed"` — the total number of reactions that were deleted.
+    - `"seqno"` — the message's new seqno value.  (See description in the put reaction endpoint).
 
     # Error status codes
 
@@ -653,8 +671,8 @@ def message_delete_reactions(room, msg_id, reaction=None):
     - 404 Not Found — if the referenced post does not exist or is not a regular message
     - 400 Bad Request — if the input does not contain a valid reaction *or* `"all": true`.
     """
-    removed = room.delete_all_reactions(g.user, msg_id, reaction)
-    return jsonify({"removed": removed})
+    removed, seqno = room.delete_all_reactions(g.user, msg_id, reaction)
+    return jsonify({"removed": removed, "seqno": seqno})
 
 
 @messages.get("/room/<Room:room>/reactors/<int:msg_id>/<path:reaction>")

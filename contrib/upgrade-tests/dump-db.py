@@ -78,7 +78,7 @@ def dump_rows(table, extra=None, where=None, order="id", skip=set()):
     return table.get_string() + "\n"
 
 
-print(dump_rows("rooms", skip={'created'}))
+print(dump_rows("rooms", skip={'created', 'info_updates'}))
 
 TableNotFoundError = pg.errors.UndefinedTable if pg else sqlite3.OperationalError
 try:

@@ -4,6 +4,7 @@ from ..omq import send_mule
 from ..web import app
 from .user import User
 from .file import File
+from .post import Post
 from .exc import (
     NoSuchRoom,
     NoSuchFile,
@@ -712,12 +713,14 @@ class Room:
         if config.PROFANITY_FILTER and not self.check_admin(user):
             import better_profanity
 
-            if better_profanity.profanity.contains_profanity(utils.message_body(data)):
-                if config.PROFANITY_SILENT:
-                    return True
-                else:
-                    # FIXME: can we send back some error code that makes Session not retry?
-                    raise PostRejected("filtration rejected message")
+            msg = Post(raw=data)
+            for part in (msg.text, msg.username):
+                if better_profanity.profanity.contains_profanity(part):
+                    if config.PROFANITY_SILENT:
+                        return True
+                    else:
+                        # FIXME: can we send back some error code that makes Session not retry?
+                        raise PostRejected("filtration rejected message")
         return False
 
     def _own_files(self, msg_id: int, files: List[int], user):
@@ -1154,23 +1157,34 @@ class Room:
         The post must exist in the room (throws NoSuchPost if it does not).
 
         The user must have read permission in the room (throws BadPermission if not).
+
+        Returns a tuple of: bool indicating whether adding was successful (False = reaction already
+        present), and the new message seqno value.
         """
 
         self._check_reaction_request(user, msg_id, reaction)
 
-        try:
-            query(
-                """
-                INSERT INTO message_reactions (message, reaction, "user")
-                VALUES (:msg, :react, :user)
-                """,
-                msg=msg_id,
-                react=reaction,
-                user=user.id,
-            )
-        except sqlalchemy.exc.IntegrityError:
-            return False
-        return True
+        with db.transaction():
+            try:
+                query(
+                    """
+                    INSERT INTO message_reactions (message, reaction, "user")
+                    VALUES (:msg, :react, :user)
+                    """,
+                    msg=msg_id,
+                    react=reaction,
+                    user=user.id,
+                )
+                added = True
+                seqno = query("SELECT seqno FROM messages WHERE id = :msg", msg=msg_id).first()[0]
+
+            except sqlalchemy.exc.IntegrityError:
+                added = False
+
+        if not added:
+            seqno = query("SELECT seqno FROM messages WHERE id = :msg", msg=msg_id).first()[0]
+
+        return added, seqno
 
     def delete_reaction(self, user: User, msg_id: int, reaction: str):
         """
@@ -1181,19 +1195,23 @@ class Room:
         """
 
         self._check_reaction_request(user, msg_id, reaction)
-        return (
-            query(
-                """
-                DELETE FROM user_reactions
-                WHERE reaction = (SELECT id FROM reactions WHERE message = :m AND reaction = :r)
-                    AND "user" = :u
-                """,
-                m=msg_id,
-                r=reaction,
-                u=user.id,
-            ).rowcount
-            > 0
-        )
+        with db.transaction():
+            removed = (
+                query(
+                    """
+                    DELETE FROM user_reactions
+                    WHERE reaction = (SELECT id FROM reactions WHERE message = :m AND reaction = :r)
+                        AND "user" = :u
+                    """,
+                    m=msg_id,
+                    r=reaction,
+                    u=user.id,
+                ).rowcount
+                > 0
+            )
+            seqno = query("SELECT seqno FROM messages WHERE id = :msg", msg=msg_id).first()[0]
+
+        return removed, seqno
 
     def delete_all_reactions(self, mod: User, msg_id: int, reaction: Optional[str] = None):
         """
@@ -1215,16 +1233,20 @@ class Room:
 
         self._check_reaction_request(mod, msg_id, reaction, allow_none=True, mod_required=True)
 
-        return query(
-            f"""
-            DELETE FROM user_reactions WHERE
-                reaction IN (SELECT id FROM reactions WHERE
-                    message = :m
-                    {'AND reaction = :r' if reaction is not None else ''})
-            """,
-            m=msg_id,
-            r=reaction,
-        ).rowcount
+        with db.transaction():
+            removed = query(
+                f"""
+                DELETE FROM user_reactions WHERE
+                    reaction IN (SELECT id FROM reactions WHERE
+                        message = :m
+                        {'AND reaction = :r' if reaction is not None else ''})
+                """,
+                m=msg_id,
+                r=reaction,
+            ).rowcount
+            seqno = query("SELECT seqno FROM messages WHERE id = :msg", msg=msg_id).first()[0]
+
+        return removed, seqno
 
     def get_reactors(
         self,
@@ -1355,9 +1377,8 @@ class Room:
                     admin=admin,
                     visible=visible,
                 )
-                if u.id in self._perm_cache:
-                    del self._perm_cache[u.id]
 
+                self._refresh()
                 if u.id in self._perm_cache:
                     del self._perm_cache[u.id]
 
@@ -1376,19 +1397,21 @@ class Room:
         if not self.check_admin(removed_by):
             raise BadPermission()
 
-        query(
-            f"""
-            UPDATE user_permission_overrides
-            SET admin = FALSE
-                {', moderator = FALSE, visible_mod = TRUE' if not remove_admin_only else ''}
-            WHERE room = :r AND "user" = :u
-            """,
-            r=self.id,
-            u=user.id,
-        )
+        with db.transaction():
+            query(
+                f"""
+                UPDATE user_permission_overrides
+                SET admin = FALSE
+                    {', moderator = FALSE, visible_mod = TRUE' if not remove_admin_only else ''}
+                WHERE room = :r AND "user" = :u
+                """,
+                r=self.id,
+                u=user.id,
+            )
 
-        if user.id in self._perm_cache:
-            del self._perm_cache[user.id]
+            self._refresh()
+            if user.id in self._perm_cache:
+                del self._perm_cache[user.id]
 
         app.logger.info(f"{removed_by} removed {user} as mod/admin of {self}")
 
@@ -1807,7 +1830,7 @@ class Room:
                 a=admin.id,
                 now=time.time(),
             )
-        self._pinned = None
+            self._refresh()
 
     def unpin_all(self, admin: User):
         """
@@ -1836,8 +1859,9 @@ class Room:
             if unpinned_files:
                 File.reset_expiries(unpinned_files)
 
-        if count != 0:
-            self._pinned = None
+            if count != 0:
+                self._refresh()
+
         return count
 
     def unpin(self, msg_id: int, admin: User):
@@ -1865,8 +1889,9 @@ class Room:
             if unpinned_files:
                 File.reset_expiries(unpinned_files)
 
-        if count != 0:
-            self._pinned = None
+            if count != 0:
+                self._refresh()
+
         return count
 
     @property

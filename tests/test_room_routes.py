@@ -31,7 +31,7 @@ def test_list(client, room, room2, user, user2, admin, mod, global_mod, global_a
         "token": "room2",
         "name": "Room 2",
         "description": "Test suite testing room2",
-        "info_updates": 0,
+        "info_updates": 2,
         "message_sequence": 0,
         "created": room2.created,
         "active_users": 0,
@@ -52,7 +52,7 @@ def test_list(client, room, room2, user, user2, admin, mod, global_mod, global_a
         "token": "test-room",
         "name": "Test room",
         "description": "Test suite testing room",
-        "info_updates": 2,
+        "info_updates": 4,
         "message_sequence": 0,
         "created": room.created,
         "active_users": 0,
@@ -193,7 +193,7 @@ def test_updates(client, room, user, user2, mod, admin, global_mod, global_admin
         "token": "test-room",
         "name": "Test room",
         "description": "Test suite testing room",
-        "info_updates": 2,
+        "info_updates": 4,
         "message_sequence": 0,
         "created": room.created,
         "active_users": 0,
@@ -372,14 +372,14 @@ def test_polling(client, room, user, user2, mod, admin, global_mod, global_admin
     r = sogs_get(client, "/room/test-room", user)
     assert r.status_code == 200
     info_up = r.json['info_updates']
-    assert info_up == 2
+    assert info_up == 4
 
     basic = {'token': 'test-room', 'active_users': 0, 'read': True, 'write': True, 'upload': True}
     details = {
         "token": "test-room",
         "name": "Test room",
         "description": "Test suite testing room",
-        "info_updates": 2,
+        "info_updates": 4,
         "message_sequence": 0,
         "created": room.created,
         "active_users": 0,
@@ -466,7 +466,8 @@ def test_polling(client, room, user, user2, mod, admin, global_mod, global_admin
     assert img.expiry == from_now.hours(1)
     r = sogs_put(client, f'/room/{room.token}', {'image': img.id}, admin)
     assert r.status_code == 200
-    assert r.json == dict()
+    assert r.json == {"info_updates": info_up + 1}
+
     img = File(id=img.id)
     assert img.expiry is None
 
