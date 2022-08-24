@@ -473,7 +473,10 @@ def message_pin(room, msg_id):
 
     # Return value
 
-    On success returns a 200 status code and returns an empty JSON object as response.
+    On success returns a 200 status code and returns a JSON object as response containing keys:
+
+    - `info_updates` -- the new info_updates value of the room; a client can use this to avoid
+      race conditions with room info polling that might not yet include the updated value(s).
 
     # Error status codes
 
@@ -483,7 +486,7 @@ def message_pin(room, msg_id):
       pinning (e.g. a whisper or deleted post).
     """
     room.pin(msg_id, g.user)
-    return jsonify({})
+    return jsonify({"info_updates": room.info_updates})
 
 
 @messages.post("/room/<Room:room>/unpin/<int:msg_id>")
@@ -504,14 +507,20 @@ def message_unpin(room, msg_id):
 
     # Return value
 
-    On success returns a 200 status code and returns an empty JSON object as response body.
+    On success returns a 200 status code and returns an JSON object as response body containing
+    keys:
+
+    - `unpinned` - boolean value indicating whether the message was pinned and has now been unpinned
+      (true), or was already unpinned (false).
+    - `info_updates` - the new info_updates value for the room.  This value will only change if the
+      given message was actually pinned (i.e. it does not increment when `unpinned` is false).
 
     # Error status codes
 
     - 403 Forbidden — returned if the invoking user does not have admin permission in this room.
     """
-    room.unpin(msg_id, g.user)
-    return jsonify({})
+    count = room.unpin(msg_id, g.user)
+    return jsonify({"unpinned": count > 0, "info_updates": room.info_updates})
 
 
 @messages.post("/room/<Room:room>/unpin/all")
@@ -527,15 +536,18 @@ def message_unpin_all(room):
 
     # Return value
 
-    On success returns a 200 status code with an empty JSON object as response body.  All pinned
-    messages have been removed.
+    On success returns a 200 status code with an JSON object as response body containing keys:
+
+    - `unpinned` - count of how many pinned messages were removed.
+    - `info_updates` - new `info_updates` property for the room.  This value is only incremented by
+      this operation if at least one message was found and unpinned (i.e. if `unpinned > 0`).
 
     # Error status codes
 
     - 403 Forbidden — returned if the invoking user does not have admin permission in this room.
     """
-    room.unpin_all(g.user)
-    return jsonify({})
+    count = room.unpin_all(g.user)
+    return jsonify({"unpinned": count, "info_updates": room.info_updates})
 
 
 @messages.put("/room/<Room:room>/reaction/<int:msg_id>/<path:reaction>")

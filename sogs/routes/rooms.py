@@ -203,7 +203,10 @@ def update_room(room):
 
     # Return value
 
-    On success this endpoint returns a 200 status code and an empty json object (`{}`) as the body.
+    On success this endpoint returns a 200 status code and a json object containing keys:
+
+    - `info_updates` -- the new info_updates value of the room; a client can use this to avoid
+      race conditions with room info polling that might not yet include the updated value(s).
 
     # Error status codes
 
@@ -276,7 +279,7 @@ def update_room(room):
             app.logger.warning("Room update: must include at least one field to update")
             abort(http.BAD_REQUEST)
 
-    return jsonify({})
+    return jsonify({"info_updates": room.info_updates})
 
 
 def addExtraPermInfo(perms):

@@ -444,15 +444,15 @@ EXECUTE PROCEDURE trigger_room_metadata_info_update_old();
 -- because global mod settings affect the permissions of all rooms (and polling clients need to pick
 -- up on this).
 CREATE TRIGGER room_metadata_global_mods_insert AFTER INSERT ON users
-FOR EACH ROW WHEN ((NEW.admin OR NEW.moderator) AND NEW.visible_mod)
+FOR EACH ROW WHEN (NEW.admin OR NEW.moderator)
 EXECUTE PROCEDURE trigger_room_metadata_info_update_all();
 
 CREATE TRIGGER room_metadata_global_mods_update AFTER UPDATE OF moderator, admin, visible_mod ON users
-FOR EACH ROW WHEN ((NEW.moderator != OLD.moderator OR NEW.admin != OLD.admin) AND (NEW.visible_mod OR OLD.visible_mod))
+FOR EACH ROW WHEN (NEW.moderator != OLD.moderator OR NEW.admin != OLD.admin OR NEW.visible_mod != OLD.visible_mod)
 EXECUTE PROCEDURE trigger_room_metadata_info_update_all();
 
 CREATE TRIGGER room_metadata_global_mods_delete AFTER DELETE ON users
-FOR EACH ROW WHEN ((OLD.moderator OR OLD.admin) AND OLD.visible_mod)
+FOR EACH ROW WHEN (OLD.moderator OR OLD.admin)
 EXECUTE PROCEDURE trigger_room_metadata_info_update_all();
 
 
