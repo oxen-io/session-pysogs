@@ -11,6 +11,11 @@ def test_global_mods(client, room, room2, user, user2, mod, admin, global_admin,
     assert not room2.check_moderator(user)
     assert not room2.check_moderator(user2)
 
+    # Track expected info_updates values; the initial values are because creating the mod/admin/etc.
+    # fixtures imported here perform db modifications that trigger updates (2 global mods + 2 mods
+    # of `room`):
+    iu = {'test-room': 4, 'room2': 2}
+
     url_u1_mod = f'/user/{user.session_id}/moderator'
     url_u2_mod = f'/user/{user2.session_id}/moderator'
 
@@ -21,6 +26,9 @@ def test_global_mods(client, room, room2, user, user2, mod, admin, global_admin,
 
     r = sogs_post(client, url_u2_mod, {'global': True, 'moderator': True}, global_admin)
     assert r.status_code == 200
+    for k in iu.keys():
+        iu[k] += 1
+    assert r.json == {'info_updates': iu}
 
     user2._refresh()
     assert user2.global_moderator
@@ -34,6 +42,9 @@ def test_global_mods(client, room, room2, user, user2, mod, admin, global_admin,
 
     r = sogs_post(client, url_u2_mod, {'global': True, 'moderator': False}, global_admin)
     assert r.status_code == 200
+    for k in iu.keys():
+        iu[k] += 1
+    assert r.json == {'info_updates': iu}
     user2._refresh()
     room2._refresh(perms=True)
     assert not user2.global_moderator
@@ -42,6 +53,9 @@ def test_global_mods(client, room, room2, user, user2, mod, admin, global_admin,
 
     r = sogs_post(client, url_u2_mod, {'global': True, 'admin': True}, global_admin)
     assert r.status_code == 200
+    for k in iu.keys():
+        iu[k] += 1
+    assert r.json == {'info_updates': iu}
     user2._refresh()
     room2._refresh(perms=True)
     assert user2.global_moderator
@@ -51,12 +65,18 @@ def test_global_mods(client, room, room2, user, user2, mod, admin, global_admin,
 
     r = sogs_post(client, url_u1_mod, {'global': True, 'admin': True}, user2)
     assert r.status_code == 200
+    for k in iu.keys():
+        iu[k] += 1
+    assert r.json == {'info_updates': iu}
     user._refresh()
     assert user.global_admin and user.global_moderator
 
     # Removing moderator also implicitly removes admin:
     r = sogs_post(client, url_u1_mod, {'global': True, 'moderator': False}, user2)
     assert r.status_code == 200
+    for k in iu.keys():
+        iu[k] += 1
+    assert r.json == {'info_updates': iu}
     user._refresh()
     assert not user.global_admin and not user.global_moderator
 
@@ -68,12 +88,18 @@ def test_global_mods(client, room, room2, user, user2, mod, admin, global_admin,
     )
     assert r.status_code == 200
     user2._refresh()
+    for k in iu.keys():
+        iu[k] += 2
+    assert r.json == {'info_updates': iu}
     assert user2.global_admin and user2.global_moderator
 
-    sogs_post(
+    r = sogs_post(
         client, url_u2_mod, {'global': True, 'admin': False, 'moderator': False}, global_admin
     )
     assert r.status_code == 200
+    for k in iu.keys():
+        iu[k] += 1
+    assert r.json == {'info_updates': iu}
     user2._refresh()
     assert not user2.global_admin and not user2.global_moderator
 
@@ -144,6 +170,12 @@ def test_global_mods(client, room, room2, user, user2, mod, admin, global_admin,
 
 def test_room_mods(client, room, room2, user, user2, mod, admin, global_admin, global_mod):
 
+    # Track expected info_updates values; the initial values are because creating the mod/admin/etc.
+    # fixtures imported here perform db modifications that trigger updates (2 global mods + 2 mods
+    # of `room`):
+    iu = 4
+    iu2 = 2
+
     assert not room.check_moderator(user)
     assert not room.check_moderator(user2)
     assert not room2.check_moderator(user)
@@ -165,8 +197,12 @@ def test_room_mods(client, room, room2, user, user2, mod, admin, global_admin, g
 
     r = sogs_post(client, url_u2_mod, {'rooms': ['test-room'], 'moderator': True}, global_admin)
     assert r.status_code == 200
+    iu += 1
+    assert r.json == {'info_updates': {'test-room': iu}}
     r = sogs_post(client, url_u1_mod, {'rooms': ['*'], 'moderator': True}, admin)
     assert r.status_code == 200
+    iu += 1  # room2 doesn't change (even with '*') because `admin` isn't an admin of it
+    assert r.json == {'info_updates': {'test-room': iu}}
 
     refresh()
     assert not user.global_moderator
@@ -184,8 +220,14 @@ def test_room_mods(client, room, room2, user, user2, mod, admin, global_admin, g
     assert r.status_code == 403
 
     r = sogs_post(client, url_u1_mod, {'rooms': ['*'], 'moderator': False}, global_admin)
+    assert r.status_code == 200
+    iu += 1  # user isn't a moderator of room2, so room2's value doesn't change
+    assert r.json == {'info_updates': {'test-room': iu, 'room2': iu2}}
+
     r = sogs_post(client, url_u2_mod, {'rooms': ['*'], 'moderator': False}, global_admin)
     assert r.status_code == 200
+    iu += 1  # user2 isn't a moderator of room2, so room2's value doesn't change
+    assert r.json == {'info_updates': {'test-room': iu, 'room2': iu2}}
     refresh()
     assert not user.global_moderator
     assert not user2.global_moderator
@@ -197,6 +239,9 @@ def test_room_mods(client, room, room2, user, user2, mod, admin, global_admin, g
     # Make user2 a moderator of both rooms
     r = sogs_post(client, url_u2_mod, {'rooms': ['*'], 'moderator': True}, global_admin)
     assert r.status_code == 200
+    iu += 1
+    iu2 += 1
+    assert r.json == {'info_updates': {'test-room': iu, 'room2': iu2}}
     refresh()
     assert not user.global_moderator
     assert not user2.global_moderator
@@ -212,6 +257,8 @@ def test_room_mods(client, room, room2, user, user2, mod, admin, global_admin, g
     # Make user a admin of room2
     r = sogs_post(client, url_u1_mod, {'rooms': ['room2'], 'admin': True}, global_admin)
     assert r.status_code == 200
+    iu2 += 1
+    assert r.json == {'info_updates': {'room2': iu2}}
     refresh()
     assert not user.global_moderator
     assert not user2.global_moderator
@@ -227,6 +274,8 @@ def test_room_mods(client, room, room2, user, user2, mod, admin, global_admin, g
     # user can promote user2 to admin but only in room2
     r = sogs_post(client, url_u2_mod, {'rooms': ['*'], 'admin': True}, user)
     assert r.status_code == 200
+    iu2 += 1
+    assert r.json == {'info_updates': {'room2': iu2}}
     refresh()
     assert not user.global_moderator
     assert not user2.global_moderator
@@ -248,6 +297,8 @@ def test_room_mods(client, room, room2, user, user2, mod, admin, global_admin, g
     # Removing moderator also implicitly removes admin:
     r = sogs_post(client, url_u1_mod, {'rooms': ['room2'], 'moderator': False}, user2)
     assert r.status_code == 200
+    iu2 += 1
+    assert r.json == {'info_updates': {'room2': iu2}}
     refresh()
     assert not user.global_moderator
     assert not user2.global_moderator
@@ -268,9 +319,18 @@ def test_room_mods(client, room, room2, user, user2, mod, admin, global_admin, g
 
     # Multi-room addition:
     clear()
-    sogs_post(client, url_u1_mod, {'rooms': ['*'], 'admin': True}, global_admin)
-    sogs_post(client, url_u2_mod, {'rooms': ['*'], 'moderator': True}, user)
+    iu += 1
+    iu2 += 1
+    r = sogs_post(client, url_u1_mod, {'rooms': ['*'], 'admin': True}, global_admin)
     assert r.status_code == 200
+    iu += 1
+    iu2 += 1
+    assert r.json == {'info_updates': {'test-room': iu, 'room2': iu2}}
+    r = sogs_post(client, url_u2_mod, {'rooms': ['*'], 'moderator': True}, user)
+    assert r.status_code == 200
+    iu += 1
+    iu2 += 1
+    assert r.json == {'info_updates': {'test-room': iu, 'room2': iu2}}
     refresh()
     assert not user.global_moderator
     assert not user2.global_moderator
@@ -288,14 +348,18 @@ def test_room_mods(client, room, room2, user, user2, mod, admin, global_admin, g
         client, url_u2_mod, {'rooms': ['test-room'], 'admin': True, 'moderator': True}, admin
     )
     assert r.status_code == 200
+    iu += 1
+    assert r.json == {'info_updates': {'test-room': iu}}
     refresh()
     assert room.check_moderator(user2)
     assert room.check_admin(user2)
 
-    sogs_post(
+    r = sogs_post(
         client, url_u2_mod, {'rooms': ['test-room'], 'admin': False, 'moderator': False}, admin
     )
     assert r.status_code == 200
+    iu += 1
+    assert r.json == {'info_updates': {'test-room': iu}}
     refresh()
     assert not room.check_moderator(user2)
 
@@ -360,6 +424,7 @@ def test_room_mods(client, room, room2, user, user2, mod, admin, global_admin, g
 
 
 def test_mod_visibility(client, room, user, user2, mod, admin, global_admin):
+    iu = 3  # mod + admin + global admin
     s_mod, s_admin, s_gadmin, s_user = (
         mod.session_id,
         admin.session_id,
@@ -378,6 +443,10 @@ def test_mod_visibility(client, room, user, user2, mod, admin, global_admin):
     url_u1_mod = f'/user/{user.session_id}/moderator'
     r = sogs_post(client, url_u1_mod, {'global': True, 'moderator': True}, global_admin)
     assert r.status_code == 200
+    # Visibility = false, but should still update info_updates so that other mods/admins notice the
+    # change:
+    iu += 1
+    assert r.json == {'info_updates': {'test-room': iu}}
     user._refresh()
     assert user.global_moderator
     assert not user.global_admin
@@ -389,6 +458,9 @@ def test_mod_visibility(client, room, user, user2, mod, admin, global_admin):
         client, url_u1_mod, {'global': True, 'moderator': True, 'visible': True}, global_admin
     )
     assert r.status_code == 200
+    # Flipping visibility (and nothing else) should still update info_updates:
+    iu += 1
+    assert r.json == {'info_updates': {'test-room': iu}}
     user._refresh()
     assert user.global_moderator
     assert not user.global_admin

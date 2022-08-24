@@ -94,15 +94,15 @@ def set_mod(sid):
     - `rooms` — List of one or more room tokens to which the moderator status should be applied. The
       invoking user must be an admin of all of the given rooms.
 
-        This may be set to the single-element list ["*"] to add or remove the moderator from all
+        This may be set to the single-element list `["*"]` to add or remove the moderator from all
         rooms in which the current user has admin permissions (the call will succeed if the calling
-        user is an admin in at least one channel).
+        user is an admin in at least one room).
 
         Exclusive of `global`.
 
     - `global` — boolean value: if true then apply the change at the server-wide global level: the
-      user will be added/removed as a global moderator.  The invoking user must be a global admin in
-      order to control global mods/admins.
+      user will be added/removed as a global moderator/admin.  The invoking user must be a global
+      admin in order to control global mods/admins.
 
         Exclusive of `rooms`.
 
@@ -156,7 +156,16 @@ def set_mod(sid):
 
     # Return value
 
-    On success returns a 200 status code with an empty JSON object as body.
+    On success returns a 200 status code with JSON object as body containing keys:
+
+    - "info_updates": this is an object where each key is a room token, and each value is that
+      room's new `info_updates` value.  For a request making changes to room-level mods (i.e. using
+      the `rooms` parameter) this will be the new `info_updates` value for each of the given rooms.
+      For global moderator changes this will contain the new info_updates value of *all* rooms on
+      the server (because all rooms are updated when a global mod is added/removed).
+
+      These values can be useful to track whether possibly-concurrent room polling requests are
+      expected to have the moderator changes applied yet.
 
     # Error status codes
 
@@ -205,6 +214,8 @@ def set_mod(sid):
         if visible is None:
             visible = True
 
+        info_updates = {}
+
         with db.transaction():
             for room in rooms:
                 if (admin, mod) in ((True, None), (None, True)):
@@ -220,6 +231,8 @@ def set_mod(sid):
                     app.logger.error("Internal error: unhandled mod/admin room case")
                     raise RuntimeError("Internal error: unhandled mod/admin room case")
 
+                info_updates[room.token] = room.info_updates
+
     else:  # global mod
         if visible is None:
             visible = False
@@ -234,8 +247,9 @@ def set_mod(sid):
             with db.transaction():
                 user.remove_moderator(removed_by=g.user, remove_admin_only=True)
                 user.set_moderator(added_by=g.user, admin=bool(admin), visible=visible)
+        info_updates = {room.token: room.info_updates for room in mroom.get_rooms()}
 
-    return jsonify({})
+    return jsonify({"info_updates": info_updates})
 
 
 @users.post("/user/<AnySessionID:sid>/ban")
