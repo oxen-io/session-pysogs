@@ -1,19 +1,11 @@
 from . import crypto
 from . import config
 from . import http
-from . import session_pb2 as protobuf
 
 import base64
 from flask import request, abort, Response
 import json
 from typing import Union, Tuple
-
-
-def message_body(data: bytes):
-    """given a bunch of bytes for a protobuf message return the message's body"""
-    msg = protobuf.Content()
-    msg.ParseFromString(remove_session_message_padding(data))
-    return msg.dataMessage.body
 
 
 def encode_base64(data: bytes):

@@ -4,6 +4,7 @@ from ..omq import send_mule
 from ..web import app
 from .user import User
 from .file import File
+from .post import Post
 from .exc import (
     NoSuchRoom,
     NoSuchFile,
@@ -712,12 +713,14 @@ class Room:
         if config.PROFANITY_FILTER and not self.check_admin(user):
             import better_profanity
 
-            if better_profanity.profanity.contains_profanity(utils.message_body(data)):
-                if config.PROFANITY_SILENT:
-                    return True
-                else:
-                    # FIXME: can we send back some error code that makes Session not retry?
-                    raise PostRejected("filtration rejected message")
+            msg = Post(raw=data)
+            for part in (msg.text, msg.username):
+                if better_profanity.profanity.contains_profanity(part):
+                    if config.PROFANITY_SILENT:
+                        return True
+                    else:
+                        # FIXME: can we send back some error code that makes Session not retry?
+                        raise PostRejected("filtration rejected message")
         return False
 
     def _own_files(self, msg_id: int, files: List[int], user):
