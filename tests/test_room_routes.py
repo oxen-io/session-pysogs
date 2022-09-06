@@ -185,6 +185,73 @@ def test_list(client, room, room2, user, user2, admin, mod, global_mod, global_a
     assert r.json == {**r4_expected, **r4_exp_defs, **exp_gadmin}
 
 
+def test_visible_global_mods(client, room, user, mod, global_mod, global_admin):
+    url_room = '/room/test-room'
+    expect_room = {
+        "token": "test-room",
+        "name": "Test room",
+        "description": "Test suite testing room",
+        "info_updates": 3,
+        "message_sequence": 0,
+        "created": room.created,
+        "active_users": 0,
+        "active_users_cutoff": int(sogs.config.ROOM_DEFAULT_ACTIVE_THRESHOLD),
+        "moderators": [mod.session_id],
+        "admins": [],
+        "read": True,
+        "write": True,
+        "upload": True,
+    }
+    r = sogs_get(client, url_room, user)
+    assert r.status_code == 200
+    assert r.json == expect_room
+
+    expected_for_moderator = {
+        **expect_room,
+        **{'default_' + x: True for x in ('accessible', 'read', 'write', 'upload')},
+        'global_moderator': True,
+        'hidden_admins': [global_admin.session_id],
+        'hidden_moderators': [global_mod.session_id],
+        'moderator': True,
+        'moderators': [mod.session_id],
+    }
+    r = sogs_get(client, "/room/test-room/pollInfo/0", global_mod)
+    assert r.status_code == 200
+    assert r.json == {
+        'token': 'test-room',
+        'active_users': 0,
+        'details': expected_for_moderator,
+        'read': True,
+        'write': True,
+        'upload': True,
+        'moderator': True,
+        'global_moderator': True,
+        'default_accessible': True,
+        'default_read': True,
+        'default_write': True,
+        'default_upload': True,
+    }
+
+    global_mod.set_moderator(added_by=global_admin, admin=False, visible=True)
+    global_admin.set_moderator(added_by=global_admin, admin=True, visible=True)
+
+    for e in (expect_room, expected_for_moderator):
+        e["moderators"] = sorted([mod.session_id, global_mod.session_id])
+        e["admins"] = [global_admin.session_id]
+        e["info_updates"] += 2
+    del expected_for_moderator["hidden_admins"]
+    del expected_for_moderator["hidden_moderators"]
+
+    r = sogs_get(client, url_room, user)
+    assert r.status_code == 200
+    assert r.json == expect_room
+
+    r = sogs_get(client, url_room, mod)
+    assert r.status_code == 200
+    del expected_for_moderator["global_moderator"]
+    assert r.json == expected_for_moderator
+
+
 def test_updates(client, room, user, user2, mod, admin, global_mod, global_admin):
     url_room = '/room/test-room'
     r = sogs_get(client, url_room, user)
