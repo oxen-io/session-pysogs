@@ -152,7 +152,7 @@ Try --help for additional information.
 from . import web
 from .model.room import Room, get_rooms
 from .model.user import User, SystemUser, get_all_global_moderators
-from .model.exc import AlreadyExists, NoSuchRoom
+from .model.exc import AlreadyExists, NoSuchRoom, NoSuchUser
 
 web.appdb = db.get_conn()
 
@@ -322,7 +322,20 @@ elif args.delete_moderators:
                 print(f"{u.session_id} was not a global moderator")
             else:
                 u.remove_moderator(removed_by=sysadmin)
-                print(f"Removed {sid} as global {'admin' if was_admin else 'moderator'}")
+                print(f"Removed {u.session_id} as global {'admin' if was_admin else 'moderator'}")
+
+            if u.is_blinded and sid.startswith('05'):
+                try:
+                    u2 = User(session_id=sid, try_blinding=False, autovivify=False)
+                    if u2.global_admin or u2.global_moderator:
+                        was_admin = u2.global_admin
+                        u2.remove_moderator(removed_by=sysadmin)
+                        print(
+                            f"Removed {u2.session_id} as global "
+                            f"{'admin' if was_admin else 'moderator'}"
+                        )
+                except NoSuchUser:
+                    pass
     else:
         if args.rooms == ['*']:
             rooms = get_rooms()
@@ -334,9 +347,22 @@ elif args.delete_moderators:
 
         for sid in args.delete_moderators:
             u = User(session_id=sid, try_blinding=True)
+            u2 = None
+            if u.is_blinded and sid.startswith('05'):
+                try:
+                    u2 = User(session_id=sid, try_blinding=False, autovivify=False)
+                except NoSuchUser:
+                    pass
+
             for room in rooms:
                 room.remove_moderator(u, removed_by=sysadmin)
                 print(f"Removed {u.session_id} as moderator/admin of {room.name} ({room.token})")
+                if u2 is not None:
+                    room.remove_moderator(u2, removed_by=sysadmin)
+                    print(
+                        f"Removed {u2.session_id} as moderator/admin of {room.name} ({room.token})"
+                    )
+
 elif args.list_rooms:
     rooms = get_rooms()
     if rooms:
