@@ -1398,22 +1398,23 @@ class Room:
             raise BadPermission()
 
         with db.transaction():
-            query(
-                f"""
-                UPDATE user_permission_overrides
-                SET admin = FALSE
-                    {', moderator = FALSE, visible_mod = TRUE' if not remove_admin_only else ''}
-                WHERE room = :r AND "user" = :u
-                """,
-                r=self.id,
-                u=user.id,
-            )
+            with user.check_blinding() as u:
+                query(
+                    f"""
+                    UPDATE user_permission_overrides
+                    SET admin = FALSE
+                        {', moderator = FALSE, visible_mod = TRUE' if not remove_admin_only else ''}
+                    WHERE room = :r AND "user" = :u
+                    """,
+                    r=self.id,
+                    u=user.id,
+                )
 
-            self._refresh()
-            if user.id in self._perm_cache:
-                del self._perm_cache[user.id]
+                self._refresh()
+                if user.id in self._perm_cache:
+                    del self._perm_cache[user.id]
 
-        app.logger.info(f"{removed_by} removed {user} as mod/admin of {self}")
+                app.logger.info(f"{removed_by} removed {u} as mod/admin of {self}")
 
     def ban_user(self, to_ban: User, *, mod: User, timeout: Optional[float] = None):
         """
@@ -1496,24 +1497,28 @@ class Room:
             app.logger.warning(f"Error unbanning {to_unban} from {self} by {mod}: not a moderator")
             raise BadPermission()
 
-        result = query(
-            """
-            UPDATE user_permission_overrides SET banned = FALSE
-            WHERE room = :r AND "user" = :unban AND banned
-            """,
-            r=self.id,
-            unban=to_unban.id,
-        )
-        if result.rowcount > 0:
-            app.logger.debug(f"{mod} unbanned {to_unban} from {self}")
+        with db.transaction():
+            with to_unban.check_blinding() as to_unban:
+                result = query(
+                    """
+                    UPDATE user_permission_overrides SET banned = FALSE
+                    WHERE room = :r AND "user" = :unban AND banned
+                    """,
+                    r=self.id,
+                    unban=to_unban.id,
+                )
+                if result.rowcount > 0:
+                    app.logger.debug(f"{mod} unbanned {to_unban} from {self}")
 
-            if to_unban.id in self._perm_cache:
-                del self._perm_cache[to_unban.id]
+                    if to_unban.id in self._perm_cache:
+                        del self._perm_cache[to_unban.id]
 
-            return True
+                    return True
 
-        app.logger.debug(f"{mod} unbanned {to_unban} from {self} (but user was already unbanned)")
-        return False
+                app.logger.debug(
+                    f"{mod} unbanned {to_unban} from {self} (but user was already unbanned)"
+                )
+                return False
 
     def get_bans(self):
         """
