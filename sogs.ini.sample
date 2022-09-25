@@ -115,6 +115,20 @@
 ;
 ;profanity_custom =
 
+; Whether we should reject messages that use a particular alphabet.
+;
+;alphabet_filters = [ arabic, cyrillic, persian ]
+;alphabet_filters = []
+
+
+; If we reject messages written in a given alphabet, we should still allow them in
+; specific rooms. A list of whitelisted room ids can be given here, as returned by
+; `SELECT * FROM rooms;`. An empty list means to reject from all rooms.
+;
+;alphabet_whitelist_arabic = []
+;alphabet_whitelist_cyrillic = []
+;alphabet_whitelist_persian = []
+
 
 [web]
 
