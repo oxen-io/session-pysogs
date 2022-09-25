@@ -699,10 +699,11 @@ class Room:
 
     def should_filter(self, user: User, data: bytes):
         """
-        Checks a message for profanity (if the profanity filter is enabled).
+        Checks a message for disallowed alphabets and profanity (if the profanity
+        filter is enabled).
 
-        - Returns False if this message passes (i.e. didn't trigger the profanity filter, or is
-          being posted by an admin to whom the filter doesn't apply).
+        - Returns False if this message passes (i.e. didn't trigger any filter, or is
+          being posted by an admin to whom the filters don't apply).
 
         Otherwise, depending on the filtering configuration:
         - Returns True if this message should be silently accepted but filtered (i.e. not shown to
@@ -710,17 +711,33 @@ class Room:
         - Throws PostRejected if the message should be rejected (and rejection passed back to the
           user).
         """
+        msg = Post(raw=data)
+
+        if 'arabic' in config.ALPHABET_FILTERS and not self.check_admin(user):
+            arabic_alpha_codepoints = '[\u0600-\u06ff\u0750-\u077f\u08a0-\u08ff\ufb50-\ufdff\ufe70-\ufeff]'
+            if not self.id in config.ALPHABET_WHITELIST_ARABIC and re.search(arabic_alpha_codepoints, msg.text):
+                raise PostRejected("filtration rejected Arabic message")
+
+        if 'cyrillic' in config.ALPHABET_FILTERS and not self.check_admin(user):
+            cyrillic_alpha_codepoints = '[\u0400-\u04ff]'
+            if not self.id in config.ALPHABET_WHITELIST_CYRILLIC and re.search(cyrillic_alpha_codepoints, msg.text):
+                raise PostRejected("filtration rejected Cyrillic message")
+
+        if 'persian' in config.ALPHABET_FILTERS and not self.check_admin(user):
+            persian_alpha_codepoints = '[\u0621-\u0628\u062a-\u063a\u0641-\u0642\u0644-\u0648\u064e-\u0651\u0655\u067e\u0686\u0698\u06a9\u06af\u06be\u06cc]'
+            if not self.id in config.ALPHABET_WHITELIST_PERSIAN and re.search(persian_alpha_codepoints, msg.text):
+                raise PostRejected("filtration rejected Persian message")
+
         if config.PROFANITY_FILTER and not self.check_admin(user):
             import better_profanity
 
-            msg = Post(raw=data)
             for part in (msg.text, msg.username):
                 if better_profanity.profanity.contains_profanity(part):
                     if config.PROFANITY_SILENT:
                         return True
                     else:
                         # FIXME: can we send back some error code that makes Session not retry?
-                        raise PostRejected("filtration rejected message")
+                        raise PostRejected("filtration rejected profane message")
         return False
 
     def _own_files(self, msg_id: int, files: List[int], user):

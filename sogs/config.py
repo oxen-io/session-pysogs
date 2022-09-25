@@ -32,6 +32,10 @@ IMPORT_ADJUST_MS = 0
 PROFANITY_FILTER = False
 PROFANITY_SILENT = True
 PROFANITY_CUSTOM = None
+ALPHABET_FILTERS = []
+ALPHABET_WHITELIST_ARABIC = []
+ALPHABET_WHITELIST_CYRILLIC = []
+ALPHABET_WHITELIST_PERSIAN = []
 REQUIRE_BLIND_KEYS = False
 TEMPLATE_PATH = 'templates'
 STATIC_PATH = 'static'
@@ -83,6 +87,12 @@ def load_config():
     def days_to_seconds_or_none(v):
         return days_to_seconds(v) if v else None
 
+    def list_of_strs(v):
+        return re.split('[,\s]+', value[1:-1].strip())
+
+    def list_of_ints(v):
+        return [int(i) for i in list_of_strs(v)]
+
     truthy = ('y', 'yes', 'Y', 'Yes', 'true', 'True', 'on', 'On', '1')
     falsey = ('n', 'no', 'N', 'No', 'false', 'False', 'off', 'Off', '0')
     booly = truthy + falsey
@@ -126,6 +136,10 @@ def load_config():
             'profanity_filter': bool_opt('PROFANITY_FILTER'),
             'profanity_silent': bool_opt('PROFANITY_SILENT'),
             'profanity_custom': ('PROFANITY_CUSTOM', path_exists, val_or_none),
+            'alphabet_filters': ('ALPHABET_FILTERS', None, list_of_strs),
+            'alphabet_whitelist_arabic': ('ALPHABET_WHITELIST_ARABIC', None, list_of_ints),
+            'alphabet_whitelist_cyrillic': ('ALPHABET_WHITELIST_CYRILLIC', None, list_of_ints),
+            'alphabet_whitelist_persian': ('ALPHABET_WHITELIST_PERSIAN', None, list_of_ints),
         },
         'web': {
             'template_path': ('TEMPLATE_PATH', path_exists, val_or_none),
