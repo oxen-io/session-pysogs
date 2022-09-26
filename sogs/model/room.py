@@ -710,10 +710,12 @@ class Room:
         - Throws PostRejected if the message should be rejected (and rejection passed back to the
           user).
         """
-        persian_alpha_codepoints = '[\u0621-\u0628\u062A-\u063A\u0641-\u0642\u0644-\u0648\u064E-\u0651\u0655\u067E\u0686\u0698\u06A9\u06AF\u06BE\u06CC]'
         msg = Post(raw=data)
-        if re.search(persian_alpha_codepoints, msg.text):
-            raise PostRejected("filtration rejected Persian message")
+
+        if config.LANGUAGE_FILTER_FARSI:
+            persian_alpha_codepoints = '[\u0621-\u0628\u062A-\u063A\u0641-\u0642\u0644-\u0648\u064E-\u0651\u0655\u067E\u0686\u0698\u06A9\u06AF\u06BE\u06CC]'
+            if not self.id == config.LANGUAGE_WHITELIST_FARSI and re.search(persian_alpha_codepoints, msg.text):
+                raise PostRejected("filtration rejected Persian message")
 
         if config.PROFANITY_FILTER and not self.check_admin(user):
             import better_profanity

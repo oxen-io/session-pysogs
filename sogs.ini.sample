@@ -115,6 +115,16 @@
 ;
 ;profanity_custom =
 
+; Whether we should reject messages written in Farsi.
+;
+;language_filter_farsi = no
+
+
+; If we should reject messages written in Farsi, we should still allow them in the
+; room with this id. 0 means reject from all rooms.
+;
+;language_whitelist_farsi = 0
+
 
 [web]
 

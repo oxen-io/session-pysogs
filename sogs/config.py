@@ -32,6 +32,8 @@ IMPORT_ADJUST_MS = 0
 PROFANITY_FILTER = False
 PROFANITY_SILENT = True
 PROFANITY_CUSTOM = None
+LANGUAGE_FILTER_FARSI = False
+LANGUAGE_WHITELIST_FARSI = 0
 REQUIRE_BLIND_KEYS = False
 TEMPLATE_PATH = 'templates'
 STATIC_PATH = 'static'
@@ -126,6 +128,8 @@ def load_config():
             'profanity_filter': bool_opt('PROFANITY_FILTER'),
             'profanity_silent': bool_opt('PROFANITY_SILENT'),
             'profanity_custom': ('PROFANITY_CUSTOM', path_exists, val_or_none),
+            'language_filter_farsi': bool_opt('LANGUAGE_FILTER_FARSI'),
+            'language_whitelist_farsi': ('LANGUAGE_WHITELIST_FARSI', None, int),
         },
         'web': {
             'template_path': ('TEMPLATE_PATH', path_exists, val_or_none),
