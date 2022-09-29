@@ -1,4 +1,4 @@
-from flask import abort, request, jsonify, g, Blueprint
+from flask import abort, request, jsonify, g, Blueprint, Response
 from werkzeug.exceptions import HTTPException
 from ..web import app
 from .. import crypto, config, db, http, utils
@@ -68,6 +68,10 @@ def legacy_check_user_room(
     if not pubkey or len(pubkey) != (utils.SESSION_ID_SIZE * 2) or not pubkey.startswith('05'):
         app.logger.warning("cannot get pubkey for checking room permissions")
         abort(http.BAD_REQUEST)
+    if config.REQUIRE_BLIND_KEYS and pubkey.startswith('05'):
+        msg = "Invalid authentication: this server requires the use of blinded ids"
+        app.logger.warning(msg)
+        abort(Response(msg, status=http.BAD_REQUEST, mimetype='text/plain'))
 
     if room is None:
         if room_token is None:
