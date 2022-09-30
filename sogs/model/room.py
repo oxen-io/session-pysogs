@@ -1044,6 +1044,22 @@ class Room:
             "SELECT COUNT(*), COALESCE(SUM(size), 0) FROM files WHERE room = :r", r=self.id
         ).first()[0:2]
 
+    def reactions_counts(self):
+        """Returns a list of [reaction, count] pairs where count is the aggregate count of that
+        reaction use in this room"""
+        return [
+            (r, c)
+            for r, c in query(
+                """
+                SELECT reaction, COUNT(*)
+                FROM message_reactions JOIN messages ON messages.id = message
+                WHERE room = :r
+                GROUP BY reaction
+                """,
+                r=self.id,
+            )
+        ]
+
     def get_reactions(
         self,
         message_ids: List[int],

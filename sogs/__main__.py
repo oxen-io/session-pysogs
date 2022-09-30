@@ -165,6 +165,9 @@ def close_conn():
 def print_room(room: Room):
     msgs, msgs_size = room.messages_size()
     files, files_size = room.attachments_size()
+    reactions = room.reactions_counts()
+    r_total = sum(x[1] for x in reactions)
+    reactions.sort(key=lambda x: x[1], reverse=True)
 
     msgs_size /= 1_000_000
     files_size /= 1_000_000
@@ -183,6 +186,7 @@ Description: {room.description}
 URL: {config.URL_BASE}/{room.token}?public_key={crypto.server_pubkey_hex}
 Messages: {msgs} ({msgs_size:.1f} MB)
 Attachments: {files} ({files_size:.1f} MB)
+Reactions: {r_total}; top 5: {', '.join(f"{r} ({c})" for r, c in reactions[0:5])}
 Active users: {active[0]} (1d), {active[1]} (7d), {active[2]} (14d), {active[3]} (30d)
 Moderators: {admins} admins ({len(ha)} hidden), {mods} moderators ({len(hm)} hidden)""",
         end='',
