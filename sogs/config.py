@@ -32,14 +32,15 @@ IMPORT_ADJUST_MS = 0
 PROFANITY_FILTER = False
 PROFANITY_SILENT = True
 PROFANITY_CUSTOM = None
-ALPHABET_FILTERS = []
-ALPHABET_WHITELIST_ARABIC = []
-ALPHABET_WHITELIST_CYRILLIC = []
-ALPHABET_WHITELIST_PERSIAN = []
+ALPHABET_FILTERS = set()
+ALPHABET_SILENT = True
+FILTER_MODS = False
 REQUIRE_BLIND_KEYS = False
 TEMPLATE_PATH = 'templates'
 STATIC_PATH = 'static'
 UPLOAD_PATH = 'uploads'
+ROOM_OVERRIDES = {}
+FILTER_SETTINGS = {}
 
 # Will be true if we're running as a uwsgi app, false otherwise; used where we need to do things
 # only in one case or another (e.g. database initialization only via app mode).
@@ -87,11 +88,8 @@ def load_config():
     def days_to_seconds_or_none(v):
         return days_to_seconds(v) if v else None
 
-    def list_of_strs(v):
-        return re.split('[,\s]+', value[1:-1].strip())
-
-    def list_of_ints(v):
-        return [int(i) for i in list_of_strs(v)]
+    def set_of_strs(v):
+        return {s for s in re.split('[,\\s]+', v) if s != ''}
 
     truthy = ('y', 'yes', 'Y', 'Yes', 'true', 'True', 'on', 'On', '1')
     falsey = ('n', 'no', 'N', 'No', 'false', 'False', 'off', 'Off', '0')
@@ -99,6 +97,25 @@ def load_config():
 
     def bool_opt(name):
         return (name, lambda x: x in booly, lambda x: x in truthy)
+
+    reply_fields = {
+        r'\@': '{profile_at}',
+        r'\p': '{profile_name}',
+        r'\r': '{room_name}',
+        r'\t': '{room token}',
+        '{': '{{',
+        '}': '}}',
+        r'\\': '\\',
+        r'\n': '\n',
+    }
+    reply_fields_re = '(?:' + '|'.join(re.escape(k) for k in reply_fields.keys()) + ')'
+
+    def reply_to_format(v):
+        return [
+            re.sub(reply_fields_re, lambda x: reply_fields[x.group(0)], reply)
+            for reply in v.split("\n")
+            if reply != ''
+        ]
 
     # Map of: section => { param => ('GLOBAL', test lambda, value lambda) }
     # global is the string name of the global variable to set
@@ -136,10 +153,9 @@ def load_config():
             'profanity_filter': bool_opt('PROFANITY_FILTER'),
             'profanity_silent': bool_opt('PROFANITY_SILENT'),
             'profanity_custom': ('PROFANITY_CUSTOM', path_exists, val_or_none),
-            'alphabet_filters': ('ALPHABET_FILTERS', None, list_of_strs),
-            'alphabet_whitelist_arabic': ('ALPHABET_WHITELIST_ARABIC', None, list_of_ints),
-            'alphabet_whitelist_cyrillic': ('ALPHABET_WHITELIST_CYRILLIC', None, list_of_ints),
-            'alphabet_whitelist_persian': ('ALPHABET_WHITELIST_PERSIAN', None, list_of_ints),
+            'alphabet_filters': ('ALPHABET_FILTERS', None, set_of_strs),
+            'alphabet_silent': bool_opt('ALPHABET_SILENT'),
+            'filter_mods': bool_opt('FILTER_MODS'),
         },
         'web': {
             'template_path': ('TEMPLATE_PATH', path_exists, val_or_none),
@@ -148,32 +164,72 @@ def load_config():
         'log': {'level': ('LOG_LEVEL',)},
     }
 
-    for s in cp.sections():
-        if s not in setting_map:
-            logger.warning(f"Ignoring unknown section [{s}] in {conf_ini}")
-            continue
-        for opt in cp[s]:
-            if opt not in setting_map[s]:
-                logger.warning(f"Ignoring unknown config setting [{s}].{opt} in {conf_ini}")
-                continue
+    room_setting_map = {
+        'profanity_filter': bool_opt('profanity_filter'),
+        'profanity_silent': bool_opt('profanity_silent'),
+        'alphabet_filters': ('alphabet_filters', None, set_of_strs),
+    }
 
-            value = cp[s][opt]
-            conf = setting_map[s][opt]
+    filter_setting_map = {
+        'public': bool_opt('public'),
+        'profile_name': ('profile_name',),
+        'reply': ('reply', None, reply_to_format),
+    }
 
-            assert isinstance(conf, tuple) and 1 <= len(conf) <= 3
+    def parse_option(fields, s, opt, *, room=None, filt=None):
+        conf_type = 'room-specific ' if room else 'filter ' if filt else ''
+        if opt not in fields:
+            logger.warning(f"Ignoring unknown {conf_type} config setting [{s}].{opt} in {conf_ini}")
+            return
+        conf = fields[opt]
+        value = cp[s][opt]
+
+        assert isinstance(conf, tuple) and 1 <= len(conf) <= 3
+        if not room and not filt:
             assert conf[0] in globals()
 
-            logger.debug(f"Loaded config setting [{s}].{opt}={value}")
+        logger.debug(f"Loaded {'room-specific ' if room else ''}config setting [{s}].{opt}={value}")
 
-            if len(conf) >= 2 and conf[1]:
-                if not conf[1](value):
-                    raise RuntimeError(f"Invalid value [{s}].{opt}={value} in {conf_ini}")
+        if len(conf) >= 2 and conf[1]:
+            if not conf[1](value):
+                raise RuntimeError(f"Invalid value [{s}].{opt}={value} in {conf_ini}")
 
-            if len(conf) >= 3 and conf[2]:
-                value = conf[2](value)
+        if len(conf) >= 3 and conf[2]:
+            value = conf[2](value)
 
+        if room:
+            logger.debug(f"Set config.ROOM_OVERRIDES[{room}][{conf[0]}] = {value}")
+            ROOM_OVERRIDES[room][conf[0]] = value
+        elif filt:
+            logger.debug(f"Set config.FILTER_SETTINGS[{filt[0]}][{filt[1]}][{conf[0]}] = {value}")
+            FILTER_SETTINGS.setdefault(filt[0], {}).setdefault(filt[1], {})[conf[0]] = value
+        else:
             logger.debug(f"Set config.{conf[0]} = {value}")
             globals()[conf[0]] = value
+
+    for s in cp.sections():
+        if len(s) > 5 and s.startswith('room:'):
+            token = s[5:]
+            if token not in ROOM_OVERRIDES:
+                ROOM_OVERRIDES[token] = {}
+            for opt in cp[s]:
+                parse_option(room_setting_map, s, opt, room=token)
+
+        elif s.startswith('filter:'):
+            filt = s.split(':')[1:]
+            if len(filt) != 2:
+                raise RuntimeError(
+                    f"Invalid filter section [{s}] in {conf_ini}: expected [filter:TYPE:ROOM]"
+                )
+            for opt in cp[s]:
+                parse_option(filter_setting_map, s, opt, filt=filt)
+
+        elif s in setting_map:
+            for opt in cp[s]:
+                parse_option(setting_map[s], s, opt)
+
+        else:
+            logger.warning(f"Ignoring unknown section [{s}] in {conf_ini}")
 
 
 try:

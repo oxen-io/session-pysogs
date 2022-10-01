@@ -93,8 +93,7 @@
 
 
 ; Whether we should pass words through a profanity filter, rejecting messages that contain profane
-; words (and common permutations of those words).  (Note that profanity filters are never applied to
-; room or server admins).
+; words (and common permutations of those words).
 ;
 ;profanity_filter = no
 
@@ -115,19 +114,31 @@
 ;
 ;profanity_custom =
 
-; Whether we should reject messages that use a particular alphabet.
+; Whether we should reject messages that use a particular alphabet.  This is a space or
+; comma-separated list of alphabet names; posts with characters in the given language ranges will be
+; blocked (unless posted by a mod/admin).  Currently supported are: arabic, cyrillic, and persian
+; (note that persian is included within arabic).
 ;
-;alphabet_filters = [ arabic, cyrillic, persian ]
-;alphabet_filters = []
+; *This* setting is the default setting for all rooms, but you can also make room-specific filtering
+; (see sogs.ini.filter-sample for details).
+;
+;alphabet_filters =
 
 
-; If we reject messages written in a given alphabet, we should still allow them in
-; specific rooms. A list of whitelisted room ids can be given here, as returned by
-; `SELECT * FROM rooms;`. An empty list means to reject from all rooms.
+; Whether the alphabet filter should silently drop (true) or return an error (false).
 ;
-;alphabet_whitelist_arabic = []
-;alphabet_whitelist_cyrillic = []
-;alphabet_whitelist_persian = []
+;alphabet_silent = yes
+
+
+; Whether the above filters should be applied to moderators and admins (=yes) or not (=no).  The
+; default is no, that is, mods and admins messages are not filtered by default.
+;
+;filter_mods = no
+
+
+; The profanity and alphabet filters can be controlled on a per-room setting (which overrides the
+; global default set above) and can have automated responses sent by the SOGS server.  For details
+; and examples see the sogs.ini.filter-sample file.
 
 
 [web]
