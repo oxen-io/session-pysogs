@@ -24,14 +24,16 @@ local default_deps = [
 
 local apt_get_quiet = 'apt-get -o=Dpkg::Use-Pty=0 -q';
 
-local setup_commands(deps=default_deps) = [
+local auto_distro = '$$(lsb_release -sc)';
+
+local setup_commands(deps=default_deps, distro=auto_distro) = [
   'echo "Running on ${DRONE_STAGE_MACHINE}"',
   'echo "man-db man-db/auto-update boolean false" | debconf-set-selections',
   apt_get_quiet + ' update',
   apt_get_quiet + ' install -y eatmydata',
   'eatmydata ' + apt_get_quiet + ' install --no-install-recommends -y lsb-release',
   'cp contrib/deb.oxen.io.gpg /etc/apt/trusted.gpg.d',
-  'echo deb http://deb.oxen.io $$(lsb_release -sc) main >/etc/apt/sources.list.d/oxen.list',
+  'echo deb http://deb.oxen.io ' + distro + ' main >/etc/apt/sources.list.d/oxen.list',
   'eatmydata ' + apt_get_quiet + ' update',
   'eatmydata ' + apt_get_quiet + ' dist-upgrade -y',
   'eatmydata ' + apt_get_quiet + ' install --no-install-recommends -y ' + std.join(' ', deps),
@@ -47,7 +49,8 @@ local debian_pipeline(name,
                       pytest_opts='',
                       extra_cmds=[],
                       services=[],
-                      allow_fail=false) = {
+                      allow_fail=false,
+                      distro=auto_distro) = {
   kind: 'pipeline',
   type: 'docker',
   name: name,
@@ -59,7 +62,7 @@ local debian_pipeline(name,
       image: image,
       pull: 'always',
       [if allow_fail then 'failure']: 'ignore',
-      commands: setup_commands(deps) + before_pytest + [
+      commands: setup_commands(deps=deps, distro=distro) + before_pytest + [
                   'pytest-3 -vv --color=yes ' + pytest_opts,
                 ]
                 + extra_cmds,
@@ -73,13 +76,14 @@ local pg_service =
   { name: 'pg', image: 'postgres:bullseye', environment: { POSTGRES_USER: 'ci', POSTGRES_PASSWORD: 'ci' } };
 local pg_wait = 'for i in $(seq 0 30); do if pg_isready -d ci -h pg -U ci -t 1; then break; elif [ "$i" = 30 ]; then echo "Timeout waiting for postgresql" >&2; exit 1; fi; sleep 1; done';
 
-local debian_pg_pipeline(name, image, pg_tag='bullseye') = debian_pipeline(
+local debian_pg_pipeline(name, image, pg_tag='bullseye', distro=auto_distro) = debian_pipeline(
   name,
   image,
   deps=default_deps + pg_deps,
   services=[pg_service],
   before_pytest=[pg_wait],
-  pytest_opts='--pgsql "postgresql://ci:ci@pg/ci"'
+  pytest_opts='--pgsql "postgresql://ci:ci@pg/ci"',
+  distro=distro
 );
 
 local upgrade_deps = default_deps + ['git', 'curl', 'sqlite3', 'python3-prettytable'];
@@ -133,17 +137,17 @@ local upgrade_test(name, from='v0.1.10', intermediates=[], pg=false, pg_convert=
     ],
   },
 
-  debian_pipeline('Debian sid (amd64)', docker_base + 'debian-sid'),
+  debian_pipeline('Debian sid (amd64)', docker_base + 'debian-sid', distro='sid'),
   debian_pipeline('Debian stable (i386)', docker_base + 'debian-stable/i386'),
   debian_pipeline('Debian stable (amd64)', docker_base + 'debian-stable'),
   debian_pipeline('Ubuntu latest (amd64)', docker_base + 'ubuntu-rolling'),
   debian_pipeline('Ubuntu LTS (amd64)', docker_base + 'ubuntu-lts'),
 
-  debian_pg_pipeline('PostgreSQL 14/sid', docker_base + 'debian-sid', pg_tag='14-bullseye'),
+  debian_pg_pipeline('PostgreSQL 14/sid', docker_base + 'debian-sid', pg_tag='14-bullseye', distro='sid'),
   debian_pg_pipeline('PostgreSQL 12/focal', docker_base + 'ubuntu-focal', pg_tag='12-bullseye'),
 
   // ARM builds (ARM64 and armhf)
-  debian_pipeline('Debian sid (ARM64)', docker_base + 'debian-sid', arch='arm64'),
+  debian_pipeline('Debian sid (ARM64)', docker_base + 'debian-sid', arch='arm64', distro='sid'),
   debian_pipeline('Debian stable (armhf)', docker_base + 'debian-stable/arm32v7', arch='arm64'),
 
   // Import tests:
