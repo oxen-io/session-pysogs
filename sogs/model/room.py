@@ -793,7 +793,13 @@ class Room:
         - Throws PostRejected if the message should be rejected (and rejection passed back to the
           user).
         """
-        msg = Post(raw=data)
+        msg_ = None
+
+        def msg():
+            nonlocal msg_
+            if msg_ is None:
+                msg_ = Post(raw=data)
+            return msg_
 
         if not config.FILTER_MODS and self.check_moderator(user):
             return None
@@ -807,7 +813,7 @@ class Room:
             if lang not in alphabets:
                 continue
 
-            if not pattern.search(msg.text):
+            if not pattern.search(msg().text):
                 continue
 
             # Filter it!
@@ -817,7 +823,7 @@ class Room:
         if not filter_type and filt['profanity_filter']:
             import better_profanity
 
-            for part in (msg.text, msg.username):
+            for part in (msg().text, msg().username):
                 if better_profanity.profanity.contains_profanity(part):
                     filter_type = 'profanity'
                     break
@@ -831,7 +837,7 @@ class Room:
         if msg_fmt:
             pbmsg = protobuf.Content()
             body = msg_fmt.format(
-                profile_name=(user.session_id if msg.username is None else msg.username),
+                profile_name=(user.session_id if msg().username is None else msg().username),
                 profile_at="@" + user.session_id,
                 room_name=self.name,
                 room_token=self.token,
