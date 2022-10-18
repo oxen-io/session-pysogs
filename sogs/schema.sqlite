@@ -38,6 +38,7 @@ CREATE TABLE messages (
     seqno INTEGER NOT NULL DEFAULT 0, /* set to the room's `message_sequence` counter when any of the individual seqno values are updated */
     seqno_data INTEGER NOT NULL DEFAULT 0, /* updated when `data` changes (i.e. edits, deletions) */
     seqno_reactions INTEGER NOT NULL DEFAULT 0, /* updated when reactions are added/removed */
+    seqno_creation INTEGER NOT NULL DEFAULT 0, /* set to the seqno at the time of creation (and not updated afterwards) */
     data BLOB, /* Actual message content, not including trailing padding; set to null to delete a message */
     data_size INTEGER, /* The message size, including trailing padding (needed because the signature is over the padded data) */
     signature BLOB, /* Signature of `data` by `public_key`; set to null when deleting a message */
@@ -65,6 +66,7 @@ FOR EACH ROW
 BEGIN
     UPDATE rooms SET message_sequence = message_sequence + 1 WHERE id = NEW.room;
     UPDATE messages SET seqno_data = (SELECT message_sequence FROM rooms WHERE id = NEW.room) WHERE id = NEW.id;
+    UPDATE messages SET seqno_creation = seqno_data WHERE id = NEW.id;
 END;
 
 -- Trigger to do various tasks needed when a message is edited/deleted:
@@ -280,7 +282,7 @@ END;
 -- View of `messages` that is useful for manually inspecting table contents by only returning the
 -- length (rather than raw bytes) for data/signature.
 CREATE VIEW message_metadata AS
-SELECT id, room, "user", session_id, posted, edited, seqno, seqno_data, seqno_reactions,
+SELECT id, room, "user", session_id, posted, edited, seqno, seqno_data, seqno_reactions, seqno_creation,
         filtered, whisper_to, whisper_mods,
         length(data) AS data_unpadded, data_size, length(signature) as signature_length
     FROM message_details;
