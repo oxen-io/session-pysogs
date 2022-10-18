@@ -398,3 +398,87 @@ def test_reaction_ordering(client, room, user, user2):
         {'id': 2, 'reactions': exp_reacts_2, 'seqno': seqno_2},
         {'id': 1, 'reactions': exp_reacts_1, 'seqno': seqno},
     ]
+
+
+def test_reaction_deleted(client, room, user):
+    """Test that we don't get an empty reaction update for a deleted message"""
+
+    for n in range(1, 5):
+        room.add_post(user, f"fake data {n}".encode(), pad64(f"fake sig {n}"))
+
+    r = sogs_get(client, "/room/test-room/messages/since/0", user)
+    assert r.status_code == 200
+    res = r.json
+    for k in ('posted', 'session_id', 'data', 'signature'):
+        for m in res:
+            del m[k]
+    assert res == [{'id': n, 'reactions': {}, 'seqno': n} for n in range(1, 5)]
+
+    seqno = 4
+
+    for x in ("🖕", "f", "🍆", "🍍"):
+        r = sogs_put(client, f"/room/test-room/reaction/1/{x}", {}, user)
+        assert r.status_code == 200
+        seqno += 1
+        assert r.json == {"added": True, "seqno": seqno}
+
+    for n in (2, 3, 4):
+        r = sogs_put(client, f"/room/test-room/reaction/{n}/🍍", {}, user)
+        assert r.status_code == 200
+        seqno += 1
+        assert r.json == {"added": True, "seqno": seqno}
+
+    r = sogs_get(client, "/room/test-room/messages/since/0?t=r", user)
+    assert r.status_code == 200
+    res = r.json
+    for k in ('posted', 'session_id', 'data', 'signature'):
+        for x in res:
+            if k in x:
+                del x[k]
+    assert res == [
+        {
+            'id': 1,
+            'seqno': seqno - 3,
+            'reactions': {
+                "🖕": {'index': 0, 'count': 1, 'reactors': [user.session_id], 'you': True},
+                "f": {'index': 1, 'count': 1, 'reactors': [user.session_id], 'you': True},
+                "🍆": {'index': 2, 'count': 1, 'reactors': [user.session_id], 'you': True},
+                "🍍": {'index': 3, 'count': 1, 'reactors': [user.session_id], 'you': True},
+            },
+        },
+        *(
+            {
+                'id': n,
+                'seqno': seqno - 4 + n,
+                'reactions': {
+                    "🍍": {'index': 0, 'count': 1, 'reactors': [user.session_id], 'you': True}
+                },
+            }
+            for n in (2, 3, 4)
+        ),
+    ]
+
+    for id in (1, 2, 4):
+        r = sogs_delete(client, f'/room/test-room/message/{id}', user)
+        assert r.status_code == 200
+
+    r = sogs_get(client, "/room/test-room/messages/since/0?t=r", user)
+    assert r.status_code == 200
+    res = r.json
+    for k in ('posted', 'edited', 'session_id', 'data', 'signature'):
+        for x in res:
+            if k in x:
+                del x[k]
+    assert res == [
+        {
+            'id': 3,
+            'seqno': seqno - 1,
+            'reactions': {
+                "🍍": {'index': 0, 'count': 1, 'reactors': [user.session_id], 'you': True}
+            },
+        },
+        *(
+            {'id': id, 'seqno': seqno, 'deleted': True, 'reactions': {}}
+            for id, seqno in ((1, 16), (2, 18), (4, 20))
+        ),
+    ]
