@@ -94,6 +94,7 @@ local upgrade_deps = default_deps + ['git', 'curl', 'sqlite3', 'python3-prettyta
 local upgrade_test(name, from='v0.1.10', intermediates=[], pg=false, pg_convert=false) = {
   name: name,
   image: docker_base + 'debian-stable',
+  pull: 'always',
   commands: setup_commands(deps=upgrade_deps
                                 + (if pg || pg_convert then pg_deps else [])
                                 + (if pg_convert then ['python3-pip'] else []))
@@ -123,6 +124,7 @@ local upgrade_test(name, from='v0.1.10', intermediates=[], pg=false, pg_convert=
       {
         name: 'Formatting',
         image: docker_base + 'debian-stable',
+        pull: 'always',
         commands: [
           'echo "Running on ${DRONE_STAGE_MACHINE}"',
           apt_get_quiet + ' install -y black',
@@ -132,6 +134,7 @@ local upgrade_test(name, from='v0.1.10', intermediates=[], pg=false, pg_convert=
       {
         name: 'Flake8',
         image: docker_base + 'debian-stable',
+        pull: 'always',
         commands: [
           'echo "Running on ${DRONE_STAGE_MACHINE}"',
           apt_get_quiet + ' install -y flake8',
