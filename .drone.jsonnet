@@ -72,15 +72,19 @@ local debian_pipeline(name,
 };
 
 local pg_deps = ['python3-psycopg2', 'postgresql-client'];
-local pg_service =
-  { name: 'pg', image: 'postgres:bullseye', environment: { POSTGRES_USER: 'ci', POSTGRES_PASSWORD: 'ci' } };
+local pg_service(pg_tag='bullseye') = {
+  name: 'pg',
+  image: 'postgres:' + pg_tag,
+  pull: 'always',
+  environment: { POSTGRES_USER: 'ci', POSTGRES_PASSWORD: 'ci' },
+};
 local pg_wait = 'for i in $(seq 0 30); do if pg_isready -d ci -h pg -U ci -t 1; then break; elif [ "$i" = 30 ]; then echo "Timeout waiting for postgresql" >&2; exit 1; fi; sleep 1; done';
 
 local debian_pg_pipeline(name, image, pg_tag='bullseye', distro=auto_distro) = debian_pipeline(
   name,
   image,
   deps=default_deps + pg_deps,
-  services=[pg_service],
+  services=[pg_service(pg_tag)],
   before_pytest=[pg_wait],
   pytest_opts='--pgsql "postgresql://ci:ci@pg/ci"',
   distro=distro
@@ -90,6 +94,7 @@ local upgrade_deps = default_deps + ['git', 'curl', 'sqlite3', 'python3-prettyta
 local upgrade_test(name, from='v0.1.10', intermediates=[], pg=false, pg_convert=false) = {
   name: name,
   image: docker_base + 'debian-stable',
+  pull: 'always',
   commands: setup_commands(deps=upgrade_deps
                                 + (if pg || pg_convert then pg_deps else [])
                                 + (if pg_convert then ['python3-pip'] else []))
@@ -119,6 +124,7 @@ local upgrade_test(name, from='v0.1.10', intermediates=[], pg=false, pg_convert=
       {
         name: 'Formatting',
         image: docker_base + 'debian-stable',
+        pull: 'always',
         commands: [
           'echo "Running on ${DRONE_STAGE_MACHINE}"',
           apt_get_quiet + ' install -y black',
@@ -128,6 +134,7 @@ local upgrade_test(name, from='v0.1.10', intermediates=[], pg=false, pg_convert=
       {
         name: 'Flake8',
         image: docker_base + 'debian-stable',
+        pull: 'always',
         commands: [
           'echo "Running on ${DRONE_STAGE_MACHINE}"',
           apt_get_quiet + ' install -y flake8',
@@ -143,7 +150,7 @@ local upgrade_test(name, from='v0.1.10', intermediates=[], pg=false, pg_convert=
   debian_pipeline('Ubuntu latest (amd64)', docker_base + 'ubuntu-rolling'),
   debian_pipeline('Ubuntu LTS (amd64)', docker_base + 'ubuntu-lts'),
 
-  debian_pg_pipeline('PostgreSQL 14/sid', docker_base + 'debian-sid', pg_tag='14-bullseye', distro='sid'),
+  debian_pg_pipeline('PostgreSQL 15/sid', docker_base + 'debian-sid', pg_tag='15-bullseye', distro='sid'),
   debian_pg_pipeline('PostgreSQL 12/focal', docker_base + 'ubuntu-focal', pg_tag='12-bullseye'),
 
   // ARM builds (ARM64 and armhf)
@@ -167,7 +174,7 @@ local upgrade_test(name, from='v0.1.10', intermediates=[], pg=false, pg_convert=
     kind: 'pipeline',
     type: 'docker',
     platform: { arch: 'amd64' },
-    services: [pg_service],
+    services: [pg_service()],
     steps: [
       upgrade_test('postgres: 0.1.10→now', pg=true),
       upgrade_test('postgres: 0.3.0→now', from='v0.3.0-pg', pg=true),
