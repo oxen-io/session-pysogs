@@ -208,6 +208,13 @@ def print_room(room: Room):
     admins = len(a) + len(ha)
     mods = len(m) + len(hm)
 
+    perms = "{}read, {}write, {}upload, {}accessible".format(
+        "+" if room.default_read else "-",
+        "+" if room.default_write else "-",
+        "+" if room.default_upload else "-",
+        "+" if room.default_accessible else "-",
+    )
+
     print(
         f"""
 {room.token}
@@ -218,6 +225,7 @@ URL: {config.URL_BASE}/{room.token}?public_key={crypto.server_pubkey_hex}
 Messages: {msgs} ({msgs_size:.1f} MB)
 Attachments: {files} ({files_size:.1f} MB)
 Active users: {active[0]} (1d), {active[1]} (7d), {active[2]} (14d), {active[3]} (30d)
+Default permissions: {perms}
 Moderators: {admins} admins ({len(ha)} hidden), {mods} moderators ({len(hm)} hidden)""",
         end='',
     )
