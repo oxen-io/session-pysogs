@@ -1,0 +1,119 @@
+; This file describes the settings you can use for advanced filtering controls.
+;
+; Note that when configuring this, it does *not* go in a separate file but rather in your active
+; sogs.ini configuration file.  (Since everything goes here in a separate section, it doesn't matter
+; where in sogs.ini you add it).
+
+
+;
+; Room-specific filtering
+;
+; To set filtration rules for a specific room you add a [room:TOKEN] section and then set the
+; rules that should apply to this specific room.  For example, to enable the profanity filter and
+; disallow (only) cyrillic characters in the room with token 'sudoku' you would add:
+;
+;[room:sudoku]
+;profanity_filter=yes
+;profanity_silent=yes
+;alphabet_filters=cyrillic
+;
+; This overrides the default from the main [messages] config section for any given keys, so it can
+; be used to replace or change the rules that apply to a given room.  Currently only the
+; profanity_filter, profanity_silent, alphabet_filters can be overridden in this way.
+
+;
+; Filtration responses
+;
+; When a message is filtered because of the profanity or alphabet filtrations SOGS can optionally
+; send a reply in the room; this reply can either be visible to everyone, or just to the specific
+; user.  To enable such a reply, add a filter section here: the section name consists of
+; 'filter:TYPE:ROOM' where TYPE and ROOM are the filtration type and room token, or '*' to match all
+; types/rooms.
+;
+; Section names for all filtered messages:
+;[filter:*:*]
+;
+; Section names for a particular filtration type:
+;[filter:*:profanity]
+;[filter:*:alphabet]
+;
+; The "type" can also be a specific language:
+;[filter:*:arabic]
+;[filter:*:cyrillic]
+; etc.
+;
+; Room-specific filtration section names:
+;
+;[filter:fishing:*]
+;[filter:sudoku:profanity]
+;
+; If using both '*' and specific values, the value from the more specific section will be used where
+; present.
+;
+; Within this section there are currently three settings:
+;
+; - reply -- the body of a reply to send (see details below).  If omitted or empty then no reply
+;   will be sent.
+; - profile_name -- the profile name to use in that reply.
+; - public -- whether the reply should be seen by everyone or just the poster.  The default is 'no'
+;   (i.e. only the user will see the reply).
+;
+; The `reply` value should be specified on a single line of the config, and supports the following
+; substitutions:
+;
+; \@ - the profile name, in @tag form, of the poster whose message was declined.
+; \p - the profile name in plain text.
+; \r - the name of the room
+; \t - the token of the room
+; \n - a line break
+; \\ - a literal \ character
+;
+; You can also randomize among multiple responses by specifying multiple lines in the config: each
+; additional line must be indented in the .ini file to be properly recognized.
+;
+; For example if you use this config:
+;
+
+[messages]
+profanity_filter=yes
+profanity_silent=yes
+alphabet_filters=arabic cyrillic
+alphabet_silent=yes
+
+[room:sailors]
+profanity_filter=no
+
+[filter:*:*]
+profile_name=LanguagePolice
+reply=Hi \@, I'm afraid your message couldn't be sent: \r is English-only!
+
+[filter:*:profanity]
+profile_name=Swear Jar
+reply=Whoa there, \@!  That language is too strong for the \r group!  Try the Sailors group instead.
+
+[filter:sudoku:profanity]
+profile_name=Bot45
+public=yes
+reply=\@ got a little too enthusiastic today with their solve.  Maybe someone can assist?
+ Uh oh, I think \@ has two ３s in the same row!
+ I think \@'s sudoku broke 😦
+
+; then arabic/cyrillic/person would be blocked everywhere, profanity would be blocked everywhere
+; except the 'sailors' room, and when a message is blocked you would get a message such as one of
+; the following depending on the room and the rule applied:
+;
+;
+; (LanguagePolice)
+; Hi @Foreignsailor1988, I'm afraid your message couldn't be set: Salty Sailors is English-only!
+;
+;
+; (Swear Jar)
+; Whoa there @87yearoldgrandma!  That language is too strong for the Cuddly Kittens group!  Try the Sailors group instead.
+;
+;
+; (Bot45); [one of the following would be sent randomly, visible to everyone in the group]
+; @87yearoldgrandma got a little too enthusiastic today with their solve.  Maybe someone can assist?
+;
+; Uh oh, I think @87yearoldgrandma has two ３s in the same row!
+;
+; I think @87yearoldgrandma's sudoku broke 😦
