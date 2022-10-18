@@ -466,15 +466,7 @@ elif args.set_perms:
 
     users = []
     if args.users:
-        for sid in args.users:
-            u = User(session_id=sid, try_blinding=True)
-            u2 = None
-            if u.is_blinded and sid.startswith('05'):
-                try:
-                    u2 = User(session_id=sid, try_blinding=False, autovivify=False)
-                except NoSuchUser:
-                    pass
-            users.append([u, u2])
+        users = [User(session_id=sid, try_blinding=True) for sid in args.users]
 
     rooms = []
     if args.rooms == ['*']:
