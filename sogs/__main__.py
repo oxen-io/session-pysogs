@@ -57,26 +57,33 @@ actions.add_argument(
     metavar='SESSIONID',
     help="Delete the the given Session ID(s) as moderator and admins of the room given by --rooms",
 )
-actions.add_argument('--set-perms', help="Sets permissions for the room given by --rooms")
+actions.add_argument(
+    '--set-perms',
+    action='store_true',
+    help="Sets default or user-specific permissions for the room given by --rooms; specify the "
+    "permissions using --add-perms or --remove-perms",
+)
 ap.add_argument(
     '--users',
-    help="Users to set permissions for with --set-perms; if omitted, set global perms",
+    help="One or more specific users to set permissions for with --set-perms; if omitted then the "
+    "room default permissions will be set for the given room(s) instead.",
     nargs='+',
     metavar='SESSIONID',
 )
 ap.add_argument(
     "--add-perms",
-    help="With --add-room or --set-perms, set these permissions to true; --add-perms=[r][w][u][a]",
+    help="With --add-room or --set-perms, set these permissions to true; takes a string of 1-4 of "
+    "the letters \"rwua\" for [r]ead, [w]rite, [u]pload, and [a]ccess.",
 )
 ap.add_argument(
     "--remove-perms",
-    help="With --add-room or --set-perms, set these permissions to false; "
-    "--remove-perms=[r][w][u][a]",
+    help="With --add-room or --set-perms, set these permissions to false; takes the same string as "
+    "--add-perms, but denies the listed permissions rather than granting them.",
 )
 ap.add_argument(
     "--clear-perms",
-    help="With --add-room or --set-perms, clear room or user overrides on these permissions; "
-    "--clear-perms=[r][w][u][a]",
+    help="With --add-room or --set-perms, clear room or user overrides on these permissions, "
+    "returning them to the default setting.  Takes the same argument as --add-perms.",
 )
 ap.add_argument(
     '--admin',
@@ -90,8 +97,7 @@ ap.add_argument(
     help="Room(s) to use when adding/removing moderators/admins or when setting permissions. "
     "If a single room name of '+' is given then the user will be added/removed as a global "
     "admin/moderator. '+' is not valid for setting permissions. If a single room name "
-    "of '*' is given then the user is added/removed as an admin/moderator from each of the "
-    "server's current rooms or the requested permissions are set on each of the rooms.",
+    "of '*' is given then the changes take effect on each of the server's current rooms.",
 )
 vis_group = ap.add_mutually_exclusive_group()
 vis_group.add_argument(
