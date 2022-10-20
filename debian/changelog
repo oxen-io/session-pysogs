@@ -1,3 +1,39 @@
+session-pysogs (0.3.5~rc1-1) sid; urgency=medium
+
+  [ Jason Rhinelander ]
+  * Add tests for global mods/admins
+  * Check for blinding when de-modding/unbanning
+  * Fix "stuck moderator" problem
+  * Fix unblinded legacy auth
+  * Add room reaction use to CLI room display
+  * Add sid CI workaround
+
+  [ Ian Macdonald ]
+  * Allow rejection of postings written in a particular alphabet.
+
+  [ Jason Rhinelander ]
+  * Add missing ngnix proxied headers to sample config
+  * filter responses, overhaul filter configuration
+  * Add seqno_creation to be able to skip irrelevant deletions
+  * Defer post parsing until needed
+  * upgrade & pg import: Add/handle seqno_creation
+  * Fix postgres docker image version
+  * Add some other missing pull: always
+
+  [ Thomas Winget ]
+  * add --set-perms to pysogs, let --add-room also use them
+
+  [ Jason Rhinelander ]
+  * Option wording tweaks
+  * Print default room permissions in room summary
+  * Fix u/u2 code
+  * Properly handle subrequest exceptions
+  * Fix exception error conversion
+  * Don't set empty `reactions` for deleted messages
+  * Make blinding enabled by default
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Thu, 20 Oct 2022 18:05:44 -0300
+
 session-pysogs (0.3.4-1) sid; urgency=medium
 
   [ Jason Rhinelander ]
