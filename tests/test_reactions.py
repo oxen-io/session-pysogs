@@ -259,7 +259,6 @@ def test_reactions(client, room, room2, user, user2, mod, admin, global_mod, glo
         'deleted': True,
         'seqno': seqno,
         'session_id': user.session_id,
-        'reactions': {},
     }
 
 

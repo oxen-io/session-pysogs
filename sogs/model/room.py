@@ -713,13 +713,14 @@ class Room:
             reacts = self.get_reactions(
                 # Fetch reactions for messages, but skip deleted messages (that have data set to an
                 # explicit None) since we already know they don't have reactions.
-                [x['id'] for x in msgs if not ('data' in x and x['data'] is None)],
+                [x['id'] for x in msgs if 'data' not in x or x['data'] is not None],
                 user,
                 reactor_limit=reactor_limit,
                 session_ids=True,
             )
             for msg in msgs:
-                msg['reactions'] = reacts.get(msg['id'], {})
+                if 'data' not in msg or msg['data'] is not None:
+                    msg['reactions'] = reacts.get(msg['id'], {})
 
         return msgs
 
