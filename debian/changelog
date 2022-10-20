@@ -1,3 +1,9 @@
+session-pysogs (0.3.5~rc1-2) sid; urgency=medium
+
+  * Fix `python3 -msogs` => `sogs` for deb
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Thu, 20 Oct 2022 18:11:06 -0300
+
 session-pysogs (0.3.5~rc1-1) sid; urgency=medium
 
   [ Jason Rhinelander ]
