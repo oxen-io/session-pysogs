@@ -6,14 +6,14 @@ For deb package we include a sogs script that changes to the appropriate
 user to invoke the command; this patch rewrites the help messages to
 reflect that.
 ---
- sogs/__main__.py | 9 +++++----
- 1 file changed, 5 insertions(+), 4 deletions(-)
+ sogs/__main__.py | 13 +++++++------
+ 1 file changed, 7 insertions(+), 6 deletions(-)
 
 diff --git a/sogs/__main__.py b/sogs/__main__.py
-index 03f6991..ff57130 100644
+index 03f6991..d65c672 100644
 --- a/sogs/__main__.py
 +++ b/sogs/__main__.py
-@@ -6,18 +6,19 @@ import sys
+@@ -6,27 +6,28 @@ import sys
  from . import __version__ as version
  
  ap = AP(
@@ -35,9 +35,12 @@ index 03f6991..ff57130 100644
 +    sogs --add-moderators 050123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef --rooms=+ --visible
  
      # Set default read/write True and upload False on all rooms
-     python3 -msogs --set-perms --add-perms rw --remove-perms u --rooms='*'
-@@ -26,7 +27,7 @@ Examples:
-     python3 -msogs --set-perms --clear-perms rwua --rooms='*' --users 050123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+-    python3 -msogs --set-perms --add-perms rw --remove-perms u --rooms='*'
++    sogs --set-perms --add-perms rw --remove-perms u --rooms='*'
+ 
+     # Remove overrides for user 0501234... on all rooms
+-    python3 -msogs --set-perms --clear-perms rwua --rooms='*' --users 050123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
++    sogs --set-perms --clear-perms rwua --rooms='*' --users 050123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
  
       # List room info:
 -    python3 -msogs -L
