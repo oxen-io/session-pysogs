@@ -39,6 +39,7 @@ CREATE TABLE messages (
     seqno BIGINT NOT NULL DEFAULT 0, /* set to the room's `message_sequence` counter when any of the individual seqno values are updated */
     seqno_data BIGINT NOT NULL DEFAULT 0, /* updated when `data` changes (i.e. edits, deletions) */
     seqno_reactions BIGINT NOT NULL DEFAULT 0, /* updated when reactions are added/removed */
+    seqno_creation BIGINT NOT NULL DEFAULT 0, /* set to the seqno at the time of creation (and not updated afterwards) */
     data BYTEA, /* Actual message content, not including trailing padding; set to null to delete a message */
     data_size BIGINT, /* The message size, including trailing padding (needed because the signature is over the padded data) */
     signature BYTEA, /* Signature of `data` by `public_key`; set to null when deleting a message */
@@ -72,8 +73,11 @@ END;$$;
 -- Trigger to increment a room's `message_sequence` counter and assign it to the message's `seqno`
 -- field for new messages.
 CREATE OR REPLACE FUNCTION trigger_messages_insert_counter()
-RETURNS TRIGGER LANGUAGE PLPGSQL AS $$BEGIN
-    UPDATE messages SET seqno_data = increment_room_sequence(NEW.room) WHERE id = NEW.id;
+RETURNS TRIGGER LANGUAGE PLPGSQL AS $$
+DECLARE
+    new_seqno BIGINT := increment_room_sequence(NEW.room);
+BEGIN
+    UPDATE messages SET seqno_data = new_seqno, seqno_creation = new_seqno WHERE id = NEW.id;
     RETURN NULL;
 END;$$;
 CREATE TRIGGER messages_insert_counter AFTER INSERT ON messages
@@ -330,7 +334,7 @@ EXECUTE PROCEDURE trigger_message_details_deleter();
 -- View of `messages` that is useful for manually inspecting table contents by only returning the
 -- length (rather than raw bytes) for data/signature.
 CREATE VIEW message_metadata AS
-SELECT id, room, "user", session_id, posted, edited, seqno, seqno_data, seqno_reactions,
+SELECT id, room, "user", session_id, posted, edited, seqno, seqno_data, seqno_reactions, seqno_creation,
         filtered, whisper_to, whisper_mods,
         length(data) AS data_unpadded, data_size, length(signature) as signature_length
     FROM message_details;

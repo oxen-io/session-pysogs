@@ -203,10 +203,17 @@ with pgsql.transaction():
     started = time.time()
     count = 0
     count_total = curin.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
-    for mid, seqno in curin.execute("SELECT id, seqno FROM messages"):
+    for mid, seqno, sdata, sreact, screat in curin.execute(
+        "SELECT id, seqno, seqno_data, seqno_reactions, seqno_creation FROM messages"
+    ):
         curout.execute(
-            "UPDATE messages SET seqno = %(seqno)s, seqno_data = %(seqno)s WHERE id = %(id)s",
-            {'id': mid, 'seqno': seqno},
+            "UPDATE messages SET"
+            " seqno = %(seqno)s,"
+            " seqno_data = %(sdata)s,"
+            " seqno_reactions = %(sreact)s,"
+            " seqno_creation = %(screat)s "
+            "WHERE id = %(id)s",
+            {'id': mid, 'seqno': seqno, 'sdata': sdata, 'sreact': sreact, 'screat': screat},
         )
         count += 1
         if count % 1000 == 0:

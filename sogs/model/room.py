@@ -619,8 +619,15 @@ class Room:
             if after <= max_old_id:
                 after += offset
 
-        # We include deletions only if doing a sequence update request:
-        not_deleted_clause = '' if sequence is not None else 'AND data IS NOT NULL'
+        # We include deletions only if doing a sequence update request, but only include deletions
+        # for messages that were created *before* the given sequence number (the client won't have
+        # messages created after that, so it is pointless to send them tombstones for messages they
+        # don't know about).
+        not_deleted_clause = (
+            'AND (data IS NOT NULL OR seqno_creation <= :sequence)'
+            if sequence is not None
+            else 'AND data IS NOT NULL'
+        )
         message_clause = (
             'AND seqno > :sequence AND seqno_data > :sequence'
             if sequence is not None and not reaction_updates

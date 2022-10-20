@@ -687,6 +687,85 @@ def test_fetch_since(client, room, user, no_rate_limit):
     assert fetches == (sum(counts) + 24) // 25
 
 
+def test_fetch_since_skip_deletions(client, room, user, no_rate_limit):
+    # Insert 10 posts; they will have seqno == id (i.e. 1 to 10).
+    for i in range(1, 11):
+        room.add_post(user, f"fake data {i}".encode(), pad64(f"fake sig {i}"))
+
+    # Delete some:
+    deleted = (2, 4, 5, 8, 9)
+    for i in deleted:
+        r = sogs_delete(client, f'/room/test-room/message/{i}', user)
+        assert r.status_code == 200
+
+    def get_and_clean_since(seqno):
+        r = sogs_get(client, f"/room/test-room/messages/since/{seqno}", user)
+        assert r.status_code == 200
+        res = r.json
+        for m in res:
+            for k in ('posted', 'session_id', 'reactions'):
+                if k in m:
+                    del m[k]
+            for k in ('data', 'signature', 'edited'):
+                if k in m and m[k] is not None:
+                    m[k] = True
+        return res
+
+    # If we poll from 1 we should only see the messages (skipping the first one with seqno=1) that
+    # remain (since our polling seqno is before the deleted messages were created in the first
+    # place):
+    assert get_and_clean_since(1) == [
+        {'id': i, 'seqno': i, 'data': True, 'signature': True} for i in (3, 6, 7, 10)
+    ]
+
+    def deleted_entry(id, seqno):
+        return {'id': id, 'seqno': seqno, 'edited': True, 'deleted': True, 'data': None}
+
+    # If we poll from 2 we should get the deletion for 2, but not the higher deletions
+    assert get_and_clean_since(2) == [
+        *({'id': i, 'seqno': i, 'data': True, 'signature': True} for i in (3, 6, 7, 10)),
+        *(deleted_entry(i, s) for i, s in ((2, 11),)),
+    ]
+
+    # From 4 we should get deletions 2 and 4
+    assert get_and_clean_since(4) == [
+        *({'id': i, 'seqno': i, 'data': True, 'signature': True} for i in (6, 7, 10)),
+        *(deleted_entry(i, s) for i, s in ((2, 11), (4, 12))),
+    ]
+
+    # and so on
+    assert get_and_clean_since(5) == [
+        *({'id': i, 'seqno': i, 'data': True, 'signature': True} for i in (6, 7, 10)),
+        *(deleted_entry(i, s) for i, s in ((2, 11), (4, 12), (5, 13))),
+    ]
+    assert get_and_clean_since(6) == [
+        *({'id': i, 'seqno': i, 'data': True, 'signature': True} for i in (7, 10)),
+        *(deleted_entry(i, s) for i, s in ((2, 11), (4, 12), (5, 13))),
+    ]
+    assert get_and_clean_since(7) == [
+        *({'id': i, 'seqno': i, 'data': True, 'signature': True} for i in (10,)),
+        *(deleted_entry(i, s) for i, s in ((2, 11), (4, 12), (5, 13))),
+    ]
+
+    assert get_and_clean_since(9) == [
+        *({'id': i, 'seqno': i, 'data': True, 'signature': True} for i in (10,)),
+        *(deleted_entry(i, s) for i, s in ((2, 11), (4, 12), (5, 13), (8, 14), (9, 15))),
+    ]
+    assert get_and_clean_since(10) == [
+        *(deleted_entry(i, s) for i, s in ((2, 11), (4, 12), (5, 13), (8, 14), (9, 15))),
+    ]
+    assert get_and_clean_since(11) == [
+        *(deleted_entry(i, s) for i, s in ((4, 12), (5, 13), (8, 14), (9, 15))),
+    ]
+    assert get_and_clean_since(13) == [
+        *(deleted_entry(i, s) for i, s in ((8, 14), (9, 15))),
+    ]
+    assert get_and_clean_since(14) == [
+        *(deleted_entry(i, s) for i, s in ((9, 15),)),
+    ]
+    assert get_and_clean_since(15) == []
+
+
 def test_fetch_before(client, room, user, no_rate_limit):
     for i in range(1000):
         room.add_post(user, f"data-{i}".encode(), pad64(f"fake sig {i}"))
