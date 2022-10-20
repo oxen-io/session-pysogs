@@ -10,10 +10,10 @@ reflect that.
  1 file changed, 5 insertions(+), 4 deletions(-)
 
 diff --git a/sogs/__main__.py b/sogs/__main__.py
-index 3d36f6b..742505a 100644
+index 03f6991..ff57130 100644
 --- a/sogs/__main__.py
 +++ b/sogs/__main__.py
-@@ -6,21 +6,22 @@ import sys
+@@ -6,18 +6,19 @@ import sys
  from . import __version__ as version
  
  ap = AP(
@@ -33,6 +33,11 @@ index 3d36f6b..742505a 100644
       # Add a global moderator visible as a moderator of all rooms:
 -    python3 -msogs --add-moderators 050123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef --rooms=+ --visible
 +    sogs --add-moderators 050123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef --rooms=+ --visible
+ 
+     # Set default read/write True and upload False on all rooms
+     python3 -msogs --set-perms --add-perms rw --remove-perms u --rooms='*'
+@@ -26,7 +27,7 @@ Examples:
+     python3 -msogs --set-perms --clear-perms rwua --rooms='*' --users 050123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
  
       # List room info:
 -    python3 -msogs -L
