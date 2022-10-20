@@ -3,6 +3,7 @@ import pytest
 from sogs import config
 
 config.DB_URL = 'defer-init'
+config.REQUIRE_BLIND_KEYS = False
 
 from sogs import web  # noqa: E402
 from sogs.model.room import Room  # noqa: E402
