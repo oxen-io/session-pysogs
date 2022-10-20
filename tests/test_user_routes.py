@@ -1,6 +1,4 @@
-import pytest
 from sogs import db, utils
-import werkzeug.exceptions as wexc
 from request import sogs_get, sogs_post
 from util import pad64
 import time
@@ -553,8 +551,8 @@ def test_bans(client, room, room2, user, user2, mod, global_mod):
     r = sogs_post(client, url_ban, {'rooms': ['test-room']}, mod)
     assert r.status_code == 200
 
-    with pytest.raises(wexc.Forbidden):
-        sogs_post(client, "/room/test-room/message", post, user)
+    r = sogs_post(client, "/room/test-room/message", post, user)
+    assert r.status_code == 403
 
     r = sogs_post(client, "/room/test-room/message", post, user2)
     assert r.status_code == 201
@@ -570,11 +568,11 @@ def test_bans(client, room, room2, user, user2, mod, global_mod):
     r = sogs_post(client, url_ban, {'rooms': ['*']}, global_mod)
     assert r.status_code == 200
 
-    with pytest.raises(wexc.Forbidden):
-        sogs_post(client, "/room/test-room/message", post, user)
+    r = sogs_post(client, "/room/test-room/message", post, user)
+    assert r.status_code == 403
 
-    with pytest.raises(wexc.Forbidden):
-        sogs_post(client, "/room/room2/message", post, user)
+    r = sogs_post(client, "/room/room2/message", post, user)
+    assert r.status_code == 403
 
     r = sogs_post(client, "/room/test-room/message", post, user2)
     assert r.status_code == 201
@@ -583,8 +581,8 @@ def test_bans(client, room, room2, user, user2, mod, global_mod):
 
     r = sogs_post(client, "/room/test-room/message", post, user)
     assert r.status_code == 201
-    with pytest.raises(wexc.Forbidden):
-        r = sogs_post(client, "/room/room2/message", post, user)
+    r = sogs_post(client, "/room/room2/message", post, user)
+    assert r.status_code == 403
 
     r = sogs_post(client, url_unban, {'rooms': ['*']}, global_mod)
 
@@ -641,11 +639,11 @@ def test_ban_timeouts(client, room, room2, user, mod, global_mod):
     r = sogs_post(client, url_ban, {'rooms': ['*'], 'timeout': 0.001}, global_mod)
     assert r.status_code == 200
 
-    with pytest.raises(wexc.Forbidden):
-        sogs_post(client, "/room/test-room/message", post, user)
+    r = sogs_post(client, "/room/test-room/message", post, user)
+    assert r.status_code == 403
 
-    with pytest.raises(wexc.Forbidden):
-        sogs_post(client, "/room/room2/message", post, user)
+    r = sogs_post(client, "/room/room2/message", post, user)
+    assert r.status_code == 403
 
     from sogs.cleanup import cleanup
 
@@ -660,8 +658,8 @@ def test_ban_timeouts(client, room, room2, user, mod, global_mod):
     r = sogs_post(client, url_ban, {'rooms': ['*'], 'timeout': 30}, mod)
     assert r.status_code == 200
 
-    with pytest.raises(wexc.Forbidden):
-        sogs_post(client, "/room/test-room/message", post, user)
+    r = sogs_post(client, "/room/test-room/message", post, user)
+    assert r.status_code == 403
 
     r = sogs_post(client, "/room/room2/message", post, user)
     assert r.status_code == 201
@@ -669,8 +667,9 @@ def test_ban_timeouts(client, room, room2, user, mod, global_mod):
     # The timed ban shouldn't expire yet:
     assert cleanup() == (0, 0, 0, 0, 0)
 
-    with pytest.raises(wexc.Forbidden):
-        sogs_post(client, "/room/test-room/message", post, user)
+    r = sogs_post(client, "/room/test-room/message", post, user)
+    assert r.status_code == 403
+
     r = sogs_post(client, "/room/room2/message", post, user)
     assert r.status_code == 201
 
@@ -683,8 +682,8 @@ def test_ban_timeouts(client, room, room2, user, mod, global_mod):
     r = sogs_post(client, url_ban, {'rooms': ['*'], 'timeout': 0.001}, mod)
     assert r.status_code == 200
 
-    with pytest.raises(wexc.Forbidden):
-        sogs_post(client, "/room/test-room/message", post, user)
+    r = sogs_post(client, "/room/test-room/message", post, user)
+    assert r.status_code == 403
 
     time.sleep(0.002)
     assert cleanup() == (0, 0, 0, 1, 0)
@@ -717,8 +716,8 @@ def test_ban_timeouts(client, room, room2, user, mod, global_mod):
 
     assert cleanup() == (0, 0, 0, 0, 0)
 
-    with pytest.raises(wexc.Forbidden):
-        sogs_post(client, "/room/test-room/message", post, user)
+    r = sogs_post(client, "/room/test-room/message", post, user)
+    assert r.status_code == 403
 
     # Unbanning should remove the ban future
     assert sogs_post(client, url_unban, {'rooms': ['*']}, mod).status_code == 200

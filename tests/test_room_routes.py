@@ -1,10 +1,8 @@
-import pytest
 import time
 from sogs.model.room import Room
 from sogs.model.file import File
 from sogs import utils, crypto
 import sogs.config
-import werkzeug.exceptions as wexc
 from util import pad64, from_now, config_override
 from auth import x_sogs
 from request import sogs_get, sogs_post, sogs_put, sogs_post_raw, sogs_delete
@@ -854,8 +852,8 @@ def test_pinning(client, room, user, admin, no_rate_limit):
     assert room_json()['info_updates'] == 1
 
     url = "/room/test-room/pin/3"
-    with pytest.raises(wexc.Forbidden):
-        r = sogs_post(client, url, {}, user)
+    r = sogs_post(client, url, {}, user)
+    assert r.status_code == 403
 
     assert room_json()['info_updates'] == 1
 
@@ -965,8 +963,8 @@ def test_whisper_to(client, room, user, user2, mod, global_mod):
     p = {"data": d, "signature": s, "whisper_to": user2.session_id}
 
     # Regular users can't post whispers:
-    with pytest.raises(wexc.Forbidden):
-        r = sogs_post(client, url_post, p, user)
+    r = sogs_post(client, url_post, p, user)
+    assert r.status_code == 403
 
     r = sogs_post(client, url_post, p, mod)
     assert r.status_code == 201
@@ -1013,8 +1011,8 @@ def test_whisper_mods(client, room, user, user2, mod, global_mod, admin):
     p = {"data": d, "signature": s, "whisper_mods": True}
 
     # Regular users can't post mod whispers:
-    with pytest.raises(wexc.Forbidden):
-        r = sogs_post(client, url_post, p, user)
+    r = sogs_post(client, url_post, p, user)
+    assert r.status_code == 403
 
     r = sogs_post(client, url_post, p, mod)
     assert r.status_code == 201
@@ -1066,9 +1064,9 @@ def test_whisper_both(client, room, user, user2, mod, admin):
     }
 
     # Regular users can't post mod whispers:
-    with pytest.raises(wexc.Forbidden):
-        p = {"data": d, "signature": s, "whisper_mods": True, "whisper_to": mod.session_id}
-        r = sogs_post(client, url_post, p, user)
+    p = {"data": d, "signature": s, "whisper_mods": True, "whisper_to": mod.session_id}
+    r = sogs_post(client, url_post, p, user)
+    assert r.status_code == 403
 
     d, s = (utils.encode_base64(x) for x in (b"I'm going to scare this guy", pad64("sig2")))
     r = sogs_post(client, url_post, {"data": d, "signature": s, "whisper_mods": True}, mod)
@@ -1165,8 +1163,8 @@ def test_edits(client, room, user, user2, mod, global_admin):
 
     # Make sure someone else (even super admin) can't edit our message:
     d, s = (utils.encode_base64(x) for x in (b"post 1no", pad64("sig 1no")))
-    with pytest.raises(wexc.Forbidden):
-        r = sogs_put(client, url_edit, {"data": d, "signature": s}, global_admin)
+    r = sogs_put(client, url_edit, {"data": d, "signature": s}, global_admin)
+    assert r.status_code == 403
 
     r = sogs_get(client, url_get, user)
     assert filter_timestamps(r.json) == filter_timestamps([p1])
@@ -1260,8 +1258,8 @@ def test_remove_self_message(client, room, user):
 
 def test_remove_message_not_allowed(client, room, user, user2):
     id = _make_dummy_post(room, user)
-    with pytest.raises(wexc.Forbidden):
-        sogs_delete(client, f'/room/{room.token}/message/{id}', user2)
+    r = sogs_delete(client, f'/room/{room.token}/message/{id}', user2)
+    assert r.status_code == 403
 
 
 def test_remove_post_non_existing(client, room, user, mod):
@@ -1297,8 +1295,8 @@ def test_remove_all_posts_from_room_not_allowed(client, room, user, user2, no_ra
     for _ in range(256):
         _make_dummy_post(room, user)
     assert len(room.get_messages_for(user, recent=True)) == 256
-    with pytest.raises(wexc.Forbidden):
-        sogs_delete(client, f'/room/{room.token}/all/{user.session_id}', user2)
+    r = sogs_delete(client, f'/room/{room.token}/all/{user.session_id}', user2)
+    assert r.status_code == 403
     assert len(room.get_messages_for(user, recent=True)) == 256
     assert room.check_unbanned(user) and room.check_unbanned(user2)
 
@@ -1306,8 +1304,8 @@ def test_remove_all_posts_from_room_not_allowed(client, room, user, user2, no_ra
 def test_remove_all_posts_from_room_not_allowed_for_user(client, room, mod, user, no_rate_limit):
     for _ in range(256):
         _make_dummy_post(room, mod)
-    with pytest.raises(wexc.Forbidden):
-        sogs_delete(client, f'/room/{room.token}/all/{mod.session_id}', user)
+    r = sogs_delete(client, f'/room/{room.token}/all/{mod.session_id}', user)
+    assert r.status_code == 403
     assert len(room.get_messages_for(user, recent=True)) == 256
     assert room.check_unbanned(user) and room.check_unbanned(mod)
 
