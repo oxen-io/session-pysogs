@@ -1,10 +1,8 @@
-import pytest
 import time
 from sogs.model.room import Room
 from sogs.model.file import File
 from sogs import utils, crypto
 import sogs.config
-import werkzeug.exceptions as wexc
 from util import pad64, from_now, config_override
 from auth import x_sogs
 from request import sogs_get, sogs_post, sogs_put, sogs_post_raw, sogs_delete
@@ -183,6 +181,73 @@ def test_list(client, room, room2, user, user2, admin, mod, global_mod, global_a
     r = sogs_get(client, "/room/room4", global_admin)
     assert r.status_code == 200
     assert r.json == {**r4_expected, **r4_exp_defs, **exp_gadmin}
+
+
+def test_visible_global_mods(client, room, user, mod, global_mod, global_admin):
+    url_room = '/room/test-room'
+    expect_room = {
+        "token": "test-room",
+        "name": "Test room",
+        "description": "Test suite testing room",
+        "info_updates": 3,
+        "message_sequence": 0,
+        "created": room.created,
+        "active_users": 0,
+        "active_users_cutoff": int(sogs.config.ROOM_DEFAULT_ACTIVE_THRESHOLD),
+        "moderators": [mod.session_id],
+        "admins": [],
+        "read": True,
+        "write": True,
+        "upload": True,
+    }
+    r = sogs_get(client, url_room, user)
+    assert r.status_code == 200
+    assert r.json == expect_room
+
+    expected_for_moderator = {
+        **expect_room,
+        **{'default_' + x: True for x in ('accessible', 'read', 'write', 'upload')},
+        'global_moderator': True,
+        'hidden_admins': [global_admin.session_id],
+        'hidden_moderators': [global_mod.session_id],
+        'moderator': True,
+        'moderators': [mod.session_id],
+    }
+    r = sogs_get(client, "/room/test-room/pollInfo/0", global_mod)
+    assert r.status_code == 200
+    assert r.json == {
+        'token': 'test-room',
+        'active_users': 0,
+        'details': expected_for_moderator,
+        'read': True,
+        'write': True,
+        'upload': True,
+        'moderator': True,
+        'global_moderator': True,
+        'default_accessible': True,
+        'default_read': True,
+        'default_write': True,
+        'default_upload': True,
+    }
+
+    global_mod.set_moderator(added_by=global_admin, admin=False, visible=True)
+    global_admin.set_moderator(added_by=global_admin, admin=True, visible=True)
+
+    for e in (expect_room, expected_for_moderator):
+        e["moderators"] = sorted([mod.session_id, global_mod.session_id])
+        e["admins"] = [global_admin.session_id]
+        e["info_updates"] += 2
+    del expected_for_moderator["hidden_admins"]
+    del expected_for_moderator["hidden_moderators"]
+
+    r = sogs_get(client, url_room, user)
+    assert r.status_code == 200
+    assert r.json == expect_room
+
+    r = sogs_get(client, url_room, mod)
+    assert r.status_code == 200
+    del expected_for_moderator["global_moderator"]
+    assert r.json == expected_for_moderator
 
 
 def test_updates(client, room, user, user2, mod, admin, global_mod, global_admin):
@@ -620,6 +685,85 @@ def test_fetch_since(client, room, user, no_rate_limit):
     assert fetches == (sum(counts) + 24) // 25
 
 
+def test_fetch_since_skip_deletions(client, room, user, no_rate_limit):
+    # Insert 10 posts; they will have seqno == id (i.e. 1 to 10).
+    for i in range(1, 11):
+        room.add_post(user, f"fake data {i}".encode(), pad64(f"fake sig {i}"))
+
+    # Delete some:
+    deleted = (2, 4, 5, 8, 9)
+    for i in deleted:
+        r = sogs_delete(client, f'/room/test-room/message/{i}', user)
+        assert r.status_code == 200
+
+    def get_and_clean_since(seqno):
+        r = sogs_get(client, f"/room/test-room/messages/since/{seqno}", user)
+        assert r.status_code == 200
+        res = r.json
+        for m in res:
+            for k in ('posted', 'session_id', 'reactions'):
+                if k in m:
+                    del m[k]
+            for k in ('data', 'signature', 'edited'):
+                if k in m and m[k] is not None:
+                    m[k] = True
+        return res
+
+    # If we poll from 1 we should only see the messages (skipping the first one with seqno=1) that
+    # remain (since our polling seqno is before the deleted messages were created in the first
+    # place):
+    assert get_and_clean_since(1) == [
+        {'id': i, 'seqno': i, 'data': True, 'signature': True} for i in (3, 6, 7, 10)
+    ]
+
+    def deleted_entry(id, seqno):
+        return {'id': id, 'seqno': seqno, 'edited': True, 'deleted': True, 'data': None}
+
+    # If we poll from 2 we should get the deletion for 2, but not the higher deletions
+    assert get_and_clean_since(2) == [
+        *({'id': i, 'seqno': i, 'data': True, 'signature': True} for i in (3, 6, 7, 10)),
+        *(deleted_entry(i, s) for i, s in ((2, 11),)),
+    ]
+
+    # From 4 we should get deletions 2 and 4
+    assert get_and_clean_since(4) == [
+        *({'id': i, 'seqno': i, 'data': True, 'signature': True} for i in (6, 7, 10)),
+        *(deleted_entry(i, s) for i, s in ((2, 11), (4, 12))),
+    ]
+
+    # and so on
+    assert get_and_clean_since(5) == [
+        *({'id': i, 'seqno': i, 'data': True, 'signature': True} for i in (6, 7, 10)),
+        *(deleted_entry(i, s) for i, s in ((2, 11), (4, 12), (5, 13))),
+    ]
+    assert get_and_clean_since(6) == [
+        *({'id': i, 'seqno': i, 'data': True, 'signature': True} for i in (7, 10)),
+        *(deleted_entry(i, s) for i, s in ((2, 11), (4, 12), (5, 13))),
+    ]
+    assert get_and_clean_since(7) == [
+        *({'id': i, 'seqno': i, 'data': True, 'signature': True} for i in (10,)),
+        *(deleted_entry(i, s) for i, s in ((2, 11), (4, 12), (5, 13))),
+    ]
+
+    assert get_and_clean_since(9) == [
+        *({'id': i, 'seqno': i, 'data': True, 'signature': True} for i in (10,)),
+        *(deleted_entry(i, s) for i, s in ((2, 11), (4, 12), (5, 13), (8, 14), (9, 15))),
+    ]
+    assert get_and_clean_since(10) == [
+        *(deleted_entry(i, s) for i, s in ((2, 11), (4, 12), (5, 13), (8, 14), (9, 15))),
+    ]
+    assert get_and_clean_since(11) == [
+        *(deleted_entry(i, s) for i, s in ((4, 12), (5, 13), (8, 14), (9, 15))),
+    ]
+    assert get_and_clean_since(13) == [
+        *(deleted_entry(i, s) for i, s in ((8, 14), (9, 15))),
+    ]
+    assert get_and_clean_since(14) == [
+        *(deleted_entry(i, s) for i, s in ((9, 15),)),
+    ]
+    assert get_and_clean_since(15) == []
+
+
 def test_fetch_before(client, room, user, no_rate_limit):
     for i in range(1000):
         room.add_post(user, f"data-{i}".encode(), pad64(f"fake sig {i}"))
@@ -708,8 +852,8 @@ def test_pinning(client, room, user, admin, no_rate_limit):
     assert room_json()['info_updates'] == 1
 
     url = "/room/test-room/pin/3"
-    with pytest.raises(wexc.Forbidden):
-        r = sogs_post(client, url, {}, user)
+    r = sogs_post(client, url, {}, user)
+    assert r.status_code == 403
 
     assert room_json()['info_updates'] == 1
 
@@ -819,8 +963,8 @@ def test_whisper_to(client, room, user, user2, mod, global_mod):
     p = {"data": d, "signature": s, "whisper_to": user2.session_id}
 
     # Regular users can't post whispers:
-    with pytest.raises(wexc.Forbidden):
-        r = sogs_post(client, url_post, p, user)
+    r = sogs_post(client, url_post, p, user)
+    assert r.status_code == 403
 
     r = sogs_post(client, url_post, p, mod)
     assert r.status_code == 201
@@ -867,8 +1011,8 @@ def test_whisper_mods(client, room, user, user2, mod, global_mod, admin):
     p = {"data": d, "signature": s, "whisper_mods": True}
 
     # Regular users can't post mod whispers:
-    with pytest.raises(wexc.Forbidden):
-        r = sogs_post(client, url_post, p, user)
+    r = sogs_post(client, url_post, p, user)
+    assert r.status_code == 403
 
     r = sogs_post(client, url_post, p, mod)
     assert r.status_code == 201
@@ -920,9 +1064,9 @@ def test_whisper_both(client, room, user, user2, mod, admin):
     }
 
     # Regular users can't post mod whispers:
-    with pytest.raises(wexc.Forbidden):
-        p = {"data": d, "signature": s, "whisper_mods": True, "whisper_to": mod.session_id}
-        r = sogs_post(client, url_post, p, user)
+    p = {"data": d, "signature": s, "whisper_mods": True, "whisper_to": mod.session_id}
+    r = sogs_post(client, url_post, p, user)
+    assert r.status_code == 403
 
     d, s = (utils.encode_base64(x) for x in (b"I'm going to scare this guy", pad64("sig2")))
     r = sogs_post(client, url_post, {"data": d, "signature": s, "whisper_mods": True}, mod)
@@ -1019,8 +1163,8 @@ def test_edits(client, room, user, user2, mod, global_admin):
 
     # Make sure someone else (even super admin) can't edit our message:
     d, s = (utils.encode_base64(x) for x in (b"post 1no", pad64("sig 1no")))
-    with pytest.raises(wexc.Forbidden):
-        r = sogs_put(client, url_edit, {"data": d, "signature": s}, global_admin)
+    r = sogs_put(client, url_edit, {"data": d, "signature": s}, global_admin)
+    assert r.status_code == 403
 
     r = sogs_get(client, url_get, user)
     assert filter_timestamps(r.json) == filter_timestamps([p1])
@@ -1114,8 +1258,8 @@ def test_remove_self_message(client, room, user):
 
 def test_remove_message_not_allowed(client, room, user, user2):
     id = _make_dummy_post(room, user)
-    with pytest.raises(wexc.Forbidden):
-        sogs_delete(client, f'/room/{room.token}/message/{id}', user2)
+    r = sogs_delete(client, f'/room/{room.token}/message/{id}', user2)
+    assert r.status_code == 403
 
 
 def test_remove_post_non_existing(client, room, user, mod):
@@ -1151,8 +1295,8 @@ def test_remove_all_posts_from_room_not_allowed(client, room, user, user2, no_ra
     for _ in range(256):
         _make_dummy_post(room, user)
     assert len(room.get_messages_for(user, recent=True)) == 256
-    with pytest.raises(wexc.Forbidden):
-        sogs_delete(client, f'/room/{room.token}/all/{user.session_id}', user2)
+    r = sogs_delete(client, f'/room/{room.token}/all/{user.session_id}', user2)
+    assert r.status_code == 403
     assert len(room.get_messages_for(user, recent=True)) == 256
     assert room.check_unbanned(user) and room.check_unbanned(user2)
 
@@ -1160,8 +1304,8 @@ def test_remove_all_posts_from_room_not_allowed(client, room, user, user2, no_ra
 def test_remove_all_posts_from_room_not_allowed_for_user(client, room, mod, user, no_rate_limit):
     for _ in range(256):
         _make_dummy_post(room, mod)
-    with pytest.raises(wexc.Forbidden):
-        sogs_delete(client, f'/room/{room.token}/all/{mod.session_id}', user)
+    r = sogs_delete(client, f'/room/{room.token}/all/{mod.session_id}', user)
+    assert r.status_code == 403
     assert len(room.get_messages_for(user, recent=True)) == 256
     assert room.check_unbanned(user) and room.check_unbanned(mod)
 

@@ -1,10 +1,12 @@
-from .. import config, crypto, db, utils
+from .. import config, crypto, db, utils, session_pb2 as protobuf
 from ..db import query
+from ..hashing import blake2b
 from ..omq import send_mule
 from ..web import app
 from .user import User
 from .file import File
 from .post import Post
+from nacl.signing import SigningKey
 from .exc import (
     NoSuchRoom,
     NoSuchFile,
@@ -17,6 +19,7 @@ from .exc import (
 )
 
 import os
+import random
 import re
 import sqlalchemy.exc
 import time
@@ -27,6 +30,22 @@ from typing import Optional, Union, List
 # are carried over from old SOGS).
 rate_limit_size = 5
 rate_limit_interval = 16.0
+
+
+# Character ranges for different filters.  This is ordered because some are subsets of each other
+# (e.g. persian is a subset of the arabic character range).
+alphabet_filter_patterns = [
+    (
+        'persian',
+        re.compile(
+            r'[\u0621-\u0628\u062a-\u063a\u0641-\u0642\u0644-\u0648\u064e-\u0651\u0655'
+            r'\u067e\u0686\u0698\u06a9\u06af\u06be\u06cc]'
+        ),
+    ),
+    ('arabic', re.compile(r'[\u0600-\u06ff\u0750-\u077f\u08a0-\u08ff\ufb50-\ufdff\ufe70-\ufefe]')),
+    ('cyrillic', re.compile(r'[\u0400-\u04ff]')),
+]
+filter_privkeys = {}
 
 
 class Room:
@@ -600,8 +619,15 @@ class Room:
             if after <= max_old_id:
                 after += offset
 
-        # We include deletions only if doing a sequence update request:
-        not_deleted_clause = '' if sequence is not None else 'AND data IS NOT NULL'
+        # We include deletions only if doing a sequence update request, but only include deletions
+        # for messages that were created *before* the given sequence number (the client won't have
+        # messages created after that, so it is pointless to send them tombstones for messages they
+        # don't know about).
+        not_deleted_clause = (
+            'AND (data IS NOT NULL OR seqno_creation <= :sequence)'
+            if sequence is not None
+            else 'AND data IS NOT NULL'
+        )
         message_clause = (
             'AND seqno > :sequence AND seqno_data > :sequence'
             if sequence is not None and not reaction_updates
@@ -687,41 +713,200 @@ class Room:
             reacts = self.get_reactions(
                 # Fetch reactions for messages, but skip deleted messages (that have data set to an
                 # explicit None) since we already know they don't have reactions.
-                [x['id'] for x in msgs if not ('data' in x and x['data'] is None)],
+                [x['id'] for x in msgs if 'data' not in x or x['data'] is not None],
                 user,
                 reactor_limit=reactor_limit,
                 session_ids=True,
             )
             for msg in msgs:
-                msg['reactions'] = reacts.get(msg['id'], {})
+                if 'data' not in msg or msg['data'] is not None:
+                    msg['reactions'] = reacts.get(msg['id'], {})
 
         return msgs
 
+    def filtering(self):
+        settings = {
+            'profanity_filter': config.PROFANITY_FILTER,
+            'profanity_silent': config.PROFANITY_SILENT,
+            'alphabet_filters': config.ALPHABET_FILTERS,
+            'alphabet_silent': config.ALPHABET_SILENT,
+        }
+        if self.token in config.ROOM_OVERRIDES:
+            for k in (
+                'profanity_filter',
+                'profanity_silent',
+                'alphabet_filters',
+                'alphabet_silent',
+            ):
+                if k in config.ROOM_OVERRIDES[self.token]:
+                    settings[k] = config.ROOM_OVERRIDES[self.token][k]
+        return settings
+
+    def filter_should_reply(self, filter_type, filter_lang):
+        """If the settings say we should reply to a filter, this returns a tuple of
+
+        (profile name, message format, whisper)
+
+        where profile name is the name we should use in the reply, message format is a string with
+        substitutions ready, and whisper is True/False depending on whether it should be whispered
+        to the user (True) or public (False).
+
+        If we shouldn't reply this returns (None, None, None)
+        """
+
+        if not config.FILTER_SETTINGS:
+            return (None, None, None)
+
+        reply_format = None
+        profile_name = 'SOGS'
+        public = False
+
+        # Precedences from least to most specific so that we load values from least specific first
+        # then overwrite them if we find a value in a more specific section
+        room_precedence = ('*', self.token)
+        filter_precedence = ('*', filter_type, filter_lang) if filter_lang else ('*', filter_type)
+
+        for r in room_precedence:
+            s1 = config.FILTER_SETTINGS.get(r)
+            if s1 is None:
+                continue
+            for f in filter_precedence:
+                settings = s1.get(f)
+                if settings is None:
+                    continue
+
+                rf = settings.get('reply')
+                pn = settings.get('profile_name')
+                pb = settings.get('public')
+                if rf is not None:
+                    reply_format = random.choice(rf)
+                if pn is not None:
+                    profile_name = pn
+                if pb is not None:
+                    public = pb
+
+        return (reply_format, profile_name, public)
+
     def should_filter(self, user: User, data: bytes):
         """
-        Checks a message for profanity (if the profanity filter is enabled).
+        Checks a message for disallowed alphabets and profanity (if the profanity
+        filter is enabled).
 
-        - Returns False if this message passes (i.e. didn't trigger the profanity filter, or is
-          being posted by an admin to whom the filter doesn't apply).
+        - Returns None if this message passes (i.e. didn't trigger any filter, or is
+          being posted by an admin to whom the filters don't apply).
 
-        Otherwise, depending on the filtering configuration:
-        - Returns True if this message should be silently accepted but filtered (i.e. not shown to
-          users).
+        - Returns a callback if the message fails but should be silently accepted.  The callback
+          should be called (with no arguments) *after* the filtered message is inserted into the db.
+
         - Throws PostRejected if the message should be rejected (and rejection passed back to the
           user).
         """
-        if config.PROFANITY_FILTER and not self.check_admin(user):
+        msg_ = None
+
+        def msg():
+            nonlocal msg_
+            if msg_ is None:
+                msg_ = Post(raw=data)
+            return msg_
+
+        if not config.FILTER_MODS and self.check_moderator(user):
+            return None
+
+        filter_type = None
+        filter_lang = None
+
+        filt = self.filtering()
+        alphabets = filt['alphabet_filters']
+        for lang, pattern in alphabet_filter_patterns:
+            if lang not in alphabets:
+                continue
+
+            if not pattern.search(msg().text):
+                continue
+
+            # Filter it!
+            filter_type, filter_lang = 'alphabet', lang
+            break
+
+        if not filter_type and filt['profanity_filter']:
             import better_profanity
 
-            msg = Post(raw=data)
-            for part in (msg.text, msg.username):
+            for part in (msg().text, msg().username):
                 if better_profanity.profanity.contains_profanity(part):
-                    if config.PROFANITY_SILENT:
-                        return True
-                    else:
-                        # FIXME: can we send back some error code that makes Session not retry?
-                        raise PostRejected("filtration rejected message")
-        return False
+                    filter_type = 'profanity'
+                    break
+
+        if not filter_type:
+            return None
+
+        silent = filt[filter_type + '_silent']
+
+        msg_fmt, prof_name, pub = self.filter_should_reply(filter_type, filter_lang)
+        if msg_fmt:
+            pbmsg = protobuf.Content()
+            body = msg_fmt.format(
+                profile_name=(user.session_id if msg().username is None else msg().username),
+                profile_at="@" + user.session_id,
+                room_name=self.name,
+                room_token=self.token,
+            ).encode()
+            pbmsg.dataMessage.body = body
+            pbmsg.dataMessage.timestamp = int(time.time() * 1000)
+            pbmsg.dataMessage.profile.displayName = prof_name
+
+            # Add two bytes padding so that session doesn't get confused by a lack of padding
+            pbmsg = pbmsg.SerializeToString() + b'\x80\x00'
+
+            # Make a fake signing key based on prof_name and the server privkey (so that different
+            # names use different keys; otherwise the bot names overwrite each other in Session
+            # clients when a later message has a new profile name).
+            global filter_privkeys
+            if prof_name in filter_privkeys:
+                signingkey = filter_privkeys[prof_name]
+            else:
+                signingkey = SigningKey(
+                    blake2b(
+                        prof_name.encode() + crypto.server_signkey.encode(), key=b'sogsfiltering'
+                    )
+                )
+                filter_privkeys[prof_name] = signingkey
+
+            sig = signingkey.sign(pbmsg).signature
+            server_fake_user = User(
+                session_id='15' + signingkey.verify_key.encode().hex(), autovivify=True, touch=False
+            )
+
+            def insert_reply():
+                query(
+                    """
+                    INSERT INTO messages
+                        (room, "user", data, data_size, signature, whisper)
+                        VALUES
+                        (:r, :u, :data, :data_size, :signature, :whisper)
+                    """,
+                    r=self.id,
+                    u=server_fake_user.id,
+                    data=pbmsg[:-2],
+                    data_size=len(pbmsg),
+                    signature=sig,
+                    whisper=None if pub else user.id,
+                )
+
+            if filt[filter_type + '_silent']:
+                # Defer the insertion until after the filtered row gets inserted
+                return insert_reply
+            else:
+                insert_reply()
+
+        elif silent:
+            # No reply, so just return an empty callback
+            def noop():
+                pass
+
+            return noop
+
+        # FIXME: can we send back some error code that makes Session not retry?
+        raise PostRejected(f"filtration rejected message ({filter_type})")
 
     def _own_files(self, msg_id: int, files: List[int], user):
         """
@@ -820,7 +1005,7 @@ class Room:
                 data=unpadded_data,
                 data_size=data_size,
                 signature=sig,
-                filtered=filtered,
+                filtered=filtered is not None,
                 whisper=whisper_to.id if whisper_to else None,
                 whisper_mods=whisper_mods,
             )
@@ -840,11 +1025,19 @@ class Room:
                 'signature': sig,
                 'reactions': {},
             }
+            if filtered is not None:
+                msg['filtered'] = True
             if whisper_to or whisper_mods:
                 msg['whisper'] = True
                 msg['whisper_mods'] = whisper_mods
                 if whisper_to:
                     msg['whisper_to'] = whisper_to.session_id
+
+        # Don't call this inside the transaction because, if it's inserting a reply, we want the
+        # reply to have a later timestamp for proper ordering (because the timestamp inside a
+        # transaction is the time when the transaction started).
+        if filtered is not None:
+            filtered()
 
         send_mule("message_posted", msg['id'])
         return msg
@@ -886,9 +1079,10 @@ class Room:
             if author != user.id:
                 raise BadPermission()
 
-            if filtered:
+            if filtered is not None:
                 # Silent filtering is enabled and the edit failed the filter, so we want to drop the
                 # actual post update.
+                filtered()
                 return
 
             data_size = len(data)
@@ -1043,6 +1237,22 @@ class Room:
         return query(
             "SELECT COUNT(*), COALESCE(SUM(size), 0) FROM files WHERE room = :r", r=self.id
         ).first()[0:2]
+
+    def reactions_counts(self):
+        """Returns a list of [reaction, count] pairs where count is the aggregate count of that
+        reaction use in this room"""
+        return [
+            (r, c)
+            for r, c in query(
+                """
+                SELECT reaction, COUNT(*)
+                FROM message_reactions JOIN messages ON messages.id = message
+                WHERE room = :r
+                GROUP BY reaction
+                """,
+                r=self.id,
+            )
+        ]
 
     def get_reactions(
         self,
@@ -1398,22 +1608,23 @@ class Room:
             raise BadPermission()
 
         with db.transaction():
-            query(
-                f"""
-                UPDATE user_permission_overrides
-                SET admin = FALSE
-                    {', moderator = FALSE, visible_mod = TRUE' if not remove_admin_only else ''}
-                WHERE room = :r AND "user" = :u
-                """,
-                r=self.id,
-                u=user.id,
-            )
+            with user.check_blinding() as u:
+                query(
+                    f"""
+                    UPDATE user_permission_overrides
+                    SET admin = FALSE
+                        {', moderator = FALSE, visible_mod = TRUE' if not remove_admin_only else ''}
+                    WHERE room = :r AND "user" = :u
+                    """,
+                    r=self.id,
+                    u=user.id,
+                )
 
-            self._refresh()
-            if user.id in self._perm_cache:
-                del self._perm_cache[user.id]
+                self._refresh()
+                if user.id in self._perm_cache:
+                    del self._perm_cache[user.id]
 
-        app.logger.info(f"{removed_by} removed {user} as mod/admin of {self}")
+                app.logger.info(f"{removed_by} removed {u} as mod/admin of {self}")
 
     def ban_user(self, to_ban: User, *, mod: User, timeout: Optional[float] = None):
         """
@@ -1496,24 +1707,28 @@ class Room:
             app.logger.warning(f"Error unbanning {to_unban} from {self} by {mod}: not a moderator")
             raise BadPermission()
 
-        result = query(
-            """
-            UPDATE user_permission_overrides SET banned = FALSE
-            WHERE room = :r AND "user" = :unban AND banned
-            """,
-            r=self.id,
-            unban=to_unban.id,
-        )
-        if result.rowcount > 0:
-            app.logger.debug(f"{mod} unbanned {to_unban} from {self}")
+        with db.transaction():
+            with to_unban.check_blinding() as to_unban:
+                result = query(
+                    """
+                    UPDATE user_permission_overrides SET banned = FALSE
+                    WHERE room = :r AND "user" = :unban AND banned
+                    """,
+                    r=self.id,
+                    unban=to_unban.id,
+                )
+                if result.rowcount > 0:
+                    app.logger.debug(f"{mod} unbanned {to_unban} from {self}")
 
-            if to_unban.id in self._perm_cache:
-                del self._perm_cache[to_unban.id]
+                    if to_unban.id in self._perm_cache:
+                        del self._perm_cache[to_unban.id]
 
-            return True
+                    return True
 
-        app.logger.debug(f"{mod} unbanned {to_unban} from {self} (but user was already unbanned)")
-        return False
+                app.logger.debug(
+                    f"{mod} unbanned {to_unban} from {self} (but user was already unbanned)"
+                )
+                return False
 
     def get_bans(self):
         """

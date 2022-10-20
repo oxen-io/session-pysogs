@@ -1,8 +1,3 @@
-from ..web import app
-from .. import http
-import flask
-
-
 class NotFound(LookupError):
     """Base class for NoSuchRoom, NoSuchFile, etc."""
 
@@ -84,24 +79,3 @@ class PostRateLimited(PostRejected):
 
     def __init__(self, msg=None):
         super().__init__("Rate limited" if msg is None else msg)
-
-
-# Map uncaught model exceptions into flask http exceptions
-@app.errorhandler(NotFound)
-def abort_bad_room(e):
-    flask.abort(http.NOT_FOUND)
-
-
-@app.errorhandler(BadPermission)
-def abort_perm_denied(e):
-    flask.abort(http.FORBIDDEN)
-
-
-@app.errorhandler(PostRejected)
-def abort_post_rejected(e):
-    flask.abort(http.TOO_MANY_REQUESTS)
-
-
-@app.errorhandler(InvalidData)
-def abort_invalid_data(e):
-    flask.abort(http.BAD_REQUEST)

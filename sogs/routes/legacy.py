@@ -1,4 +1,4 @@
-from flask import abort, request, jsonify, g, Blueprint
+from flask import abort, request, jsonify, g, Blueprint, Response
 from werkzeug.exceptions import HTTPException
 from ..web import app
 from .. import crypto, config, db, http, utils
@@ -68,6 +68,10 @@ def legacy_check_user_room(
     if not pubkey or len(pubkey) != (utils.SESSION_ID_SIZE * 2) or not pubkey.startswith('05'):
         app.logger.warning("cannot get pubkey for checking room permissions")
         abort(http.BAD_REQUEST)
+    if config.REQUIRE_BLIND_KEYS and pubkey.startswith('05'):
+        msg = "Invalid authentication: this server requires the use of blinded ids"
+        app.logger.warning(msg)
+        abort(Response(msg, status=http.BAD_REQUEST, mimetype='text/plain'))
 
     if room is None:
         if room_token is None:
@@ -331,7 +335,7 @@ def handle_legacy_single_delete(msgid):
 @legacy.post("/block_list")
 def handle_legacy_ban():
     user, room = legacy_check_user_room(moderator=True)
-    ban = User(session_id=request.json['public_key'], autovivify=True)
+    ban = User(session_id=request.json['public_key'], autovivify=True, try_blinding=True)
 
     room.ban_user(to_ban=ban, mod=user)
 
@@ -341,7 +345,7 @@ def handle_legacy_ban():
 @legacy.post("/ban_and_delete_all")
 def handle_legacy_banhammer():
     mod, room = legacy_check_user_room(moderator=True)
-    ban = User(session_id=request.json['public_key'], autovivify=True)
+    ban = User(session_id=request.json['public_key'], autovivify=True, try_blinding=True)
 
     with db.transaction():
         room.ban_user(to_ban=ban, mod=mod)
@@ -353,7 +357,7 @@ def handle_legacy_banhammer():
 @legacy.delete("/block_list/<SessionID:session_id>")
 def handle_legacy_unban(session_id):
     user, room = legacy_check_user_room(moderator=True)
-    to_unban = User(session_id=session_id, autovivify=False)
+    to_unban = User(session_id=session_id, autovivify=False, try_blinding=True)
     if room.unban_user(to_unban, mod=user):
         return jsonify({"status_code": http.OK})
 
@@ -395,7 +399,7 @@ def handle_legacy_add_admin():
     if len(session_id) != 66 or not session_id.startswith("05"):
         abort(http.BAD_REQUEST)
 
-    mod = User(session_id=session_id, autovivify=True)
+    mod = User(session_id=session_id, autovivify=True, try_blinding=True)
     room.set_moderator(mod, admin=True, visible=True, added_by=user)
 
     return jsonify({"status_code": http.OK})
@@ -408,7 +412,7 @@ def handle_legacy_add_admin():
 def handle_legacy_remove_admin(session_id):
     user, room = legacy_check_user_room(admin=True)
 
-    mod = User(session_id=session_id, autovivify=False)
+    mod = User(session_id=session_id, autovivify=False, try_blinding=True)
     room.remove_moderator(mod, removed_by=user)
 
     return jsonify({"status_code": http.OK})
