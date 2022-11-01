@@ -72,11 +72,11 @@ def verify_sig_from_pk(data, sig, pk):
     return VerifyKey(pk).verify(data, sig)
 
 
-_server_signkey = SigningKey(_privkey_bytes)
+server_signkey = SigningKey(_privkey_bytes)
+server_verifykey = server_signkey.verify_key
 
-server_verify = _server_signkey.verify_key.verify
-
-server_sign = _server_signkey.sign
+server_verify = server_verifykey.verify
+server_sign = server_signkey.sign
 
 
 def server_encrypt(pk, data):

@@ -95,7 +95,10 @@ def make_subrequest(
         app.logger.debug(f"Initiating sub-request for {method} {path}")
         g.user_reauth = user_reauth
         with app.request_context(subreq_env):
-            response = app.full_dispatch_request()
+            try:
+                response = app.full_dispatch_request()
+            except Exception as e:
+                response = app.make_response(app.handle_exception(e))
         if response.status_code >= 400:
             app.logger.warning(
                 f"Sub-request for {method} {path} returned status {response.status_code}"
