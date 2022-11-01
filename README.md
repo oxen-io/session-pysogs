@@ -26,7 +26,7 @@ For how to administer a running PySOGS see [SOGS Administration](administration.
 
 ## License
 
-Copyright (c) 2022 The Oxen Project
+Copyright (c) 2021-2022 The Oxen Project
 
 PySOGS is licensed under the [GNU General Public License (GPL) v3](LICENSE.txt), or (at your option)
 any later version.
