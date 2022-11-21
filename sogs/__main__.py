@@ -218,6 +218,7 @@ def print_room(room: Room):
         "+" if room.default_accessible else "-",
     )
 
+    nl = "\n"  + ' ' * 20
     print(
         f"""
 {room.token}
@@ -230,7 +231,12 @@ Attachments: {files} ({files_size:.1f} MB)
 Reactions: {r_total}; top 5: {', '.join(f"{r} ({c})" for r, c in reactions[0:5])}
 Active users: {active[0]} (1d), {active[1]} (7d), {active[2]} (14d), {active[3]} (30d)
 Default permissions: {perms}
-Moderators: {admins} admins ({len(ha)} hidden), {mods} moderators ({len(hm)} hidden)""",
+Moderators: {admins} admins ({len(ha)} hidden), {mods} moderators ({len(hm)} hidden)
+--
+Visible admins:     {nl.join(f"{admin}" for admin in a)}
+Hidden admins:      {nl.join(f"{admin}" for admin in ha)}
+Visible moderators: {nl.join(f"{mod}" for mod in m)}
+Hidden moderators:  {nl.join(f"{mod}" for mod in hm)}""",
         end='',
     )
     if args.verbose and any((m, a, hm, ha)):
