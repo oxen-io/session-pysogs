@@ -25,8 +25,6 @@ def _serialize_message(msg, include_message=True):
 
 def _box(out: bool, *, since=None):
     """handle inbox/outbox endpoints common logic"""
-    if not g.user.is_blinded:
-        abort(http.FORBIDDEN)
     limit = utils.get_int_param('limit', 100, min=1, max=256, truncate=True)
     get = Message.sent if out else Message.to
     msgs = [_serialize_message(msg) for msg in get(user=g.user, limit=limit, since=since)]
@@ -36,7 +34,7 @@ def _box(out: bool, *, since=None):
 
 
 @dm.get("/outbox")
-@auth.user_required
+@auth.blind_user_required
 def get_outbox():
     """
     Retrieves all of the user's sent messages (up to `limit`).
@@ -45,7 +43,7 @@ def get_outbox():
 
 
 @dm.get("/outbox/since/<int:msgid>")
-@auth.user_required
+@auth.blind_user_required
 def poll_outbox(msgid):
     """
     Polls for any DMs sent since the given id.
@@ -54,7 +52,7 @@ def poll_outbox(msgid):
 
 
 @dm.get("/inbox")
-@auth.user_required
+@auth.blind_user_required
 def get_inbox():
     """
     Retrieves all of the user's recieved messages (up to `limit`).
@@ -63,7 +61,7 @@ def get_inbox():
 
 
 @dm.get("/inbox/since/<int:msgid>")
-@auth.user_required
+@auth.blind_user_required
 def poll_inbox(msgid):
     """
     Polls for any DMs received since the given id.
@@ -112,3 +110,21 @@ def send_inbox(sid):
     with db.transaction():
         msg = Message(data=utils.decode_base64(message), recip=recip_user, sender=g.user)
     return jsonify(_serialize_message(msg, include_message=False)), http.CREATED
+
+
+@dm.delete("/inbox")
+@auth.blind_user_required
+def delete_inbox_items():
+    """
+    Deletes the user's sent and recieved messages.
+    # Return value
+
+    On removal of messages, we return a json object with one key `"deleted"` which maps to a number
+    indicating how many messages were deleted.
+
+    """
+    ret = dict()
+    with db.transaction():
+        ret['deleted'] = Message.delete_all(recip=g.user)
+
+    return jsonify(ret), http.OK

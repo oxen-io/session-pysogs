@@ -43,6 +43,27 @@ class Message:
         self._row = row
 
     @staticmethod
+    def delete_all(*, recip=None, sender=None):
+        """Delete all messages sent to a user or from a user.
+        returns the number of rows affected.
+        """
+        if sender and recip:
+            raise ValueError("delete_all(): cannot provide both sender and recipient")
+
+        recip_id = recip.id if recip else None
+        sender_id = sender.id if sender else None
+        result = query(
+            f"""
+            DELETE FROM inbox
+            {'WHERE recipient = :recip' if recip else '' }
+            {'WHERE sender = :sender' if sender else '' }
+            """,
+            recip=recip_id,
+            sender=sender_id,
+        )
+        return result.rowcount
+
+    @staticmethod
     def to(user, since=None, limit=None):
         """get all message for a user, returns a generator"""
         rows = query(
