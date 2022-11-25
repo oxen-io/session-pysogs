@@ -47,19 +47,12 @@ class Message:
         """Delete all messages sent to a user or from a user.
         returns the number of rows affected.
         """
-        if sender and recip:
-            raise ValueError("delete_all(): cannot provide both sender and recipient")
+        if sum(bool(x) for x in (sender, recip)) != 1:
+            raise ValueError("delete_all(): exactly one of sender or recipient is required")
 
-        recip_id = recip.id if recip else None
-        sender_id = sender.id if sender else None
         result = query(
-            f"""
-            DELETE FROM inbox
-            {'WHERE recipient = :recip' if recip else '' }
-            {'WHERE sender = :sender' if sender else '' }
-            """,
-            recip=recip_id,
-            sender=sender_id,
+            f"DELETE FROM inbox WHERE {'recipient' if recip else 'sender'} = :id",
+            id=recip.id if recip else sender.id,
         )
         return result.rowcount
 
