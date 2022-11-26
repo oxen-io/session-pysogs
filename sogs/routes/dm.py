@@ -116,12 +116,11 @@ def send_inbox(sid):
 @auth.blind_user_required
 def delete_inbox_items():
     """
-    Deletes the user's sent and recieved messages.
+    Deletes all of the user's received messages.
+
     # Return value
 
-    On removal of messages, we return a json object with one key `"deleted"` which maps to a number
-    indicating how many messages were deleted.
-
+    Returns a JSON object with one key `"deleted"` set to the number of deleted messages.
     """
     ret = dict()
     with db.transaction():
