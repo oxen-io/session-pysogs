@@ -128,7 +128,7 @@ def batch_test_endpoint3():
 def batch_test_endpoint4():
     from flask import request, jsonify, Response
 
-    if request.json is not None:
+    if request.is_json:
         return jsonify({"echo": request.json})
     return Response(f"echo: {request.data.decode()}".encode(), mimetype='text/plain')
 
