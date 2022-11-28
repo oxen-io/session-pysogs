@@ -121,6 +121,27 @@ def user_required(f):
     return required_user_wrapper
 
 
+def require_blind_user():
+    """Requires that the authenticated user is using a blinded pubkey for auth; aborts with 401
+    Unauthorized if the user has not authenticated with a blinded pubkey."""
+    require_user()
+    if not g.user.is_blinded:
+        abort_with_reason(http.UNAUTHORIZED, "This endpoint requires blinded pubkeys be used")
+
+
+def blind_user_required(f):
+    """Decorator for an endpoint that requires a user that is using a blinded public key;
+    this calls `require_blind_user()` at the beginning
+    of the request to abort the request as Unauthorized if that precondition is not met."""
+
+    @wraps(f)
+    def blind_user_wrapper(*args, **kwargs):
+        require_blind_user()
+        return f(*args, **kwargs)
+
+    return blind_user_wrapper
+
+
 def require_mod(room, *, admin=False):
     """Checks a room for moderator or admin permission; aborts with 401 Unauthorized if there is no
     user in the request, and 403 Forbidden if g.user does not have moderator (or admin, if
