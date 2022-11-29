@@ -209,9 +209,8 @@ def test_v4_authenticated(room, mod, client):
 def v4_post_body():
     from flask import request, jsonify, Response
 
-    if request.json is not None:
+    if request.is_json:
         return jsonify({"json": request.json})
-    print(f"rd: {request.data}")
     return Response(
         f"not json ({request.content_type}): {request.data.decode()}".encode(),
         mimetype='text/plain',
@@ -234,8 +233,10 @@ def test_v4_post_body(room, user, client):
 
     info, body = decrypt_reply(r.data, v=4, enc_type="xchacha20")
 
-    assert info == {'code': 200, 'headers': {'content-type': 'text/plain; charset=utf-8'}}
-    assert body == b'not json (text/plain): test data'
+    assert (info, body) == (
+        {'code': 200, 'headers': {'content-type': 'text/plain; charset=utf-8'}},
+        b'not json (text/plain): test data',
+    )
 
     # Now try with json:
     test_json = {"test": ["json", None], "1": 23}
