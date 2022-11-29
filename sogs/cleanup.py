@@ -15,12 +15,13 @@ def cleanup():
             app.logger.debug("Pruning expired items")
             files = prune_files()
             msg_hist = prune_message_history()
+            dms = prune_expired_dms()
             room_act = prune_room_activity()
             perm_upd = apply_permission_updates()
             exp_nonces = expire_nonce_history()
             app.logger.debug(
                 f"Pruned {files} files, {msg_hist} msg hist, {room_act} room activity, "
-                f"{exp_nonces} nonces; applied {perm_upd} perm updates."
+                f"{exp_nonces} nonces, {dms} inbox msgs; applied {perm_upd} perm updates."
             )
             return (files, msg_hist, room_act, perm_upd, exp_nonces)
         except Exception as e:
@@ -73,6 +74,14 @@ def prune_message_history():
 
     if count > 0:
         app.logger.info("Pruned {} message edit/deletion records".format(count))
+    return count
+
+
+def prune_expired_dms():
+    count = query("DELETE FROM inbox WHERE expiry < :now", now=time.time()).rowcount
+
+    if count > 0:
+        app.logger.info(f"Removed {count} expired inbox/message requests")
     return count
 
 

@@ -1,4 +1,4 @@
-from request import sogs_get, sogs_post
+from request import sogs_get, sogs_post, sogs_delete
 from sogs import config
 from sogs.hashing import blake2b
 from sogs.utils import encode_base64
@@ -6,6 +6,7 @@ from sogs.model.user import SystemUser
 import nacl.bindings as sodium
 from nacl.utils import random
 from util import from_now
+from itertools import product
 
 
 def test_dm_default_empty(client, blind_user):
@@ -89,3 +90,42 @@ def test_dm_send(client, blind_user, blind_user2):
     assert data.pop('posted_at') == from_now.seconds(0)
     assert data.pop('expires_at') == from_now.seconds(config.DM_EXPIRY)
     assert data == msg_expected
+
+
+def test_dm_delete(client, blind_user, blind_user2):
+    num_posts = 10
+    for sender, recip in product((blind_user, blind_user2), repeat=2):
+        # make DMs
+        for n in range(num_posts):
+            post = make_post(f"bep-{n}".encode('ascii'), sender=sender, to=recip)
+            r = sogs_post(client, f'/inbox/{recip.session_id}', post, sender)
+            assert r.status_code == 201
+
+        # get DMs
+        r = sogs_get(client, "/inbox", recip)
+        assert r.status_code == 200
+        posts = r.json
+        assert isinstance(posts, list)
+        assert len(posts) == num_posts
+
+        # delete DMs
+        r = sogs_delete(client, "/inbox", recip)
+        assert r.status_code == 200
+        assert r.json == {'deleted': num_posts}
+
+        # make sure it is empty
+        r = sogs_get(client, "/inbox", recip)
+        assert r.status_code == 200
+        posts = r.json
+        assert posts == []
+
+        # delete again when nothing is there
+        r = sogs_delete(client, "/inbox", recip)
+        assert r.status_code == 200
+        assert r.json == {'deleted': 0}
+
+        # make sure it is still empty (probably redundant but good to have)
+        r = sogs_get(client, "/inbox", recip)
+        assert r.status_code == 200
+        posts = r.json
+        assert posts == []
