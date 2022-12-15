@@ -1,3 +1,10 @@
+session-pysogs (0.3.6-2) sid; urgency=medium
+
+  * Add ignore-new for gbp pq
+  * Move tomli to setup_requires
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Thu, 15 Dec 2022 11:55:55 -0400
+
 session-pysogs (0.3.6-1) sid; urgency=medium
 
   [ Jason Rhinelander ]
