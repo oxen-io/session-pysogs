@@ -192,7 +192,9 @@ if update_room and not args.rooms:
     )
     sys.exit(1)
 if args.rooms and not update_room:
-    print("Error: --rooms is not compatible with that option", file=sys.stderr)
+    # If we have --rooms but didn't recognize any of the `update_rooms` options then that means
+    # `--rooms` was specify with some action (e.g. `--initialize`) that doesn't support --rooms:
+    print("Error: --rooms specified without a room modification option", file=sys.stderr)
     sys.exit(1)
 
 from . import config, crypto, db
@@ -314,7 +316,7 @@ def perm_flag_to_word(char):
     if char == 'a':
         return "accessible"
 
-    print(f"Error: invalid permission flag '{char}'")
+    print(f"Error: invalid permission flag '{char}'", file=sys.stderr)
     sys.exit(1)
 
 
@@ -327,7 +329,8 @@ def parse_and_set_perm_flags(flags, perm_setting):
         if perm_type in perms:
             print(
                 f"Error: permission flag '{char}' in more than one permission set "
-                "(add/remove/clear)"
+                "(add/remove/clear)",
+                file=sys.stderr,
             )
             sys.exit(1)
         perms[perm_type] = perm_setting
@@ -414,7 +417,7 @@ elif update_room:
             sys.exit(1)
 
     if not len(rooms) and not global_rooms:
-        print("Error: --rooms is required when updating room settings/permissions")
+        print("Error: --rooms is required when updating room settings/permissions", file=sys.stderr)
         sys.exit(1)
 
     if args.add_moderators:
