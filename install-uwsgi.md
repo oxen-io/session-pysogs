@@ -28,7 +28,7 @@ Python using:
 sudo curl -so /etc/apt/trusted.gpg.d/oxen.gpg https://deb.oxen.io/pub.gpg
 echo "deb https://deb.oxen.io $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/oxen.list
 sudo apt update
-sudo apt install python3-{oxenmq,oxenc,pyonionreq,coloredlogs,uwsgidecorators,flask,cryptography,nacl,pil,protobuf,openssl,qrencode,better-profanity,sqlalchemy,sqlalchemy-utils} uwsgi-plugin-python3
+sudo apt install python3-{oxenmq,oxenc,pyonionreq,coloredlogs,uwsgidecorators,flask,cryptography,nacl,pil,protobuf,openssl,qrcode,better-profanity,sqlalchemy,sqlalchemy-utils} uwsgi-plugin-python3
 ```
 
 If you want to use a postgresql database backend then you will also need the python3-psycopg2

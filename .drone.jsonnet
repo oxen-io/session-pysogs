@@ -16,7 +16,7 @@ local default_deps = [
   'python3-pil',
   'python3-protobuf',
   'python3-openssl',
-  'python3-qrencode',
+  'python3-qrcode',
   'python3-better-profanity',
   'python3-sqlalchemy',
   'python3-sqlalchemy-utils',
