@@ -133,7 +133,10 @@ ap.add_argument(
     '--list-global-mods', '-M', action='store_true', help="List global moderators/admins"
 )
 ap.add_argument(
-    "--verbose", "-v", action='store_true', help="Show more information for some commands"
+    "--verbose",
+    "-v",
+    action='store_true',
+    help="Show more details for some commands, such as showing moderators/admins in room details",
 )
 ap.add_argument(
     "--yes", action='store_true', help="Don't prompt for confirmation for some commands, just do it"
