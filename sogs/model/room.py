@@ -183,7 +183,18 @@ class Room:
 
         This method does not authenticate.
         """
-        result = query("DELETE FROM rooms WHERE token = :t", t=self.token)
+
+        with db.transaction():
+            query(
+                """
+                DELETE FROM user_reactions WHERE reaction IN (
+                    SELECT id FROM reactions WHERE message IN (
+                        SELECT id FROM messages WHERE room = (
+                            SELECT id FROM rooms WHERE token = :t)))
+                """,
+                t=self.token,
+            )
+            result = query("DELETE FROM rooms WHERE token = :t", t=self.token)
         if result.rowcount != 1:
             raise NoSuchRoom(self.token)
 

@@ -1,4 +1,4 @@
-from argparse import ArgumentParser as AP, RawDescriptionHelpFormatter
+from argparse import ArgumentParser as AP, RawDescriptionHelpFormatter, Action
 import atexit
 import re
 import sys
@@ -20,10 +20,10 @@ Examples:
     python3 -msogs --add-moderators 050123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef --rooms=+ --visible
 
     # Set default read/write True and upload False on all rooms
-    python3 -msogs --set-perms --add-perms rw --remove-perms u --rooms='*'
+    python3 -msogs --add-perms rw --remove-perms u --rooms='*'
 
     # Remove overrides for user 0501234... on all rooms
-    python3 -msogs --set-perms --clear-perms rwua --rooms='*' --users 050123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+    python3 -msogs --clear-perms rwua --rooms='*' --users 050123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 
      # List room info:
     python3 -msogs -L
@@ -35,54 +35,67 @@ specifying a path to the config file to load in the SOGS_CONFIG environment vari
     formatter_class=RawDescriptionHelpFormatter,
 )
 
+
+class CrudeStringUnescape(Action):
+    """Crude class for potentially-escaped parameters; this supports '\\\\' and '\\n'"""
+
+    escapes = {'\\': '\\', 'n': '\n'}
+    pat = re.compile(r'\\([\\n])')
+
+    def __init__(self, option_strings, dest, nargs=None, **kwargs):
+        if nargs is not None:
+            raise ValueError("nargs not allowed")
+        super().__init__(option_strings, dest, **kwargs)
+
+    def __call__(self, parser, ns, value, option_string=None):
+        setattr(ns, self.dest, self.pat.sub(lambda x: self.escapes[x[1]], value))
+
+
 ap.add_argument('--version', '-V', action='version', version=f'PySOGS {version}')
 
-actions = ap.add_mutually_exclusive_group(required=True)
-
-actions.add_argument('--add-room', help="Add a room with the given token", metavar='TOKEN')
+ap.add_argument('--add-room', help="Add a room with the given token", metavar='TOKEN')
 ap.add_argument(
     '--name', help="Set the room's initial name for --add-room; if omitted use the token name"
 )
-ap.add_argument('--description', help="Specifies the room's initial description for --add-room")
-actions.add_argument('--delete-room', help="Delete the room with the given token", metavar='TOKEN')
-actions.add_argument(
+ap.add_argument(
+    '--description',
+    action=CrudeStringUnescape,
+    help="Sets or updates a room's description (with --add-room or --rooms)",
+)
+ap.add_argument('--delete-room', help="Delete the room with the given token", metavar='TOKEN')
+ap.add_argument(
     '--add-moderators',
     nargs='+',
     metavar='SESSIONID',
     help="Add the given Session ID(s) as a moderator of the room given by --rooms",
 )
-actions.add_argument(
+ap.add_argument(
     '--delete-moderators',
     nargs='+',
     metavar='SESSIONID',
     help="Delete the the given Session ID(s) as moderator and admins of the room given by --rooms",
 )
-actions.add_argument(
-    '--set-perms',
-    action='store_true',
-    help="Sets default or user-specific permissions for the room given by --rooms; specify the "
-    "permissions using --add-perms or --remove-perms",
-)
 ap.add_argument(
     '--users',
-    help="One or more specific users to set permissions for with --set-perms; if omitted then the "
-    "room default permissions will be set for the given room(s) instead.",
+    help="One or more specific users to set permissions for with --add-perms, --remove-perms, "
+    "--clear-perms.  If omitted then the room default permissions will be set for the given "
+    "room(s) instead.",
     nargs='+',
     metavar='SESSIONID',
 )
 ap.add_argument(
     "--add-perms",
-    help="With --add-room or --set-perms, set these permissions to true; takes a string of 1-4 of "
+    help="With --add-room or --rooms, set these permissions to true; takes a string of 1-4 of "
     "the letters \"rwua\" for [r]ead, [w]rite, [u]pload, and [a]ccess.",
 )
 ap.add_argument(
     "--remove-perms",
-    help="With --add-room or --set-perms, set these permissions to false; takes the same string as "
+    help="With --add-room or --rooms, set these permissions to false; takes the same string as "
     "--add-perms, but denies the listed permissions rather than granting them.",
 )
 ap.add_argument(
     "--clear-perms",
-    help="With --add-room or --set-perms, clear room or user overrides on these permissions, "
+    help="With --add-room or --rooms, clear room or user overrides on these permissions, "
     "returning them to the default setting.  Takes the same argument as --add-perms.",
 )
 ap.add_argument(
@@ -112,24 +125,28 @@ vis_group.add_argument(
     help="Hide the added moderator/admins' status from public users. This is the default for "
     "global mods, but not for room mods",
 )
-actions.add_argument(
+
+ap.add_argument(
     "--list-rooms", "-L", action='store_true', help="List current rooms and basic stats"
 )
-actions.add_argument(
+ap.add_argument(
     '--list-global-mods', '-M', action='store_true', help="List global moderators/admins"
 )
 ap.add_argument(
-    "--verbose", "-v", action='store_true', help="Show more information for some commands"
+    "--verbose",
+    "-v",
+    action='store_true',
+    help="Show more details for some commands, such as showing moderators/admins in room details",
 )
 ap.add_argument(
     "--yes", action='store_true', help="Don't prompt for confirmation for some commands, just do it"
 )
-actions.add_argument(
+ap.add_argument(
     "--initialize",
     action='store_true',
     help="Initialize database and private key if they do not exist; advanced use only.",
 )
-actions.add_argument(
+ap.add_argument(
     "--upgrade",
     "-U",
     action="store_true",
@@ -138,7 +155,7 @@ actions.add_argument(
     "normally not required: database upgrades are performed automatically during sogs daemon "
     "startup.",
 )
-actions.add_argument(
+ap.add_argument(
     "--check-upgrades",
     action="store_true",
     help="Check whether database upgrades are required then exit.  The exit code is 0 if no "
@@ -146,6 +163,42 @@ actions.add_argument(
 )
 
 args = ap.parse_args()
+
+update_room = not args.add_room and (
+    args.description is not None
+    or args.add_moderators
+    or args.delete_moderators
+    or args.add_perms
+    or args.remove_perms
+    or args.clear_perms
+)
+incompat = [
+    ('--add-room', args.add_room),
+    ('--delete-room', args.delete_room),
+    ('room modifiers', update_room),
+    ('--list-rooms', args.list_rooms),
+    ('--list-global-mods', args.list_global_mods),
+    ('--initialize', args.initialize),
+    ('--upgrade', args.upgrade),
+    ('--check-upgrades', args.check_upgrades),
+]
+for i in range(1, len(incompat)):
+    for j in range(0, i):
+        if incompat[j][1] and incompat[i][1]:
+            print(f"Error: {incompat[j][0]} and {incompat[i][0]} are incompatible", file=sys.stderr)
+            sys.exit(1)
+
+if update_room and not args.rooms:
+    print(
+        "A room must be specified (using --rooms) when updating permissions or room details",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+if args.rooms and not update_room:
+    # If we have --rooms but didn't recognize any of the `update_rooms` options then that means
+    # `--rooms` was specify with some action (e.g. `--initialize`) that doesn't support --rooms:
+    print("Error: --rooms specified without a room modification option", file=sys.stderr)
+    sys.exit(1)
 
 from . import config, crypto, db
 from .migrations.exc import DatabaseUpgradeRequired
@@ -266,7 +319,7 @@ def perm_flag_to_word(char):
     if char == 'a':
         return "accessible"
 
-    print(f"Error: invalid permission flag '{char}'")
+    print(f"Error: invalid permission flag '{char}'", file=sys.stderr)
     sys.exit(1)
 
 
@@ -279,19 +332,19 @@ def parse_and_set_perm_flags(flags, perm_setting):
         if perm_type in perms:
             print(
                 f"Error: permission flag '{char}' in more than one permission set "
-                "(add/remove/clear)"
+                "(add/remove/clear)",
+                file=sys.stderr,
             )
             sys.exit(1)
         perms[perm_type] = perm_setting
 
 
-if args.add_room or args.set_perms:
-    if args.add_perms:
-        parse_and_set_perm_flags(args.add_perms, True)
-    if args.remove_perms:
-        parse_and_set_perm_flags(args.remove_perms, False)
-    if args.clear_perms:
-        parse_and_set_perm_flags(args.clear_perms, None)
+if args.add_perms:
+    parse_and_set_perm_flags(args.add_perms, True)
+if args.remove_perms:
+    parse_and_set_perm_flags(args.remove_perms, False)
+if args.clear_perms:
+    parse_and_set_perm_flags(args.clear_perms, None)
 
 if args.initialize:
     print("Database schema created.")
@@ -343,164 +396,180 @@ elif args.delete_room:
         print("Aborted.")
         sys.exit(2)
 
-elif args.add_moderators:
-    if not args.rooms:
-        print("Error: --rooms is required when using --add-moderators", file=sys.stderr)
-        sys.exit(1)
-    for a in args.add_moderators:
-        if not re.fullmatch(r'[01]5[A-Fa-f0-9]{64}', a):
-            print(f"Error: '{a}' is not a valid session id", file=sys.stderr)
-            sys.exit(1)
-    if len(args.rooms) > 1 and ('*' in args.rooms or '+' in args.rooms):
-        print(
-            "Error: '+'/'*' arguments to --rooms cannot be used with other rooms", file=sys.stderr
-        )
-        sys.exit(1)
-
-    sysadmin = SystemUser()
-
-    if args.rooms == ['+']:
-        for sid in args.add_moderators:
-            u = User(session_id=sid, try_blinding=True)
-            u.set_moderator(admin=args.admin, visible=args.visible, added_by=sysadmin)
-            print(
-                "Added {} as {} global {}".format(
-                    sid,
-                    "visible" if args.visible else "hidden",
-                    "admin" if args.admin else "moderator",
-                )
-            )
-    else:
-        if args.rooms == ['*']:
-            rooms = get_rooms()
-        else:
-            try:
-                rooms = [Room(token=r) for r in args.rooms]
-            except NoSuchRoom as nsr:
-                print(f"No such room: '{nsr.token}'", file=sys.stderr)
-                sys.exit(1)
-
-        for sid in args.add_moderators:
-            u = User(session_id=sid, try_blinding=True)
-            for room in rooms:
-                room.set_moderator(u, admin=args.admin, visible=not args.hidden, added_by=sysadmin)
-                print(
-                    "Added {} as {} {} of {} ({})".format(
-                        u.session_id,
-                        "hidden" if args.hidden else "visible",
-                        "admin" if args.admin else "moderator",
-                        room.name,
-                        room.token,
-                    )
-                )
-
-elif args.delete_moderators:
-    if not args.rooms:
-        print("Error: --rooms is required when using --delete-moderators", file=sys.stderr)
-        sys.exit(1)
-    for a in args.delete_moderators:
-        if not re.fullmatch(r'[01]5[A-Fa-f0-9]{64}', a):
-            print(f"Error: '{a}' is not a valid session id", file=sys.stderr)
-            sys.exit(1)
-    if len(args.rooms) > 1 and ('*' in args.rooms or '+' in args.rooms):
-        print(
-            "Error: '+'/'*' arguments to --rooms cannot be used with other rooms", file=sys.stderr
-        )
-        sys.exit(1)
-
-    sysadmin = SystemUser()
-
-    if args.rooms == ['+']:
-        for sid in args.delete_moderators:
-            u = User(session_id=sid, try_blinding=True)
-            was_admin = u.global_admin
-            if not u.global_admin and not u.global_moderator:
-                print(f"{u.session_id} was not a global moderator")
-            else:
-                u.remove_moderator(removed_by=sysadmin)
-                print(f"Removed {u.session_id} as global {'admin' if was_admin else 'moderator'}")
-
-            if u.is_blinded and sid.startswith('05'):
-                try:
-                    u2 = User(session_id=sid, try_blinding=False, autovivify=False)
-                    if u2.global_admin or u2.global_moderator:
-                        was_admin = u2.global_admin
-                        u2.remove_moderator(removed_by=sysadmin)
-                        print(
-                            f"Removed {u2.session_id} as global "
-                            f"{'admin' if was_admin else 'moderator'}"
-                        )
-                except NoSuchUser:
-                    pass
-    else:
-        if args.rooms == ['*']:
-            rooms = get_rooms()
-        else:
-            try:
-                rooms = [Room(token=r) for r in args.rooms]
-            except NoSuchRoom as nsr:
-                print(f"No such room: '{nsr.token}'", file=sys.stderr)
-
-        for sid in args.delete_moderators:
-            u = User(session_id=sid, try_blinding=True)
-            u2 = None
-            if u.is_blinded and sid.startswith('05'):
-                try:
-                    u2 = User(session_id=sid, try_blinding=False, autovivify=False)
-                except NoSuchUser:
-                    pass
-
-            for room in rooms:
-                room.remove_moderator(u, removed_by=sysadmin)
-                print(f"Removed {u.session_id} as moderator/admin of {room.name} ({room.token})")
-                if u2 is not None:
-                    room.remove_moderator(u2, removed_by=sysadmin)
-                    print(
-                        f"Removed {u2.session_id} as moderator/admin of {room.name} ({room.token})"
-                    )
-
-elif args.set_perms:
-    if not args.rooms:
-        print("Error: --rooms is required when using --set-perms", file=sys.stderr)
-        sys.exit(1)
-
-    if args.rooms == ['+']:
-        print("Error: --rooms cannot be '+' (i.e. global) with --set-perms", file=sys.stderr)
-        sys.exit(1)
-
-    users = []
-    if args.users:
-        users = [User(session_id=sid, try_blinding=True) for sid in args.users]
+elif update_room:
 
     rooms = []
-    if args.rooms == ['*']:
+    all_rooms = False
+    global_rooms = False
+    if len(args.rooms) > 1 and ('*' in args.rooms or '+' in args.rooms):
+        print(
+            "Error: '+'/'*' arguments to --rooms cannot be used with other rooms", file=sys.stderr
+        )
+        sys.exit(1)
+
+    if args.rooms == ['+']:
+        global_rooms = True
+    elif args.rooms == ['*']:
         rooms = get_rooms()
+        all_rooms = True
     else:
         try:
             rooms = [Room(token=r) for r in args.rooms]
         except NoSuchRoom as nsr:
             print(f"No such room: '{nsr.token}'", file=sys.stderr)
+            sys.exit(1)
 
-    if not len(rooms):
-        print("Error: no valid rooms specified for call to --set-perms")
+    if not len(rooms) and not global_rooms:
+        print("Error: --rooms is required when updating room settings/permissions", file=sys.stderr)
         sys.exit(1)
 
-    # users not specified means set room defaults
-    if not len(users):
-        for room in rooms:
-            if "read" in perms:
-                room.default_read = perms["read"]
-            if "write" in perms:
-                room.default_write = perms["write"]
-            if "accessible" in perms:
-                room.default_accessible = perms["accessible"]
-            if "upload" in perms:
-                room.default_upload = perms["upload"]
-    else:
+    if args.add_moderators:
+        for a in args.add_moderators:
+            if not re.fullmatch(r'[01]5[A-Fa-f0-9]{64}', a):
+                print(f"Error: '{a}' is not a valid session id", file=sys.stderr)
+                sys.exit(1)
+
         sysadmin = SystemUser()
+
+        if global_rooms:
+            for sid in args.add_moderators:
+                u = User(session_id=sid, try_blinding=True)
+                u.set_moderator(admin=args.admin, visible=args.visible, added_by=sysadmin)
+                print(
+                    "Added {} as {} global {}".format(
+                        sid,
+                        "visible" if args.visible else "hidden",
+                        "admin" if args.admin else "moderator",
+                    )
+                )
+        else:
+            for sid in args.add_moderators:
+                u = User(session_id=sid, try_blinding=True)
+                for room in rooms:
+                    room.set_moderator(
+                        u, admin=args.admin, visible=not args.hidden, added_by=sysadmin
+                    )
+                    print(
+                        "Added {} as {} {} of {} ({})".format(
+                            u.session_id,
+                            "hidden" if args.hidden else "visible",
+                            "admin" if args.admin else "moderator",
+                            room.name,
+                            room.token,
+                        )
+                    )
+
+    if args.delete_moderators:
+        for a in args.delete_moderators:
+            if not re.fullmatch(r'[01]5[A-Fa-f0-9]{64}', a):
+                print(f"Error: '{a}' is not a valid session id", file=sys.stderr)
+                sys.exit(1)
+
+        sysadmin = SystemUser()
+
+        if global_rooms:
+            for sid in args.delete_moderators:
+                u = User(session_id=sid, try_blinding=True)
+                was_admin = u.global_admin
+                if not u.global_admin and not u.global_moderator:
+                    print(f"{u.session_id} was not a global moderator")
+                else:
+                    u.remove_moderator(removed_by=sysadmin)
+                    print(
+                        f"Removed {u.session_id} as global {'admin' if was_admin else 'moderator'}"
+                    )
+
+                if u.is_blinded and sid.startswith('05'):
+                    try:
+                        u2 = User(session_id=sid, try_blinding=False, autovivify=False)
+                        if u2.global_admin or u2.global_moderator:
+                            was_admin = u2.global_admin
+                            u2.remove_moderator(removed_by=sysadmin)
+                            print(
+                                f"Removed {u2.session_id} as global "
+                                f"{'admin' if was_admin else 'moderator'}"
+                            )
+                    except NoSuchUser:
+                        pass
+        else:
+            for sid in args.delete_moderators:
+                u = User(session_id=sid, try_blinding=True)
+                u2 = None
+                if u.is_blinded and sid.startswith('05'):
+                    try:
+                        u2 = User(session_id=sid, try_blinding=False, autovivify=False)
+                    except NoSuchUser:
+                        pass
+
+                for room in rooms:
+                    room.remove_moderator(u, removed_by=sysadmin)
+                    print(
+                        f"Removed {u.session_id} as moderator/admin of {room.name} ({room.token})"
+                    )
+                    if u2 is not None:
+                        room.remove_moderator(u2, removed_by=sysadmin)
+                        print(
+                            f"Removed {u2.session_id} as moderator/admin of {room.name} "
+                            f"({room.token})"
+                        )
+
+    if args.add_perms or args.clear_perms or args.remove_perms:
+        if global_rooms:
+            print(
+                "Error: --rooms cannot be '+' (i.e. global) when updating room permissions",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        users = []
+        if args.users:
+            users = [User(session_id=sid, try_blinding=True) for sid in args.users]
+
+        # users not specified means set room defaults
+        if not len(users):
+            for room in rooms:
+                if "read" in perms:
+                    room.default_read = perms["read"]
+                    print(
+                        ('Enabled' if room.default_read else 'Disabled')
+                        + f" default read permission in {room.token}"
+                    )
+                if "write" in perms:
+                    room.default_write = perms["write"]
+                    print(
+                        ('Enabled' if room.default_write else 'Disabled')
+                        + f" default write permission in {room.token}"
+                    )
+                if "accessible" in perms:
+                    room.default_accessible = perms["accessible"]
+                    print(
+                        ('Enabled' if room.default_accessible else 'Disabled')
+                        + f" default accessible permission in {room.token}"
+                    )
+                if "upload" in perms:
+                    room.default_upload = perms["upload"]
+                    print(
+                        ('Enabled' if room.default_upload else 'Disabled')
+                        + f" default upload permission in {room.token}"
+                    )
+        else:
+            sysadmin = SystemUser()
+            for room in rooms:
+                for user in users:
+                    room.set_permissions(user, mod=sysadmin, **perms)
+                    print(f"Updated room permissions for {user} in {room.token}")
+
+    if args.description is not None:
+        if global_rooms or all_rooms:
+            print(
+                "Error: --rooms cannot be '+' or '*' (i.e. global/all) with --description",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
         for room in rooms:
-            for user in users:
-                room.set_permissions(user, mod=sysadmin, **perms)
+            room.description = None if not args.description else args.description
+            print(f"Updated {room.token} description to:\n\n{room.description}\n")
 
 elif args.list_rooms:
     rooms = get_rooms()

@@ -7,7 +7,7 @@ from . import auth, converters  # noqa: F401
 
 from io import BytesIO
 
-import qrencode
+import qrcode
 
 import PIL.Image
 
@@ -61,8 +61,8 @@ def serve_invite_qr(room):
     if not room.default_read:
         abort(http.FORBIDDEN)
 
-    img = qrencode.encode(room.url)
+    img = qrcode.make(room.url)
     data = BytesIO()
-    img = img[-1].resize((512, 512), NEAREST)
+    img = img.resize((512, 512), NEAREST)
     img.save(data, "PNG")
     return Response(data.getvalue(), mimetype="image/png")
