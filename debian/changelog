@@ -1,3 +1,22 @@
+session-pysogs (0.3.7-1) sid; urgency=medium
+
+  [ Jason Rhinelander ]
+  * bump dev version
+  * Move tomli to setup_requires
+
+  [ zcyph ]
+  * switch qrencode to qrcode
+
+  [ Jason Rhinelander ]
+  * Update qrencode->qrcode in package dependencies
+  * Better room modification CLI arguments; allow --description modification
+  * Improve errors
+  * Improve `--verbose` description
+  * Fix room deletion when a room has reactions
+  * dev version bump
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Mon, 16 Jan 2023 16:32:46 -0400
+
 session-pysogs (0.3.6-2) sid; urgency=medium
 
   * Add ignore-new for gbp pq
