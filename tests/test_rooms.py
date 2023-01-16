@@ -4,6 +4,7 @@ import sogs.model.exc as exc
 from sogs.model.room import Room, get_rooms
 from sogs.model.file import File
 from sogs import config
+from request import sogs_put
 from util import pad64, from_now
 
 
@@ -62,6 +63,20 @@ def test_delete(room, room2):
     rooms = get_rooms()
     assert len(rooms) == 1
     assert rooms[0].token == 'test-room'
+
+
+def test_delete_populated(room, room2, user, client):
+    assert len(get_rooms()) == 2
+
+    # Tests a bug where room deletion would fail if the room had reactions
+    m = room.add_post(user, "data 1".encode(), pad64("sig 1"))
+    r = sogs_put(client, f"/room/{room.token}/reaction/{m['id']}/🍆", {}, user)
+    assert r.status_code == 200
+    room.delete()
+
+    rooms = get_rooms()
+    assert len(rooms) == 1
+    assert rooms[0].token == 'room2'
 
 
 def test_info(room):
