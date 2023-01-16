@@ -10,7 +10,7 @@ reflect that.
  1 file changed, 7 insertions(+), 6 deletions(-)
 
 diff --git a/sogs/__main__.py b/sogs/__main__.py
-index 03f6991..d65c672 100644
+index 33d11b0..f123ed7 100644
 --- a/sogs/__main__.py
 +++ b/sogs/__main__.py
 @@ -6,27 +6,28 @@ import sys
@@ -35,12 +35,12 @@ index 03f6991..d65c672 100644
 +    sogs --add-moderators 050123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef --rooms=+ --visible
  
      # Set default read/write True and upload False on all rooms
--    python3 -msogs --set-perms --add-perms rw --remove-perms u --rooms='*'
-+    sogs --set-perms --add-perms rw --remove-perms u --rooms='*'
+-    python3 -msogs --add-perms rw --remove-perms u --rooms='*'
++    sogs --add-perms rw --remove-perms u --rooms='*'
  
      # Remove overrides for user 0501234... on all rooms
--    python3 -msogs --set-perms --clear-perms rwua --rooms='*' --users 050123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-+    sogs --set-perms --clear-perms rwua --rooms='*' --users 050123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+-    python3 -msogs --clear-perms rwua --rooms='*' --users 050123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
++    sogs --clear-perms rwua --rooms='*' --users 050123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
  
       # List room info:
 -    python3 -msogs -L
