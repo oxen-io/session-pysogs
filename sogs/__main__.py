@@ -55,7 +55,9 @@ ap.add_argument('--version', '-V', action='version', version=f'PySOGS {version}'
 
 ap.add_argument('--add-room', help="Add a room with the given token", metavar='TOKEN')
 ap.add_argument(
-    '--name', help="Set the room's initial name for --add-room; if omitted use the token name"
+    '--name',
+    help="Set or updates a room's name (with --add-room or --rooms); if omitted when adding a "
+    "room then uses the token name",
 )
 ap.add_argument(
     '--description',
@@ -166,6 +168,7 @@ args = ap.parse_args()
 
 update_room = not args.add_room and (
     args.description is not None
+    or args.name is not None
     or args.add_moderators
     or args.delete_moderators
     or args.add_perms
@@ -570,6 +573,19 @@ elif update_room:
         for room in rooms:
             room.description = None if not args.description else args.description
             print(f"Updated {room.token} description to:\n\n{room.description}\n")
+
+    if args.name is not None:
+        if global_rooms or all_rooms:
+            print(
+                "Error: --rooms cannot be '+' or '*' (i.e. global/all) with --name",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        for room in rooms:
+            old = room.name
+            room.name = args.name
+            print(f"Changed {room.token} name from '{old}' to '{room.name}'")
 
 elif args.list_rooms:
     rooms = get_rooms()
