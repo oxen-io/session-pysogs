@@ -960,3 +960,33 @@ def delete_all_posts(room, sid):
     if not deleted:
         abort(http.NOT_FOUND)
     return jsonify({})
+
+
+@rooms.delete("/rooms/all/<SessionID:sid>")
+def delete_user_posts_from_all_rooms(sid):
+    """
+    Deletes all posts from all rooms by a given user.
+
+    # URL Parameters
+
+    - `sid` — the session id of the user to ban
+
+    # Return value
+
+    A JSON dict with the keys:
+
+    - `total` — The total number of posts deleted across all rooms.
+    - `rooms` — A dict of room tokens and their deletion counts.
+    """
+    deletions = {}
+    total = 0
+    user = muser.User(session_id=sid, autovivify=False)
+    for room in mroom.get_accessible_rooms(g.user):
+        try:
+            count, _ = room.delete_all_posts(user, deleter=g.user)
+            total += count
+            deletions[room.token] = count
+        except exc.BadPermission:
+            pass
+
+    return jsonify({"total": total, "rooms": deletions})
