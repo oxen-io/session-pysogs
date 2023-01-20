@@ -293,7 +293,7 @@ def ban_user(sid):
 
     The user's messages are not deleted by this request.  In order to ban and delete all messages
     use the [`/sequence`](#post-sequence) endpoint to bundle a `/user/.../ban` with a
-    [`/user/.../deleteMessages`](#post-usersiddeleteMessages) request.
+    [`/rooms/all/...`](#delete-roomsallsid) request.
 
     # Return value
 
