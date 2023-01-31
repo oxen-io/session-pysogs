@@ -17,6 +17,7 @@ from .exc import (
     PostRateLimited,
     InvalidData,
 )
+from model.bot import Bot
 
 import os
 import random
@@ -71,6 +72,9 @@ class Room:
         default_accessible - True if default user permissions include accessible permission
         default_write - True if default user permissions includes write permission
         default_upload - True if default user permissions includes file upload permission
+        
+        NEW:
+        bot_mode - true if bot moderator is actively on patrol
     """
 
     def __init__(self, row=None, *, id=None, token=None):
@@ -79,6 +83,12 @@ class Room:
         looking up this raises a NoSuchRoom if no room with that token/id exists.
         """
         self._refresh(id=id, token=token, row=row)
+        self.bot_mode = False
+        self.bot = None
+
+    def add_bot(self, _bot: Bot):
+        self.bot = _bot
+        self.bot_mode = True
 
     def _refresh(self, *, id=None, token=None, row=None, perms=False):
         """
