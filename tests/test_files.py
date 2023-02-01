@@ -156,7 +156,6 @@ def test_no_file_crosspost(client, room, room2, user, global_admin):
 
 
 def _file_upload(client, room, user, *, unsafe=False, utf=False, filename):
-
     url_post = f"/room/{room.token}/file"
     file_content = random(1024)
     filename_escaped = urllib.parse.quote(filename.encode('utf-8'))

@@ -3,7 +3,6 @@ import logging
 
 
 def migrate(conn, *, check_only):
-
     from .. import db
 
     fix_fk = False

@@ -446,7 +446,6 @@ def set_permissions(room, sid):
 
     with db.transaction():
         with user.check_blinding() as u:
-
             if req.get('unschedule') is not False and any(
                 p in perms for p in ('read', 'write', 'upload')
             ):

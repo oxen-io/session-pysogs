@@ -360,21 +360,15 @@ def post_message(room: Room):
     """
     req = request.json
 
-    if room.bot_mode:
-      room.bot.receive_message(
-          user = g.user,
-          data = utils.decode_base64(req.get('data')),
-          sig = utils.decode_base64(req.get('signature')),
-          files = [int(x) for x in req.get('files', [])])
-    else:
-      msg = room.add_post(
-          g.user,
-          data=utils.decode_base64(req.get('data')),
-          sig=utils.decode_base64(req.get('signature')),
-          whisper_to=req.get('whisper_to'),
-          whisper_mods=bool(req.get('whisper_mods')),
-          files=[int(x) for x in req.get('files', [])],
-      )
+    msg = room.default_bot.receive_message(
+        user=g.user,
+        room=room,
+        data=utils.decode_base64(req.get('data')),
+        sig=utils.decode_base64(req.get('signature')),
+        whisper_to=req.get('whisper_to'),
+        whisper_mods=bool(req.get('whisper_mods')),
+        files=[int(x) for x in req.get('files', [])],
+    )
 
     return utils.jsonify_with_base64(msg), http.CREATED
 

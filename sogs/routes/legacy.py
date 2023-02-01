@@ -186,7 +186,6 @@ def legacy_transform_message(m):
 
 @legacy.post("/messages")
 def handle_post_legacy_message():
-
     user, room = legacy_check_user_room(write=True)
 
     req = request.json

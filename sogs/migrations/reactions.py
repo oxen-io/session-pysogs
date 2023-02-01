@@ -3,7 +3,6 @@ import logging
 
 
 def migrate(conn, *, check_only):
-
     from .. import db
 
     if 'user_reactions' in db.metadata.tables:
@@ -177,7 +176,6 @@ END
         )
 
     else:  # postgresql
-
         if 'seqno_data' not in db.metadata.tables['messages'].c:
             conn.execute(
                 """
