@@ -7,12 +7,15 @@ from .exc import BadPermission, PostRateLimited
 from .. import utils
 from ..omq import send_mule
 from .user import User
+from .bot import Bot
 from .room import Room
 from .message import Message
 from .filter import SimpleFilter
 from .exc import InvalidData
+import heapq
 
-from typing import Optional, List, Union
+from dataclasses import dataclass, field
+from typing import Optional, List, Union, Any
 import time
 
 """
@@ -23,10 +26,8 @@ Complications:
         - what does the bot do with the message they tried to send?
             - can store locally
             - user sends reply
-            - bot inserts it into room
-"""
+            - bot inserts it into room (?)
 
-"""
 Control Flow:
     1) message comes in HTTP request
     2) unpacked/parsed/verified/permissions checked
@@ -38,12 +39,44 @@ Control Flow:
 """
 
 
-class BotHandler:
+@dataclass(order=True)
+class PriorityTuple(tuple):
+    priority: int
+    item: Any = field(compare=False)
+
+
+# Simple "priority queue" of bots implemented using a dict with heap
+# invariance maintained by qheap algorithm
+# TODO: when bots are designed basically, add methods for polling them
+#   and receiving their judgments
+class BotQueue:
+    def __init__(self) -> None:
+        self.queue = {}
+
+    def _qsize(self) -> int:
+        return len(self.queue.keys())
+
+    def _empty(self) -> bool:
+        return not self._qsize()
+
+    def _peek(self, priority: int):
+        return self.queue.get(priority)
+
+    def _put(self, item: PriorityTuple):
+        temp = list(self.queue.items())
+        heapq.heappush(temp, item)
+        self.queue = dict(temp)
+
+    def _get(self):
+        return heapq.heappop(self.queue)
+
+
+class Manager:
     """
     Class representing an interface that manages active bots
 
     Object Properties:
-        bots - list of bots attached to room
+        queue - BotQueue object
     """
 
     def __init__(
@@ -54,8 +87,27 @@ class BotHandler:
         id: Optional[int] = None,
         session_id: Optional[int] = None,
     ) -> None:
-        # immutable attributes
         self.id = id
+        self.queue = BotQueue()
+
+    def qempty(self):
+        return not self.queue._empty()
+
+    def add_bot(self, bot: Bot, priority: int = None):
+        if not priority:
+            # if no priority is given, lowest priority is assigned
+            priority = self.qsize()
+        else:
+            # if priority is already taken, find next lowest
+            while self.queue.get(priority):
+                priority += 1
+        self.queue._put(PriorityTuple(priority, bot))
+
+    def remove_bot(self):
+        do_something = 3
+
+    def peek(self, priority: int):
+        return self.queue._peek(priority)
 
     def check_permission_for(
         self,
@@ -235,6 +287,14 @@ class BotHandler:
                 msg['whisper_mods'] = whisper_mods
                 if whisper_to:
                     msg['whisper_to'] = whisper_to.session_id
+
+        if room._bot_status():
+            add_bot_logic = 3
+            """
+                TODO: add logic for bots receiving message and doing
+                bot things. The bots should be queried in terms of
+                priority,
+            """
 
         send_mule("message_posted", msg["id"])
         return msg
