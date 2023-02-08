@@ -1,6 +1,7 @@
 from .. import http, utils
 from . import auth
 from model.room import Room
+from ..omq import send_mule
 
 from flask import abort, jsonify, g, Blueprint, request
 
@@ -360,15 +361,15 @@ def post_message(room: Room):
     """
     req = request.json
 
-    msg = room.default_bot.receive_message(
-        user=g.user,
-        room=room,
-        data=utils.decode_base64(req.get('data')),
-        sig=utils.decode_base64(req.get('signature')),
-        whisper_to=req.get('whisper_to'),
-        whisper_mods=bool(req.get('whisper_mods')),
-        files=[int(x) for x in req.get('files', [])],
-    )
+    send_mule(command="send_to_handler", 
+              user=g.user,
+              room=room,
+              data=utils.decode_base64(req.get('data')),
+              sig=utils.decode_base64(req.get('signature')),
+              whisper_to=req.get('whisper_to'),
+              whisper_mods=bool(req.get('whisper_mods')),
+              files=[int(x) for x in req.get('files', [])],
+              prefix="handler.")
 
     return utils.jsonify_with_base64(msg), http.CREATED
 

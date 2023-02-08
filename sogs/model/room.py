@@ -79,18 +79,13 @@ class Room:
         looking up this raises a NoSuchRoom if no room with that token/id exists.
         """
         self._refresh(id=id, token=token, row=row)
-        self.active_bot: bool = False
-        self.default_bot: Bot = bot if bot else Bot(_rooms=[self])
+        self._active_bot: bool = False
         self.rate_limit_size = 5
         self.rate_limit_interval = 16.0
 
-    def activate_moderation(self):
-        self.default_bot.status[self] = True
-        self.active_bot = True
-
-    def filter_only(self):
-        self.default_bot.status[self] = False
-        self.active_bot = False
+    @property.getter
+    def _bot_status(self) -> bool:
+        return self._active_bot
 
     def _refresh(self, *, id=None, token=None, row=None, perms=False):
         """
