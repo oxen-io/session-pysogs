@@ -5,7 +5,7 @@ from ..db import query
 from ..web import app
 from .exc import BadPermission, PostRateLimited
 from .. import utils
-from ..omq import send_mule
+from ..omq import omq_global
 from .user import User
 from .room import Room
 from .message import Message
@@ -263,5 +263,5 @@ class Bot:
                 if whisper_to:
                     msg['whisper_to'] = whisper_to.session_id
 
-        send_mule("message_posted", msg["id"])
+        omq_global.send_mule("message_posted", msg["id"])
         return msg

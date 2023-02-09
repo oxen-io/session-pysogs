@@ -1,7 +1,7 @@
 from .. import config, crypto, db, utils, session_pb2 as protobuf
 from ..db import query
 from ..hashing import blake2b
-from ..omq import send_mule
+from ..omq import omq_global
 from ..web import app
 from .user import User
 from .file import File
@@ -727,7 +727,7 @@ class Room:
                 # If the edit includes new attachments then own them:
                 self._own_files(msg_id, files, user)
 
-        send_mule("message_edited", msg_id)
+        omq_global.send_mule("message_edited", msg_id)
 
     def delete_posts(self, message_ids: List[int], deleter: User):
         """

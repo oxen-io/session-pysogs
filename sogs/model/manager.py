@@ -5,8 +5,8 @@ from ..db import query
 from ..web import app
 from .exc import BadPermission, PostRateLimited
 from .. import utils
-from ..omq import send_mule
 from .user import User
+from ..omq import omq_global
 from .bot import Bot
 from .room import Room
 from .message import Message
@@ -296,5 +296,5 @@ class Manager:
                 priority,
             """
 
-        send_mule("message_posted", msg["id"])
+        omq_global.send_mule("message_posted", msg["id"])
         return msg
