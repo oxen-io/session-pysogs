@@ -1,22 +1,17 @@
 from __future__ import annotations
-from .. import config, crypto, db, utils, session_pb2 as protobuf
+from .. import config, crypto, session_pb2 as protobuf
 import random
 
-from .. import crypto, db, config
+from .. import crypto, config
 from ..db import query
 from ..hashing import blake2b
-from ..web import app
 from nacl.signing import SigningKey
-from .exc import NoSuchUser, BadPermission, PostRejected
+from .exc import PostRejected
 from sogs.model.user import User
-from sogs.model.bot import Bot
 from sogs.model.room import Room, alphabet_filter_patterns
 from sogs.model.post import Post
-from .exc import InvalidData
 
-from typing import Optional, List, Union
 import time
-import contextlib
 
 
 class SimpleFilter:
@@ -28,8 +23,7 @@ class SimpleFilter:
         current_message - reference to current data being analyzed
     """
 
-    def __init__(self, _bot: Bot, _room: Room = None):
-        self.bot: Bot = _bot
+    def __init__(self):
         self.current_message: Post = None
 
     def filtering(self):

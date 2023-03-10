@@ -5,32 +5,75 @@ from ..db import query
 from ..web import app
 from .exc import BadPermission, PostRateLimited
 from .. import utils
-from ..omq import omq_global
 from .user import User
+from ..omq import omq_global
 from .room import Room
-from .message import Message
-from .filter import SimpleFilter
 from .exc import InvalidData
+import heapq
 
-from typing import Optional, List, Union
+from dataclasses import dataclass, field
+from typing import Optional, List, Union, Any
 import time
 
+"""
+Complications:
+    - given captcha bot
+        - new user (not approved) posts message
+        - we need bot to reply with whisper to that user with simple problem
+        - what does the bot do with the message they tried to send?
+            - can store locally
+            - user sends reply
+            - bot inserts it into room (?)
 
-class Bot:
+Control Flow:
+    1) message comes in HTTP request
+    2) unpacked/parsed/verified/permissions checked
+    3) comes into relevant route (ex: add_post())
+    4) sends off to mule to be handled by bots
+    5) mule has ordered list of bots by priority
+    6) mule passes message to bots, which have fixed return values (insert, do not insert)
+    7) if all bots approve, mule replies to worker with go ahead or vice versa for no go
+"""
+
+
+@dataclass(order=True)
+class PriorityTuple(tuple):
+    priority: int
+    item: Any = field(compare=False)
+
+
+# Simple "priority queue" of bots implemented using a dict with heap
+# invariance maintained by qheap algorithm
+# TODO: when bots are designed basically, add methods for polling them
+#   and receiving their judgments
+class BotQueue:
+    def __init__(self) -> None:
+        self.queue = {}
+
+    def _qsize(self) -> int:
+        return len(self.queue.keys())
+
+    def _empty(self) -> bool:
+        return not self._qsize()
+
+    def _peek(self, priority: int):
+        return self.queue.get(priority)
+
+    def _put(self, item: PriorityTuple):
+        temp = list(self.queue.items())
+        heapq.heappush(temp, item)
+        self.queue = dict(temp)
+
+    def _get(self):
+        return heapq.heappop(self.queue)
+
+
+class ClientManager:
     """
-    Class representing a simple bot to manage open group server
+    Class representing an interface that manages active bots
 
     Object Properties:
-        id - database primary key for user row
-        status - bot active(T)/passive(F) moderation status (key = room, value = bool)
-        rooms - reference to room(s) in which bot is active
-        filter - reference to filter object paired with bot
-        perm_cache - dict storing user info/status (synced from all rooms patrolled)
-        session_id - hex encoded session_id of the bot
-        banned - default to false
-        global_admin - default to true for bot
-        global_moderator - default to true for bot
-        visible_mod - default to true for bot
+        queue - BotQueue object
     """
 
     def __init__(
@@ -41,48 +84,42 @@ class Bot:
         id: Optional[int] = None,
         session_id: Optional[int] = None,
     ) -> None:
-        # immutable attributes
-        self._banned: bool = False
-        self._global_admin: bool = False
-        self._global_moderator: bool = False
-        self._visible_mod: bool = False
         self.id = id
+        self.filter = False
+        self.bqueue = BotQueue()
+        self.clients = []
 
-        # operational attributes
-        self.rooms: List[Room] = _rooms
-        self.status = {r: False for r in self.rooms}
-        self.filter = SimpleFilter(_bot=self)
-        self.perm_cache = {}
-        self.current_message: Message = None
-        self.nlp_model = None
-        self.language = 'English'
-        self.word_blacklist = ['placeholderlist', 'until', 'we', 'decide', 'naughty', 'words']
 
-    def __setattr__(self, __name: str, __value) -> None:
-        if __name in ['_banned', '_global_admin', '_global_moderator', '_visible_mod']:
-            raise AttributeError('Cannot modify bots')
+    def bqempty(self):
+        return not self.bqueue._empty()
+    
+
+    def register_client(self, cid, authlevel, bot: bool = False, priority: int = None):
+        if not bot:
+            # add client to self.clients
+            return
+        
+        if not priority:
+            # if no priority is given, lowest priority is assigned
+            priority = self.qsize()
         else:
-            setattr(self, __name, __value)
+            # if priority is already taken, find next lowest
+            while self.queue.get(priority):
+                priority += 1
+        self.bqueue._put(PriorityTuple(priority, bot))
 
-    def __delattr__(self, __name: str) -> None:
-        if __name in ['_banned', '_global_admin', '_global_moderator', '_visible_mod']:
-            raise AttributeError('Cannot modify bots')
-        else:
-            delattr(self, __name)
 
-    def _link_room(self, _room: Room):
-        self.rooms.append(_room)
-        self.filter.rooms.append(_room)
+    def deregister_client(self, cid, bot: bool = False):
+        if not bot:
+            # remove client from clients list
+            return
+        
+        # remove bot from bot queue
+        
 
-    def _unlink_room(self, _room: Room):
-        self.rooms.remove(_room)
+    def peek(self, priority: int):
+        return self.bqueue._peek(priority)
 
-        if not self.rooms:
-            delete_bot_function_goes_here = True
-
-    def _refresh_cache(self):
-        for r in self.rooms:
-            self.perm_cache = self.perm_cache | r._perm_cache
 
     def check_permission_for(
         self,
@@ -201,7 +238,7 @@ class Bot:
         if whisper_to and not isinstance(whisper_to, User):
             whisper_to = User(session_id=whisper_to, autovivify=True, touch=False)
 
-        filtered = self.filter.read_message(user, data, room)
+        filtered = (self.filter)[False, self.filter.read_message(user, data, room)]
 
         with db.transaction():
             if room.rate_limit_size and not self.check_admin(user):
@@ -262,6 +299,14 @@ class Bot:
                 msg['whisper_mods'] = whisper_mods
                 if whisper_to:
                     msg['whisper_to'] = whisper_to.session_id
+
+        if room._bot_status():
+            add_bot_logic = 3
+            """
+                TODO: add logic for bots receiving message and doing
+                bot things. The bots should be queried in terms of
+                priority,
+            """
 
         omq_global.send_mule("message_posted", msg["id"])
         return msg

@@ -136,6 +136,10 @@ def get_int_param(name, default=None, *, required=False, min=None, max=None, tru
         return default
 
     try:
+        if (val is "true" or val is "True" or val is True):
+            val = 1
+        if (val is "false" or val is "False" or val is False):
+            val = 0
         val = int(val)
     except Exception:
         abort(http.BAD_REQUEST)

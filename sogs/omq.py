@@ -4,11 +4,14 @@
 import oxenmq
 from oxenc import bt_serialize
 
+from routes import omq_auth
 from . import crypto, config
 from .postfork import postfork
-from .model.manager import Manager
+from .model.clientmanager import ClientManager
+
 
 omq_global = None
+
 
 class OMQ:
     @postfork
@@ -23,7 +26,7 @@ class OMQ:
         )
         self._omq.ephemeral_routing_id = True
 
-        self.manager = Manager()
+        self.manager = ClientManager()
         self.test_suite = False
 
         if uwsgi.mule_id() != 0:
@@ -32,24 +35,27 @@ class OMQ:
 
         from .web import app  # Imported here to avoid circular import
 
-        app.logger.debug(f"Starting oxenmq connection to mule in worker {uwsgi.worker_id()}")
-
+        app.logger.debug(f"Starting oxenmq connection to mule in worker {uwsgi.worker_id()}...")
         self._omq.start()
-        app.logger.debug("Started, connecting to mule")
+
+        app.logger.debug("Started, connecting to mule...")
         self.mule_conn = self._omq.connect_remote(oxenmq.Address(config.OMQ_INTERNAL))
 
-        app.logger.debug(f"worker {uwsgi.worker_id()} connected to mule OMQ")
+        app.logger.debug(f"OMQ worker {uwsgi.worker_id()} connected to mule")
 
         global omq_global
         omq_global = self
 
-    def add_bot(self):
-        self.manager.add_bot()
+
+    def register_client(self, cid, authlevel, bot: bool = False, priority: int = None):
+        self.manager.register_client(cid, authlevel, bot, priority)
         # TODO: add omq logic
 
-    def remove_bot(self):
-        self.manager.remove_bot()
+
+    def deregister_client(self, cid, bot: bool = False):
+        self.manager.register_client()
         # TODO: add omq logic
+
 
     def send_mule(self, command, *args, prefix="worker."):
         """

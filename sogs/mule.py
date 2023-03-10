@@ -9,7 +9,7 @@ from .web import app
 from . import cleanup
 from . import config
 from .omq import OMQ
-from .model.manager import Manager
+from .model.clientmanager import ClientManager
 
 
 # This is the uwsgi "mule" that handles things not related to serving HTTP requests:
@@ -91,10 +91,10 @@ class Mule:
         worker.add_command("messages_deleted", self.messages_deleted)
         worker.add_command("message_edited", self.message_edited)
 
-        ## NEW CODE FOR BOT
+        # new client code
         handler = self._omq.add_category("handler", access_level=oxenmq.AuthLevel.admin)
-        handler.add_command("add_bot", omq.add_bot)
-        handler.add_command("remove_bot", omq.remove_bot)
+        handler.add_command("register_client", omq.register_client)
+        handler.add_command("deregister_client", omq.deregister_client)
         handler.add_command("send_to_handler", omq.manager.receive_message)
 
         app.logger.debug("Mule starting omq")
