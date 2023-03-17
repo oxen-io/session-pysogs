@@ -9,6 +9,12 @@ from flask import abort, jsonify, g, Blueprint, request
 
 # User-related routes
 
+"""
+    TOFIX:
+        remove HTTP shit from requests
+
+"""
+
 
 clients = Blueprint('clients', __name__)
 
@@ -18,7 +24,7 @@ def register(cid):
     """
     Registers a client with SOGS OMQ instance. In this context, "client" refers to any entity 
     seeking to create an authenticated OMQ connection. This may be, but is not limited to,
-    a user or a bot.
+    a user or a bot
 
     ## URL Parameters
 
@@ -80,9 +86,7 @@ def register_bot(cid, authlevel, priority):
 @clients.post("/client/registered/client/<cid>")
 def register_client(cid, authlevel):
     """
-    Registers a non-bot client with SOGS OMQ instance. In this context, "client" refers to any entity 
-    seeking to create an authenticated OMQ connection. This may be, but is not limited to,
-    a user or a bot.
+    Registers a non-bot client with SOGS OMQ instance
 
     ## URL Parameters
 
@@ -125,7 +129,6 @@ def unregister(cid):
     client = (bot)[unregister_client(cid), unregister_bot(cid)]
 
     return client
-
 
 
 @clients.post("/client/deregistered/client/<cid>")

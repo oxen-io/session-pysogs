@@ -92,6 +92,7 @@ class Mule:
         worker.add_command("message_edited", self.message_edited)
 
         # new client code
+        # TOFIX: use add_request_command to handle a response value
         handler = self._omq.add_category("handler", access_level=oxenmq.AuthLevel.admin)
         handler.add_command("register_client", omq.register_client)
         handler.add_command("deregister_client", omq.deregister_client)
@@ -104,3 +105,17 @@ class Mule:
         # it will work.  (And so be careful not to recurse!)
         app.logger.debug("Mule connecting to self")
         omq.mule_conn = omq.connect_inproc(on_success=None, on_failure=self.inproc_fail)
+
+
+
+"""
+TOFIX: oxenmq calls should pass as oxenmq.Message not as JSON
+
+def _on_subscribe(self, msg: oxenmq.Message):                                                                          
+        code, message = None, None  # If still None at the end, we send a reply
+        try:                                                                                                                                                                                                                      
+            args = json.loads(msg.data()[0])
+                                                                                                                                   
+            pubkey = extract_hex_or_b64(args, "pubkey", 33)
+
+"""

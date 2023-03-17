@@ -105,7 +105,7 @@ def handle_omq_registration(sid, authlevel):
     """
     Here goes ye olde OMQ registration logic. We need to decide what identification will
     be used to verify every connected client s.t. that information persists for all subsequent
-    requests.
+    requests
 
     In this registration, we need to set:
         g.client_id
@@ -124,3 +124,16 @@ def verify_omq_auth():
     if hasattr(g, 'client_id') and hasattr(g, 'client_authlevel') and not g.client_reauth:
         app.logger.debug(f"Client {g.client_id} already authenticated for {g.client_authlevel} access")
         return
+
+
+
+"""
+    TOFIX:
+        - add some type of dict in omq_global to map conn_ID (onenmq conn ID) to session_ID/other info
+            - do not persist:
+                - room specific access: check every time it makes a request because it can change
+                - values that admin level can change
+
+    
+
+"""

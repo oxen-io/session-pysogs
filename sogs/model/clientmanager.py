@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from typing import Optional, List, Union, Any
 import time
 
+
 """
 Complications:
     - given captcha bot
@@ -78,11 +79,8 @@ class ClientManager:
 
     def __init__(
         self,
-        _rooms: List[Room],
-        row=None,
         *,
         id: Optional[int] = None,
-        session_id: Optional[int] = None,
     ) -> None:
         self.id = id
         self.filter = False

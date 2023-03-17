@@ -310,6 +310,11 @@ def message_single(room: Room, msg_id):
     return utils.jsonify_with_base64(msgs[0])
 
 
+"""
+    TOFIX:
+        - add some decorator to this s.t. it routes it to the correct OMQ endpoint
+"""
+
 @messages.post("/room/<Room:room>/message")
 @auth.user_required
 def post_message(room: Room):
