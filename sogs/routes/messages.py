@@ -1,15 +1,14 @@
 from .. import http, utils
 from . import auth
 from model.room import Room
-from ..omq import omq_global
+from ..omq import omq_global, blueprints_global
 
 from flask import abort, jsonify, g, Blueprint, request
 
 # Room message retrieving/submitting endpoints
 
-
 messages = Blueprint('messages', __name__)
-
+blueprints_global['messages'] = messages
 
 def qs_reactors():
     return utils.get_int_param('reactors', 4, min=0, max=20, truncate=True)

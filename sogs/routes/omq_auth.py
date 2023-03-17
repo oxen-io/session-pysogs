@@ -3,10 +3,11 @@ import auth
 from ..web import app
 from ..db import query
 from .. import config, crypto, http, utils
+from ..omq import omq_global, blueprints_global
 from ..model.user import User
 from ..hashing import blake2b
 
-from flask import request, abort, Response, g
+from flask import request, abort, Response, g, Blueprint
 import time
 import nacl
 from nacl.signing import VerifyKey
@@ -16,6 +17,30 @@ import sqlalchemy.exc
 from functools import wraps
 
 # Authentication for handling OMQ requests
+
+omq = Blueprint('endpoint', __name__)
+
+def endpoint(f):
+    """ 
+    Default endpoint for omq routes to pass requests to; constructs flask HTTP request
+
+    Message (request) components:
+
+    "blueprint" - the flask blueprint
+    "query" - the request query 
+    "pubkey" - pk of client making request
+    "params" - a json value to dump as the the query parameters
+
+        Example:
+            full request: `@omq.endpoint("messages", "room.<Room>.messages.since.<seqno>", {'Room:room', 'int:seqno'})`
+                blueprint: 'messages'
+                query: 'room.<Room>.messages.since.<seqno>'
+                params: {'Room:room', 'int:seqno'}
+    """
+
+    @wraps(f)
+    def endpoint_wrapper(*args, blueprint, query, pubkey, params, **kwargs):
+        bp = blueprints_global['messages']
 
 
 def abort_request(code, msg, warn=True):
@@ -27,16 +52,20 @@ def abort_request(code, msg, warn=True):
 
 
 def require_client():
-    """ Requires that an authenticated client was found in the OMQ instance; aborts with 
-    UNAUTHORIZED if the request has no client """
+    """ 
+    Requires that an authenticated client was found in the OMQ instance; aborts with 
+    UNAUTHORIZED if the request has no client 
+    """
     if g.client_id is None:
         abort_request(http.UNAUTHORIZED, 'OMQ client authentication required')
 
 
 def client_required(f):
-    """ Decorator for an endpoint that requires a client; this calls require_client() at the 
+    """ 
+    Decorator for an endpoint that requires a client; this calls require_client() at the 
     beginning of the request to abort the request as UNAUTHORIZED if the client has not been 
-    previously authenticated"""
+    previously authenticated 
+    """
 
     @wraps(f)
     def required_client_wrapper(*args, **kwargs):
@@ -126,14 +155,10 @@ def verify_omq_auth():
         return
 
 
-
 """
     TOFIX:
         - add some type of dict in omq_global to map conn_ID (onenmq conn ID) to session_ID/other info
             - do not persist:
                 - room specific access: check every time it makes a request because it can change
                 - values that admin level can change
-
-    
-
 """

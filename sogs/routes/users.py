@@ -3,6 +3,7 @@ from ..model import room as mroom
 from ..model.user import User
 from ..web import app
 from . import auth
+from ..omq import omq_global, blueprints_global
 
 from flask import abort, jsonify, g, Blueprint, request
 
@@ -10,6 +11,7 @@ from flask import abort, jsonify, g, Blueprint, request
 
 
 users = Blueprint('users', __name__)
+blueprints_global['users'] = users
 
 
 def extract_rooms_or_global(req, admin=True):

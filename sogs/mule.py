@@ -86,17 +86,21 @@ class Mule:
         self._omq.add_timer(cleanup.cleanup, timedelta(seconds=cleanup.INTERVAL))
 
         # Commands other workers can send to us, e.g. for notifications of activity for us to know about
-        worker = self._omq.add_category("worker", access_level=oxenmq.AuthLevel.admin)
+        worker = omq._omq.add_category("worker", access_level=oxenmq.AuthLevel.admin)
         worker.add_command("message_posted", self.message_posted)
         worker.add_command("messages_deleted", self.messages_deleted)
         worker.add_command("message_edited", self.message_edited)
 
-        # new client code
-        # TOFIX: use add_request_command to handle a response value
-        handler = self._omq.add_category("handler", access_level=oxenmq.AuthLevel.admin)
-        handler.add_command("register_client", omq.register_client)
-        handler.add_command("deregister_client", omq.deregister_client)
-        handler.add_command("send_to_handler", omq.manager.receive_message)
+        # client code
+        handler = omq._omq.add_category("handler", access_level=oxenmq.AuthLevel.admin)
+        handler.add_request_command("register_client", omq.register_client)
+        handler.add_request_command("deregister_client", omq.deregister_client)
+        handler.add_request_command("send_to_handler", omq.manager.receive_message)
+
+        # proxy handler for subrequest queue
+        internal = omq._omq.add_category("internal", access_level=oxenmq.AuthLevel.admin)
+        internal.add_request_command("get_next_request", omq.get_next_request)
+        internal.add_request_command("subreq_response", omq.subreq_response)
 
         app.logger.debug("Mule starting omq")
         self._omq.start()

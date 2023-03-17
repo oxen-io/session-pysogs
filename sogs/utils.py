@@ -4,7 +4,6 @@ from . import http
 
 import base64
 
-
 from flask import request, abort, Response
 import json
 from typing import Union, Tuple

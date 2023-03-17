@@ -2,7 +2,7 @@ from .. import db, http, utils
 from ..model import room as mroom
 from ..model.user import User
 from ..web import app
-from ..omq import omq_global
+from ..omq import omq_global, blueprints_global
 from . import omq_auth
 
 from flask import abort, jsonify, g, Blueprint, request
@@ -15,8 +15,8 @@ from flask import abort, jsonify, g, Blueprint, request
 
 """
 
-
 clients = Blueprint('clients', __name__)
+blueprints_global['clients'] = clients
 
 
 @omq_auth.first_request
@@ -28,7 +28,7 @@ def register(cid):
 
     ## URL Parameters
 
-        - 'cid': the client ID of the given client to be registered with the SOGS instance
+        - 'cid': the client ID (session ID) of the given client to be registered with the SOGS instance
 
     ## Query Parameters
 
@@ -61,7 +61,7 @@ def register_bot(cid, authlevel, priority):
 
     ## URL Parameters
 
-        - 'cid': the client ID of the given client to be registered with the SOGS instance
+        - 'cid': the client ID (session ID) of the given client to be registered with the SOGS instance
 
     ## Body Parameters
 
@@ -73,11 +73,12 @@ def register_bot(cid, authlevel, priority):
     """
 
     client = omq_global.send_mule(
-        command="register_client",
+        command='register_client',
         cid=cid,
         authlevel=authlevel,
-        bot=True,
-        priority=priority
+        bot=1,
+        priority=priority,
+        prefix='handler'
     )
 
     return client
@@ -90,7 +91,7 @@ def register_client(cid, authlevel):
 
     ## URL Parameters
 
-        - 'cid': the client ID of the given client to be registered with the SOGS instance
+        - 'cid': the client ID (session ID) of the given client to be registered with the SOGS instance
 
     ## Body Parameters
 
@@ -100,11 +101,12 @@ def register_client(cid, authlevel):
     """
 
     client = omq_global.send_mule(
-        command="register_client",
+        command='register_client',
         cid=cid,
         authlevel=authlevel,
-        bot=False,
-        priority=None
+        bot=0,
+        priority=None,
+        prefix='handler'
     )
 
     return client
@@ -117,7 +119,7 @@ def unregister(cid):
 
     ## URL Parameters
 
-        - 'cid': the client ID of the given client to be registered with the SOGS instance
+        - 'cid': the client ID (session ID) of the given client to be registered with the SOGS instance
 
     ## Query Parameters
 
@@ -136,9 +138,10 @@ def unregister(cid):
 def unregister_client(cid):
 
     client = omq_global.send_mule(
-        command="register_client",
+        command='unregister_client',
         cid=cid,
-        bot=False
+        bot=0,
+        prefix='handler'
     )
     
     return client
@@ -149,9 +152,10 @@ def unregister_client(cid):
 def unregister_bot(cid):
     
     client = omq_global.send_mule(
-        command="register_client",
+        command='unregister_bot',
         cid=cid,
-        bot=True
+        bot=1,
+        prefix='handler'
     )
 
     return client

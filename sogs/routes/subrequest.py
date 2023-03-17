@@ -29,7 +29,7 @@ def make_subrequest(
     body - the bytes content of the body of a POST/PUT method.  If specified then content_type will
     default to 'application/octet-stream'.
     json - a json value to dump as the body of the request.  If specified then content_type will
-    default to 'applicaton/json'.
+    default to 'application/json'.
     user_reauth - if True then we allow user re-authentication on the subrequest based on its
     X-SOGS-* headers; if False (the default) then the user auth on the outer request is preserved
     (even if it was None) and inner request auth headers will be ignored.

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import oxenmq
+
 from .. import crypto, db, config
 from ..db import query
 from ..web import app
@@ -92,7 +94,7 @@ class ClientManager:
         return not self.bqueue._empty()
     
 
-    def register_client(self, cid, authlevel, bot: bool = False, priority: int = None):
+    def register_client(self, conn_id, cid, authlevel, bot, priority):
         if not bot:
             # add client to self.clients
             return
@@ -107,7 +109,7 @@ class ClientManager:
         self.bqueue._put(PriorityTuple(priority, bot))
 
 
-    def deregister_client(self, cid, bot: bool = False):
+    def deregister_client(self, cid, bot):
         if not bot:
             # remove client from clients list
             return

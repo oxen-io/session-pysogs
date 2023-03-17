@@ -1,5 +1,6 @@
 from .. import config, db, http
 from ..model import room as mroom, exc, user as muser
+from ..omq import omq_global, blueprints_global
 from ..web import app
 from . import auth
 
@@ -13,6 +14,7 @@ import time
 
 
 rooms = Blueprint('rooms', __name__)
+blueprints_global['rooms'] = rooms
 
 
 def get_room_info(room):
