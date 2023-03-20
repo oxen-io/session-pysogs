@@ -1,14 +1,15 @@
 from .. import http, utils
-from . import auth
+from . import auth, omq_auth
 from model.room import Room
-from ..omq import omq_global, blueprints_global
+from ..omq import omq_global
+from ..web import app
 
 from flask import abort, jsonify, g, Blueprint, request
 
 # Room message retrieving/submitting endpoints
 
 messages = Blueprint('messages', __name__)
-blueprints_global['messages'] = messages
+app.register_blueprint(messages)
 
 
 def qs_reactors():
@@ -367,8 +368,7 @@ def post_message(room: Room):
     """
     req = request.json
 
-    msg = omq_global.send_mule(
-        command="send_to_handler",
+    msg = omq_global.manager.receive_message(
         user=g.user,
         room=room,
         data=utils.decode_base64(req.get('data')),
@@ -376,7 +376,6 @@ def post_message(room: Room):
         whisper_to=req.get('whisper_to'),
         whisper_mods=bool(req.get('whisper_mods')),
         files=[int(x) for x in req.get('files', [])],
-        prefix="handler.",
     )
 
     return utils.jsonify_with_base64(msg), http.CREATED

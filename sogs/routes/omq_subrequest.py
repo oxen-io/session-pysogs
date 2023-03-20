@@ -22,8 +22,8 @@ def make_omq_subreq(
 
     Parameters:
     subreq_id - randomly generated ID for subrequest
-    endpoint - the omq endpoint
-    query - the request query
+    endpoint - the flask blueprint/endpoint to be queried
+    query - the callable module method in format <route>.<callable_func>
     pubkey - pk of client making request
     msg_later - &oxenmq::Message::DeferredSend reference to be stored in subreq_queue along with data
     params - a json value to dump as the the query parameters

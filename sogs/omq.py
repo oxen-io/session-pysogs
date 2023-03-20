@@ -12,8 +12,6 @@ from .model.clientmanager import ClientManager
 
 
 omq_global = None
-global blueprints_global
-blueprints_global = {}
 
 
 class OMQ:
@@ -53,33 +51,35 @@ class OMQ:
         omq_global = self
 
     @log_exceptions
-    def subreq_response(self):
-        pass
+    def subreq_response(self, msg: oxenmq.Message):
+        req_id, code, headers, data = bt_deserialize(msg.data()[0])
 
     @log_exceptions
     def handle_proxied_omq_req(self):
-        id, subreq_body = self.send_mule(command='get_next_request', prefix='internal')
+        req_id, subreq_body = self.send_mule(command='get_next_request', prefix='internal')
 
-        '''
-            
-            Handle omq subrequest
+        # pass subrequest to omq endpoint
+        response, code = omq_auth.endpoint(
+            subreq_body['query'], subreq_body['pubkey'], subreq_body['params']
+        )
 
-        '''
-
-        return
+        self.send_mule('subreq_response', req_id, code, response.headers, response.data)
 
     @log_exceptions
     def get_next_request(self):
-        subreq_body = self.subreq_queue.get()
-        id = list(subreq_body.keys())[0]
-        return id, subreq_body[id]
+        try:
+            subreq_body = self.subreq_queue.get()
+        except:
+            raise RuntimeError('No subrequest found in queue')
+        req_id = list(subreq_body.keys())[0]
+        return req_id, subreq_body[id]
 
     @log_exceptions
     def register_client(self, msg: oxenmq.Message):
         cid, authlevel, bot, priority = bt_deserialize(msg.data()[0])
         conn_id = msg.conn()
         self.client_map[conn_id] = cid
-        self.manager.register_client(msg)
+        self.manager.register_client(conn_id, cid, authlevel, bot, priority)
 
     @log_exceptions
     def deregister_client(self, msg: oxenmq.Message):

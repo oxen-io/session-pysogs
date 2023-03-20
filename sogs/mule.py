@@ -109,17 +109,3 @@ class Mule:
         # it will work.  (And so be careful not to recurse!)
         app.logger.debug("Mule connecting to self")
         omq.mule_conn = omq.connect_inproc(on_success=None, on_failure=self.inproc_fail)
-
-
-
-"""
-TOFIX: oxenmq calls should pass as oxenmq.Message not as JSON
-
-def _on_subscribe(self, msg: oxenmq.Message):                                                                          
-        code, message = None, None  # If still None at the end, we send a reply
-        try:                                                                                                                                                                                                                      
-            args = json.loads(msg.data()[0])
-                                                                                                                                   
-            pubkey = extract_hex_or_b64(args, "pubkey", 33)
-
-"""

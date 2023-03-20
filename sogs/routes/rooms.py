@@ -1,6 +1,6 @@
 from .. import config, db, http
 from ..model import room as mroom, exc, user as muser
-from ..omq import omq_global, blueprints_global
+from ..omq import omq_global
 from ..web import app
 from . import auth
 
@@ -12,9 +12,8 @@ import time
 
 # Room-related routes, excluding retrieving/posting messages
 
-
 rooms = Blueprint('rooms', __name__)
-blueprints_global['rooms'] = rooms
+app.register_blueprint(rooms)
 
 
 def get_room_info(room):

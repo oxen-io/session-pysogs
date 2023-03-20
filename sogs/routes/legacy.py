@@ -325,7 +325,7 @@ def handle_legacy_delete_messages(ids=None):
             from ..omq import omq_global
         except ModuleNotFoundError:
             return
-        
+
         omq_global.send_mule("messages_deleted", ids)
 
     return jsonify({'status_code': http.OK})

@@ -24,9 +24,9 @@ def handle_v4onion_omqreq_plaintext(msg: oxenmq.Message):
     "params" - a json value to dump as the the query parameters
 
         Example:
-            full request: `@omq.some_endpoint("room.messages.since", {'Room:room', 'int:seqno'})`
+            full request: `omq.endpoint('some_endpoint', 'room.messages_since', jvi0grsj3029fjwhatever, {'Room:room', 'int:seqno'})`
                 endpoint: 'some_endpoint'
-                query: 'room.messages.since'
+                query: 'room.messages_since'
                 pubkey: jvi0grsj3029fjwhatever
                 params: {'Room:room', 'int:seqno'}
     """

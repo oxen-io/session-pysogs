@@ -1,47 +1,43 @@
-import oxenmq
-import auth
+import oxenmq, importlib
+from . import auth
 from ..web import app
 from ..db import query
-from .. import config, crypto, http, utils
-from ..omq import omq_global, blueprints_global
-from ..model.user import User
-from ..hashing import blake2b
+from .. import http
+from ..omq import omq_global
 
+from typing import Callable
 from flask import request, abort, Response, g, Blueprint
-import time
-import nacl
-from nacl.signing import VerifyKey
-import nacl.exceptions
-import nacl.bindings as sodium
-import sqlalchemy.exc
 from functools import wraps
 
 # Authentication for handling OMQ requests
 
-omq = Blueprint('endpoint', __name__)
 
-
-def endpoint(f):
+def endpoint(query, pubkey, params):
     """
-    Default endpoint for omq routes to pass requests to; constructs flask HTTP request
+    Default endpoint for omq requests to pass sub-requests to; passthrough for flask HTTP request
 
     Message (request) components:
 
-    "blueprint" - the flask blueprint
     "query" - the request query
     "pubkey" - pk of client making request
     "params" - a json value to dump as the the query parameters
 
         Example:
-            full request: `@omq.endpoint("messages", "room.<Room>.messages.since.<seqno>", {'Room:room', 'int:seqno'})`
-                blueprint: 'messages'
-                query: 'room.<Room>.messages.since.<seqno>'
+            full request: '@omq.endpoint('room.messages_since', {'Room:room', 'int:seqno'})'
+                query: 'room.messages_since'
                 params: {'Room:room', 'int:seqno'}
     """
 
-    @wraps(f)
-    def endpoint_wrapper(*args, blueprint, query, pubkey, params, **kwargs):
-        bp = blueprints_global['messages']
+    assert (
+        len(query.split('.')) == 2,
+        'Error, query must be callable in format <module>.<some_func>',
+    )
+    func = importlib.import_module(query)
+
+    # unpack dictionary as request parameters
+    response, code = func(**params)
+
+    return response, code
 
 
 def abort_request(code, msg, warn=True):

@@ -2,7 +2,7 @@ from .. import db, http, utils
 from ..model import room as mroom
 from ..model.user import User
 from ..web import app
-from ..omq import omq_global, blueprints_global
+from ..omq import omq_global
 from . import omq_auth
 
 from flask import abort, jsonify, g, Blueprint, request
@@ -16,7 +16,7 @@ from flask import abort, jsonify, g, Blueprint, request
 """
 
 clients = Blueprint('clients', __name__)
-blueprints_global['clients'] = clients
+app.register_blueprint(clients)
 
 
 @omq_auth.first_request
