@@ -23,7 +23,7 @@ def make_omq_subreq(
     Parameters:
     subreq_id - randomly generated ID for subrequest
     endpoint - the omq endpoint
-    query - the request query 
+    query - the request query
     pubkey - pk of client making request
     msg_later - &oxenmq::Message::DeferredSend reference to be stored in subreq_queue along with data
     params - a json value to dump as the the query parameters
@@ -37,12 +37,13 @@ def make_omq_subreq(
     body_input = BytesIO(body)
     content_length = len(body)
 
-    subreq_body = {subreq_id:{
-        'endpoint':endpoint,
-        'query':query,
-        'pubkey':pubkey,
-        'msg_later':msg_later,
-        'params':params
+    subreq_body = {
+        subreq_id: {
+            'endpoint': endpoint,
+            'query': query,
+            'pubkey': pubkey,
+            'msg_later': msg_later,
+            'params': params,
         }
     }
 
@@ -56,9 +57,11 @@ def make_omq_subreq(
             import uwsgi
         except ModuleNotFoundError:
             return
-        
+
         uwsgi.signal(123)
 
     except Exception:
-        app.logger.warning(f"Sub-request for omq.{endpoint} {query} failed: {traceback.format_exc()}")
+        app.logger.warning(
+            f"Sub-request for omq.{endpoint} {query} failed: {traceback.format_exc()}"
+        )
         raise

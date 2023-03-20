@@ -22,7 +22,7 @@ blueprints_global['clients'] = clients
 @omq_auth.first_request
 def register(cid):
     """
-    Registers a client with SOGS OMQ instance. In this context, "client" refers to any entity 
+    Registers a client with SOGS OMQ instance. In this context, "client" refers to any entity
     seeking to create an authenticated OMQ connection. This may be, but is not limited to,
     a user or a bot
 
@@ -44,12 +44,11 @@ def register(cid):
     """
 
     req = request.json
-    bot = utils.get_int_param('bot')    # will set bot == 1 if key "bot" has value True
+    bot = utils.get_int_param('bot')  # will set bot == 1 if key "bot" has value True
     authlevel = req.get('authlevel')
     priority = req.get('priority')
-    
-    client = (bot is 1)[register_client(cid, authlevel),
-                        register_bot(cid, authlevel, priority)]
+
+    client = (bot is 1)[register_client(cid, authlevel), register_bot(cid, authlevel, priority)]
 
     return client
 
@@ -78,7 +77,7 @@ def register_bot(cid, authlevel, priority):
         authlevel=authlevel,
         bot=1,
         priority=priority,
-        prefix='handler'
+        prefix='handler',
     )
 
     return client
@@ -106,7 +105,7 @@ def register_client(cid, authlevel):
         authlevel=authlevel,
         bot=0,
         priority=None,
-        prefix='handler'
+        prefix='handler',
     )
 
     return client
@@ -125,7 +124,7 @@ def unregister(cid):
 
         - 'bot' (bool) : is bot or not
     """
-    
+
     bot = utils.get_int_param('bot')
 
     client = (bot)[unregister_client(cid), unregister_bot(cid)]
@@ -137,25 +136,15 @@ def unregister(cid):
 @clients.delete("/client/registered/client/<cid>")
 def unregister_client(cid):
 
-    client = omq_global.send_mule(
-        command='unregister_client',
-        cid=cid,
-        bot=0,
-        prefix='handler'
-    )
-    
+    client = omq_global.send_mule(command='unregister_client', cid=cid, bot=0, prefix='handler')
+
     return client
 
 
 @clients.post("/bot/deregistered/bot/<cid>")
 @clients.delete("/bot/registered/bot/<cid>")
 def unregister_bot(cid):
-    
-    client = omq_global.send_mule(
-        command='unregister_bot',
-        cid=cid,
-        bot=1,
-        prefix='handler'
-    )
+
+    client = omq_global.send_mule(command='unregister_bot', cid=cid, bot=1, prefix='handler')
 
     return client

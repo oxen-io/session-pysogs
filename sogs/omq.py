@@ -4,8 +4,8 @@
 import oxenmq, queue
 from oxenc import bt_serialize, bt_deserialize
 
-from mule import log_exceptions
-from routes import omq_auth
+from .mule import log_exceptions
+from .routes import omq_auth
 from . import crypto, config
 from .postfork import postfork
 from .model.clientmanager import ClientManager
@@ -36,7 +36,7 @@ class OMQ:
         if uwsgi.mule_id() != 0:
             uwsgi.opt['mule'].setup_omq(self)
             return
-        
+
         uwsgi.register_signal(123, 'internal', self.handle_proxied_omq_req)
 
         from .web import app  # Imported here to avoid circular import
@@ -52,18 +52,13 @@ class OMQ:
         global omq_global
         omq_global = self
 
-    
     @log_exceptions
     def subreq_response(self):
         pass
 
-
     @log_exceptions
     def handle_proxied_omq_req(self):
-        id, subreq_body = self.send_mule(
-            command='get_next_request',
-            prefix='internal'
-        )
+        id, subreq_body = self.send_mule(command='get_next_request', prefix='internal')
 
         '''
             
@@ -71,14 +66,13 @@ class OMQ:
 
         '''
 
-        return 
+        return
 
     @log_exceptions
     def get_next_request(self):
         subreq_body = self.subreq_queue.get()
         id = list(subreq_body.keys())[0]
         return id, subreq_body[id]
-
 
     @log_exceptions
     def register_client(self, msg: oxenmq.Message):
@@ -87,13 +81,11 @@ class OMQ:
         self.client_map[conn_id] = cid
         self.manager.register_client(msg)
 
-
     @log_exceptions
     def deregister_client(self, msg: oxenmq.Message):
         cid, bot = bt_deserialize(msg.data()[0])
         self.client_map.pop(cid)
         self.manager.deregister_client(cid, bot)
-
 
     def send_mule(self, command, *args, prefix="worker."):
         """
@@ -102,7 +94,7 @@ class OMQ:
 
         Any args will be bt-serialized and send as message parts.
         """
-        
+
         if prefix:
             command = prefix + command
 

@@ -10,6 +10,7 @@ from flask import abort, jsonify, g, Blueprint, request
 messages = Blueprint('messages', __name__)
 blueprints_global['messages'] = messages
 
+
 def qs_reactors():
     return utils.get_int_param('reactors', 4, min=0, max=20, truncate=True)
 
@@ -313,6 +314,7 @@ def message_single(room: Room, msg_id):
     TOFIX:
         - add some decorator to this s.t. it routes it to the correct OMQ endpoint
 """
+
 
 @messages.post("/room/<Room:room>/message")
 @auth.user_required

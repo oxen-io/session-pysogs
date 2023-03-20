@@ -19,7 +19,7 @@ def handle_v4onion_omqreq_plaintext(msg: oxenmq.Message):
     Message (request) components:
 
     "endpoint" - the omq endpoint
-    "query" - the request query 
+    "query" - the request query
     "pubkey" - pk of client making request
     "params" - a json value to dump as the the query parameters
 

@@ -154,7 +154,6 @@ class Room:
         if perms or not hasattr(self, '_perm_cache'):
             self._perm_cache = {}
 
-
     def __str__(self):
         """Returns `Room[token]` when converted to a str"""
         return f"Room[{self.token}]"

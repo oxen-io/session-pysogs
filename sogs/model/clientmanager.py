@@ -79,26 +79,20 @@ class ClientManager:
         queue - BotQueue object
     """
 
-    def __init__(
-        self,
-        *,
-        id: Optional[int] = None,
-    ) -> None:
+    def __init__(self, *, id: Optional[int] = None) -> None:
         self.id = id
         self.filter = False
         self.bqueue = BotQueue()
         self.clients = []
 
-
     def bqempty(self):
         return not self.bqueue._empty()
-    
 
     def register_client(self, conn_id, cid, authlevel, bot, priority):
         if not bot:
             # add client to self.clients
             return
-        
+
         if not priority:
             # if no priority is given, lowest priority is assigned
             priority = self.qsize()
@@ -108,18 +102,15 @@ class ClientManager:
                 priority += 1
         self.bqueue._put(PriorityTuple(priority, bot))
 
-
     def deregister_client(self, cid, bot):
         if not bot:
             # remove client from clients list
             return
-        
+
         # remove bot from bot queue
-        
 
     def peek(self, priority: int):
         return self.bqueue._peek(priority)
-
 
     def check_permission_for(
         self,
