@@ -35,7 +35,7 @@ class OMQ:
             uwsgi.opt['mule'].setup_omq(self)
             return
 
-        uwsgi.register_signal(123, 'internal', self.handle_proxied_omq_req)
+        uwsgi.register_signal(123, 'worker', self.handle_proxied_omq_req)
 
         from .web import app  # Imported here to avoid circular import
 

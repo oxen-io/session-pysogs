@@ -45,7 +45,13 @@ def handle_v4onion_omqreq_plaintext(msg: oxenmq.Message):
         pubkey = utils.decode_hex_or_b64(args['pubkey'], 33)
         params = args['params']
 
-        response = make_omq_subreq(
+        # TOFIX: omq subrequest is signaled for execution by uwsgi.signal, which does not
+        #   return a value. In the standard onion request implementation, the response is
+        #   returned with the headers. In the OMQ onion request implementation, this is
+        #   handled in omq.handle_proxied_omq_req, which receives a response and code from
+        #   omq_auth.endpoint, passing them through the mule to omq.subreq_response
+
+        make_omq_subreq(
             subreq_id,
             endpoint,
             query,
@@ -55,22 +61,10 @@ def handle_v4onion_omqreq_plaintext(msg: oxenmq.Message):
             client_reauth=True,  # Because onion requests have auth headers on the *inside*
         )
 
-        data = response.get_data()
-        app.logger.debug(
-            f"Onion sub-request for {endpoint} returned {response.status_code}, {len(data)} bytes"
-        )
-
-        args = {'code': response.status_code, 'headers': headers}
-
     except Exception as e:
         app.logger.warning("Invalid v4 onion request: {}".format(e))
         args = {'code': http.BAD_REQUEST, 'headers': {'content-type': 'text/plain; charset=utf-8'}}
         data = b'Invalid v4 onion request'
-
-    args = json.dumps(args).encode()
-    return b''.join(
-        (b'l', str(len(args)).encode(), b':', args, str(len(data)).encode(), b':', data, b'e')
-    )
 
 
 def decrypt_onionreq():
