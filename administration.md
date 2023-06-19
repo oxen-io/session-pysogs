@@ -111,7 +111,26 @@ sogs -L
 
 This includes details such as the number of messages, files, active users, and moderators.  If you
 also want to list each of the individual moderators in each room add `-v` to the end of the command.
-
+## List room ids
+With sqlite3 installed run
+```
+sqlite3 /var/lib/session-open-group-server/sogs.db 'select id,token from rooms;'
+```
+## Clear out old room messages
+After getting the room id you can clear out messages stored on your server since this is not done automatically. In the example below our room id is 1 and messages older than 14 days are being deleted. 
+```
+sqlite3 /var/lib/session-open-group-server/sogs.db "DELETE FROM message_details WHERE room = 1 AND posted < strftime('%s', 'now', '-14 days');"
+```
+## Backup sogs
+It is recommended to do periodic backups of your sogs instance. You can backup the needed files to your current directory by running
+```
+#stop sogs server so files can be backed up (assumes you you systemd service for sogs)
+systemctl stop sogs;
+#backup files to tar.xz in current directory with current date.
+tar -cJvf pysogs_backup_$(date --iso-8601).tar.xz /var/lib/session-open-group-server /etc/sogs/sogs.ini;
+#starts sogs (assumes you you systemd service for sogs)
+systemctl start sogs;
+```
 ## More!
 
 For other commands, such as listing all global moderators, deleting rooms, and removing
