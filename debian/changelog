@@ -1,3 +1,13 @@
+session-pysogs (0.3.7-2) sid; urgency=medium
+
+  [ Jason Rhinelander ]
+  * Rediff patches
+
+  [ 平民·寻梦（Pingmin Fenlly Liu） ]
+  * Fix the nginx proxy_pass pattern
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Wed, 21 Jun 2023 11:08:13 -0300
+
 session-pysogs (0.3.7-1) sid; urgency=medium
 
   [ Jason Rhinelander ]
