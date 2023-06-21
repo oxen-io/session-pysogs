@@ -112,6 +112,19 @@ sogs -L
 This includes details such as the number of messages, files, active users, and moderators.  If you
 also want to list each of the individual moderators in each room add `-v` to the end of the command.
 
+## Backup sogs
+It is recommended to do periodic backups of your sogs instance. You can backup the needed files to your current directory by running
+```
+TMPDIRECTORY=$(mktemp -d);
+#uncomment/use command below if you use postgres
+#pg_dump -Fc sogs >$TMPDIRECTORY/$(date --iso-8601).pgdump;
+cp -f /var/lib/session-open-group-server $TMPDIRECTORY/;
+cp -f /etc/sogs/sogs.ini $TMPDIRECTORY/;
+#backup files to tar.xz in current directory with current date.
+tar -cJvf pysogs_backup_$(date --iso-8601).tar.xz $TMPDIRECTORY;
+#starts sogs (assumes you you systemd service for sogs)
+systemctl start sogs;
+```
 ## More!
 
 For other commands, such as listing all global moderators, deleting rooms, and removing
