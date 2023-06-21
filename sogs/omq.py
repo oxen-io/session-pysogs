@@ -1,67 +1,104 @@
 # Common oxenmq object; this is used by workers and the oxenmq mule.  We create, but do not start,
 # this pre-forking.
 
-import oxenmq
-from oxenc import bt_serialize
+import oxenmq, queue
+from oxenc import bt_serialize, bt_deserialize
 
+from .mule import log_exceptions
+from .routes import omq_auth
 from . import crypto, config
 from .postfork import postfork
-
-omq = None
-mule_conn = None
-test_suite = False
+from .model.clientmanager import ClientManager
 
 
-def make_omq():
-    omq = oxenmq.OxenMQ(privkey=crypto._privkey.encode(), pubkey=crypto.server_pubkey.encode())
-
-    # We have multiple workers talking to the mule, so we *must* use ephemeral ids to not replace
-    # each others' connections.
-    omq.ephemeral_routing_id = True
-
-    return omq
+omq_global = None
 
 
-# Postfork for workers: we start oxenmq and connect to the mule process
-@postfork
-def start_oxenmq():
-    try:
-        import uwsgi
-    except ModuleNotFoundError:
-        return
+class OMQ:
+    @postfork
+    def __init__(self):
+        try:
+            import uwsgi
+        except ModuleNotFoundError:
+            return
 
-    global omq, mule_conn
+        self._omq = oxenmq.OxenMQ(
+            privkey=crypto._privkey.encode(), pubkey=crypto.server_pubkey.encode()
+        )
+        self._omq.ephemeral_routing_id = True
+        self.client_map = {}
+        self.manager = ClientManager()
+        self.test_suite = False
+        self.subreq_queue = queue.SimpleQueue()
 
-    omq = make_omq()
+        if uwsgi.mule_id() != 0:
+            uwsgi.opt['mule'].setup_omq(self)
+            return
 
-    if uwsgi.mule_id() != 0:
-        from . import mule
+        uwsgi.register_signal(123, 'worker', self.handle_proxied_omq_req)
 
-        mule.setup_omq()
-        return
+        from .web import app  # Imported here to avoid circular import
 
-    from .web import app  # Imported here to avoid circular import
+        app.logger.debug(f"Starting oxenmq connection to mule in worker {uwsgi.worker_id()}...")
+        self._omq.start()
 
-    app.logger.debug(f"Starting oxenmq connection to mule in worker {uwsgi.worker_id()}")
+        app.logger.debug("Started, connecting to mule...")
+        self.mule_conn = self._omq.connect_remote(oxenmq.Address(config.OMQ_INTERNAL))
 
-    omq.start()
-    app.logger.debug("Started, connecting to mule")
-    mule_conn = omq.connect_remote(oxenmq.Address(config.OMQ_INTERNAL))
+        app.logger.debug(f"OMQ worker {uwsgi.worker_id()} connected to mule")
 
-    app.logger.debug(f"worker {uwsgi.worker_id()} connected to mule OMQ")
+        global omq_global
+        omq_global = self
 
+    @log_exceptions
+    def subreq_response(self, msg: oxenmq.Message):
+        req_id, code, headers, data = bt_deserialize(msg.data()[0])
 
-def send_mule(command, *args, prefix="worker."):
-    """
-    Sends a command to the mule from a worker (or possibly from the mule itself).  The command will
-    be prefixed with "worker." (unless overridden).
+    @log_exceptions
+    def handle_proxied_omq_req(self):
+        req_id, subreq_body = self.send_mule(command='get_next_request', prefix='internal')
 
-    Any args will be bt-serialized and send as message parts.
-    """
-    if prefix:
-        command = prefix + command
+        # pass subrequest to omq endpoint
+        response, code = omq_auth.endpoint(
+            subreq_body['query'], subreq_body['pubkey'], subreq_body['params']
+        )
 
-    if test_suite and omq is None:
-        pass  # TODO: for mule call testing we may want to do something else here?
-    else:
-        omq.send(mule_conn, command, *(bt_serialize(data) for data in args))
+        self.send_mule('subreq_response', req_id, code, response.headers, response.data)
+
+    @log_exceptions
+    def get_next_request(self):
+        try:
+            subreq_body = self.subreq_queue.get()
+        except:
+            raise RuntimeError('No subrequest found in queue')
+        req_id = list(subreq_body.keys())[0]
+        return req_id, subreq_body[id]
+
+    @log_exceptions
+    def register_client(self, msg: oxenmq.Message):
+        cid, authlevel, bot, priority = bt_deserialize(msg.data()[0])
+        conn_id = msg.conn()
+        self.client_map[conn_id] = cid
+        self.manager.register_client(conn_id, cid, authlevel, bot, priority)
+
+    @log_exceptions
+    def deregister_client(self, msg: oxenmq.Message):
+        cid, bot = bt_deserialize(msg.data()[0])
+        self.client_map.pop(cid)
+        self.manager.deregister_client(cid, bot)
+
+    def send_mule(self, command, *args, prefix="worker."):
+        """
+        Sends a command to the mule from a worker (or possibly from the mule itself).  The command will
+        be prefixed with "worker." (unless overridden).
+
+        Any args will be bt-serialized and send as message parts.
+        """
+
+        if prefix:
+            command = prefix + command
+
+        if self.test_suite and self._omq is None:
+            pass  # TODO: for mule call testing we may want to do something else here?
+        else:
+            self._omq.send(self.mule_conn, command, *(bt_serialize(data) for data in args))

@@ -400,7 +400,6 @@ elif args.delete_room:
         sys.exit(2)
 
 elif update_room:
-
     rooms = []
     all_rooms = False
     global_rooms = False
@@ -577,8 +576,7 @@ elif update_room:
     if args.name is not None:
         if global_rooms or all_rooms:
             print(
-                "Error: --rooms cannot be '+' or '*' (i.e. global/all) with --name",
-                file=sys.stderr,
+                "Error: --rooms cannot be '+' or '*' (i.e. global/all) with --name", file=sys.stderr
             )
             sys.exit(1)
 

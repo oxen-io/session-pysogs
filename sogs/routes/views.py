@@ -3,6 +3,8 @@ from flask import abort, render_template, Response, Blueprint
 from .. import config, crypto, http
 from ..model.room import get_accessible_rooms
 from . import auth, converters  # noqa: F401
+from ..omq import omq_global
+from ..web import app
 
 
 from io import BytesIO
@@ -18,6 +20,7 @@ else:
 
 
 views = Blueprint('views', __name__)
+app.register_blueprint(views)
 
 
 @views.get("/")

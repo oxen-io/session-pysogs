@@ -1,7 +1,7 @@
 from .. import config, crypto, db, utils, session_pb2 as protobuf
 from ..db import query
 from ..hashing import blake2b
-from ..omq import send_mule
+from ..omq import omq_global
 from ..web import app
 from .user import User
 from .file import File
@@ -17,6 +17,8 @@ from .exc import (
     PostRateLimited,
     InvalidData,
 )
+from model.bot import Bot
+from model.filter import SimpleFilter
 
 import os
 import random
@@ -24,12 +26,6 @@ import re
 import sqlalchemy.exc
 import time
 from typing import Optional, Union, List
-
-
-# TODO: These really should be room properties, not random global constants (these
-# are carried over from old SOGS).
-rate_limit_size = 5
-rate_limit_interval = 16.0
 
 
 # Character ranges for different filters.  This is ordered because some are subsets of each other
@@ -71,14 +67,25 @@ class Room:
         default_accessible - True if default user permissions include accessible permission
         default_write - True if default user permissions includes write permission
         default_upload - True if default user permissions includes file upload permission
+
+        NEW:
+        default_bot - default_bot object reference
+        active_bot - true if default_bot moderator is actively moderating or false if passively filtering
     """
 
-    def __init__(self, row=None, *, id=None, token=None):
+    def __init__(self, row=None, *, id=None, token=None, bot: Bot = None):
         """
         Constructs a room from a pre-retrieved row *or* via lookup of a room token or id.  When
         looking up this raises a NoSuchRoom if no room with that token/id exists.
         """
         self._refresh(id=id, token=token, row=row)
+        self._active_bot: bool = False
+        self.rate_limit_size = 5
+        self.rate_limit_interval = 16.0
+
+    @property.getter
+    def _bot_status(self) -> bool:
+        return self._active_bot
 
     def _refresh(self, *, id=None, token=None, row=None, perms=False):
         """
@@ -426,114 +433,6 @@ class Room:
             since=time.time() - cutoff,
         ).first()[0]
 
-    def check_permission(
-        self,
-        user: Optional[User] = None,
-        *,
-        admin=False,
-        moderator=False,
-        read=False,
-        accessible=False,
-        write=False,
-        upload=False,
-    ):
-        """
-        Checks whether `user` has the required permissions for this room and isn't banned.  Returns
-        True if the user satisfies the permissions, False otherwise.  If no user is provided then
-        permissions are checked against the room's defaults.
-
-        Looked up permissions are cached within the Room instance so that looking up the same user
-        multiple times (i.e. from multiple parts of the code) does not re-query the database.
-
-        Named arguments are as follows:
-        - admin -- if true then the user must have admin access to the room
-        - moderator -- if true then the user must have moderator (or admin) access to the room
-        - read -- if true then the user must have read access
-        - accessible -- if true then the user must have accessible access; note that this permission
-          is satisfied by *either* the `accessible` or `read` database flags (that is: read implies
-          accessible).
-        - write -- if true then the user must have write access
-        - upload -- if true then the user must have upload access; this should usually be combined
-          with write=True.
-
-        You can specify multiple permissions as True, in which case all must be satisfied.  If you
-        specify no permissions as required then the check only checks whether a user is banned but
-        otherwise requires no specific permission.
-        """
-
-        if user is None:
-            is_banned, can_read, can_access, can_write, can_upload, is_mod, is_admin = (
-                False,
-                bool(self.default_read),
-                bool(self.default_accessible),
-                bool(self.default_write),
-                bool(self.default_upload),
-                False,
-                False,
-            )
-        else:
-            if user.id not in self._perm_cache:
-                row = query(
-                    """
-                    SELECT banned, read, accessible, write, upload, moderator, admin
-                    FROM user_permissions
-                    WHERE room = :r AND "user" = :u
-                    """,
-                    r=self.id,
-                    u=user.id,
-                ).first()
-                self._perm_cache[user.id] = [bool(c) for c in row]
-
-            (
-                is_banned,
-                can_read,
-                can_access,
-                can_write,
-                can_upload,
-                is_mod,
-                is_admin,
-            ) = self._perm_cache[user.id]
-
-        if is_admin:
-            return True
-        if admin:
-            return False
-        if is_mod:
-            return True
-        if moderator:
-            return False
-        return (
-            not is_banned
-            and (not accessible or can_access or can_read)
-            and (not read or can_read)
-            and (not write or can_write)
-            and (not upload or can_upload)
-        )
-
-    # Shortcuts for check_permission calls
-
-    def check_unbanned(self, user: Optional[User]):
-        return self.check_permission(user)
-
-    def check_read(self, user: Optional[User] = None):
-        return self.check_permission(user, read=True)
-
-    def check_accessible(self, user: Optional[User] = None):
-        return self.check_permission(user, accessible=True)
-
-    def check_write(self, user: Optional[User] = None):
-        return self.check_permission(user, write=True)
-
-    def check_upload(self, user: Optional[User] = None):
-        """Checks for both upload *and* write permission"""
-        return self.check_permission(user, write=True, upload=True)
-
-    def check_moderator(self, user: Optional[User]):
-        return self.check_permission(user, moderator=True)
-
-    def check_admin(self, user: Optional[User]):
-        return self.check_permission(user, admin=True)
-
     def messages_size(self):
         """Returns the number and total size (in bytes) of non-deleted messages currently stored in
         this room.  Size is reflects the size of uploaded message bodies, not necessarily the size
@@ -604,7 +503,7 @@ class Room:
         padding-trimmed value actually stored in the database).
         """
 
-        mod = self.check_moderator(user)
+        mod = self.default_bot.check_moderator(self, user)
         msgs = []
 
         opt_count = sum(arg is not None for arg in (sequence, after, before, single)) + bool(recent)
@@ -735,190 +634,6 @@ class Room:
 
         return msgs
 
-    def filtering(self):
-        settings = {
-            'profanity_filter': config.PROFANITY_FILTER,
-            'profanity_silent': config.PROFANITY_SILENT,
-            'alphabet_filters': config.ALPHABET_FILTERS,
-            'alphabet_silent': config.ALPHABET_SILENT,
-        }
-        if self.token in config.ROOM_OVERRIDES:
-            for k in (
-                'profanity_filter',
-                'profanity_silent',
-                'alphabet_filters',
-                'alphabet_silent',
-            ):
-                if k in config.ROOM_OVERRIDES[self.token]:
-                    settings[k] = config.ROOM_OVERRIDES[self.token][k]
-        return settings
-
-    def filter_should_reply(self, filter_type, filter_lang):
-        """If the settings say we should reply to a filter, this returns a tuple of
-
-        (profile name, message format, whisper)
-
-        where profile name is the name we should use in the reply, message format is a string with
-        substitutions ready, and whisper is True/False depending on whether it should be whispered
-        to the user (True) or public (False).
-
-        If we shouldn't reply this returns (None, None, None)
-        """
-
-        if not config.FILTER_SETTINGS:
-            return (None, None, None)
-
-        reply_format = None
-        profile_name = 'SOGS'
-        public = False
-
-        # Precedences from least to most specific so that we load values from least specific first
-        # then overwrite them if we find a value in a more specific section
-        room_precedence = ('*', self.token)
-        filter_precedence = ('*', filter_type, filter_lang) if filter_lang else ('*', filter_type)
-
-        for r in room_precedence:
-            s1 = config.FILTER_SETTINGS.get(r)
-            if s1 is None:
-                continue
-            for f in filter_precedence:
-                settings = s1.get(f)
-                if settings is None:
-                    continue
-
-                rf = settings.get('reply')
-                pn = settings.get('profile_name')
-                pb = settings.get('public')
-                if rf is not None:
-                    reply_format = random.choice(rf)
-                if pn is not None:
-                    profile_name = pn
-                if pb is not None:
-                    public = pb
-
-        return (reply_format, profile_name, public)
-
-    def should_filter(self, user: User, data: bytes):
-        """
-        Checks a message for disallowed alphabets and profanity (if the profanity
-        filter is enabled).
-
-        - Returns None if this message passes (i.e. didn't trigger any filter, or is
-          being posted by an admin to whom the filters don't apply).
-
-        - Returns a callback if the message fails but should be silently accepted.  The callback
-          should be called (with no arguments) *after* the filtered message is inserted into the db.
-
-        - Throws PostRejected if the message should be rejected (and rejection passed back to the
-          user).
-        """
-        msg_ = None
-
-        def msg():
-            nonlocal msg_
-            if msg_ is None:
-                msg_ = Post(raw=data)
-            return msg_
-
-        if not config.FILTER_MODS and self.check_moderator(user):
-            return None
-
-        filter_type = None
-        filter_lang = None
-
-        filt = self.filtering()
-        alphabets = filt['alphabet_filters']
-        for lang, pattern in alphabet_filter_patterns:
-            if lang not in alphabets:
-                continue
-
-            if not pattern.search(msg().text):
-                continue
-
-            # Filter it!
-            filter_type, filter_lang = 'alphabet', lang
-            break
-
-        if not filter_type and filt['profanity_filter']:
-            import better_profanity
-
-            for part in (msg().text, msg().username):
-                if better_profanity.profanity.contains_profanity(part):
-                    filter_type = 'profanity'
-                    break
-
-        if not filter_type:
-            return None
-
-        silent = filt[filter_type + '_silent']
-
-        msg_fmt, prof_name, pub = self.filter_should_reply(filter_type, filter_lang)
-        if msg_fmt:
-            pbmsg = protobuf.Content()
-            body = msg_fmt.format(
-                profile_name=(user.session_id if msg().username is None else msg().username),
-                profile_at="@" + user.session_id,
-                room_name=self.name,
-                room_token=self.token,
-            ).encode()
-            pbmsg.dataMessage.body = body
-            pbmsg.dataMessage.timestamp = int(time.time() * 1000)
-            pbmsg.dataMessage.profile.displayName = prof_name
-
-            # Add two bytes padding so that session doesn't get confused by a lack of padding
-            pbmsg = pbmsg.SerializeToString() + b'\x80\x00'
-
-            # Make a fake signing key based on prof_name and the server privkey (so that different
-            # names use different keys; otherwise the bot names overwrite each other in Session
-            # clients when a later message has a new profile name).
-            global filter_privkeys
-            if prof_name in filter_privkeys:
-                signingkey = filter_privkeys[prof_name]
-            else:
-                signingkey = SigningKey(
-                    blake2b(
-                        prof_name.encode() + crypto.server_signkey.encode(), key=b'sogsfiltering'
-                    )
-                )
-                filter_privkeys[prof_name] = signingkey
-
-            sig = signingkey.sign(pbmsg).signature
-            server_fake_user = User(
-                session_id='15' + signingkey.verify_key.encode().hex(), autovivify=True, touch=False
-            )
-
-            def insert_reply():
-                query(
-                    """
-                    INSERT INTO messages
-                        (room, "user", data, data_size, signature, whisper)
-                        VALUES
-                        (:r, :u, :data, :data_size, :signature, :whisper)
-                    """,
-                    r=self.id,
-                    u=server_fake_user.id,
-                    data=pbmsg[:-2],
-                    data_size=len(pbmsg),
-                    signature=sig,
-                    whisper=None if pub else user.id,
-                )
-
-            if filt[filter_type + '_silent']:
-                # Defer the insertion until after the filtered row gets inserted
-                return insert_reply
-            else:
-                insert_reply()
-
-        elif silent:
-            # No reply, so just return an empty callback
-            def noop():
-                pass
-
-            return noop
-
-        # FIXME: can we send back some error code that makes Session not retry?
-        raise PostRejected(f"filtration rejected message ({filter_type})")
-
     def _own_files(self, msg_id: int, files: List[int], user):
         """
         Associated any of the given file ids with the given message id.  Only files that are recent,
@@ -949,110 +664,6 @@ class Room:
             bind_expanding=['ids'],
         )
 
-    def add_post(
-        self,
-        user: User,
-        data: bytes,
-        sig: bytes,
-        *,
-        whisper_to: Optional[Union[User, str]] = None,
-        whisper_mods: bool = False,
-        files: List[int] = [],
-    ):
-        """
-        Adds a post to the room.  The user must have write permissions.
-
-        Raises BadPermission() if the user doesn't have posting permission; PostRejected() if the
-        post was rejected (such as subclass PostRateLimited() if the post was rejected for too
-        frequent posting).
-
-        Returns the message details.
-        """
-        if not self.check_write(user):
-            raise BadPermission()
-
-        if data is None or sig is None or len(sig) != 64:
-            raise InvalidData()
-
-        whisper_mods = bool(whisper_mods)
-        if (whisper_to or whisper_mods) and not self.check_moderator(user):
-            app.logger.warning(f"Cannot post a whisper to {self}: {user} is not a moderator")
-            raise BadPermission()
-
-        if whisper_to and not isinstance(whisper_to, User):
-            whisper_to = User(session_id=whisper_to, autovivify=True, touch=False)
-
-        filtered = self.should_filter(user, data)
-
-        with db.transaction():
-            if rate_limit_size and not self.check_admin(user):
-                since_limit = time.time() - rate_limit_interval
-                recent_count = query(
-                    """
-                    SELECT COUNT(*) FROM messages
-                    WHERE room = :r AND "user" = :u AND posted >= :since
-                    """,
-                    r=self.id,
-                    u=user.id,
-                    since=since_limit,
-                ).first()[0]
-
-                if recent_count >= rate_limit_size:
-                    raise PostRateLimited()
-
-            data_size = len(data)
-            unpadded_data = utils.remove_session_message_padding(data)
-
-            msg_id = db.insert_and_get_pk(
-                """
-                INSERT INTO messages
-                    (room, "user", data, data_size, signature, filtered, whisper, whisper_mods)
-                    VALUES
-                    (:r, :u, :data, :data_size, :signature, :filtered, :whisper, :whisper_mods)
-                """,
-                "id",
-                r=self.id,
-                u=user.id,
-                data=unpadded_data,
-                data_size=data_size,
-                signature=sig,
-                filtered=filtered is not None,
-                whisper=whisper_to.id if whisper_to else None,
-                whisper_mods=whisper_mods,
-            )
-
-            if files:
-                # Take ownership of any uploaded files attached to the post:
-                self._own_files(msg_id, files, user)
-
-            assert msg_id is not None
-            row = query("SELECT posted, seqno FROM messages WHERE id = :m", m=msg_id).first()
-            msg = {
-                'id': msg_id,
-                'session_id': user.session_id,
-                'posted': row[0],
-                'seqno': row[1],
-                'data': data,
-                'signature': sig,
-                'reactions': {},
-            }
-            if filtered is not None:
-                msg['filtered'] = True
-            if whisper_to or whisper_mods:
-                msg['whisper'] = True
-                msg['whisper_mods'] = whisper_mods
-                if whisper_to:
-                    msg['whisper_to'] = whisper_to.session_id
-
-        # Don't call this inside the transaction because, if it's inserting a reply, we want the
-        # reply to have a later timestamp for proper ordering (because the timestamp inside a
-        # transaction is the time when the transaction started).
-        if filtered is not None:
-            filtered()
-
-        send_mule("message_posted", msg['id'])
-        return msg
-
     def edit_post(self, user: User, msg_id: int, data: bytes, sig: bytes, *, files: List[int] = []):
         """
         Edits a post in the room.  The post must exist, must have been authored by the same user,
@@ -1068,7 +679,7 @@ class Room:
           profanity filter.
         - NoSuchPost() if the post is deleted.
         """
-        if not self.check_write(user):
+        if not self.default_bot.check_write(self, user):
             raise BadPermission()
 
         if data is None or sig is None or len(sig) != 64:
@@ -1114,7 +725,7 @@ class Room:
                 # If the edit includes new attachments then own them:
                 self._own_files(msg_id, files, user)
 
-        send_mule("message_edited", msg_id)
+        omq_global.send_mule("message_edited", msg_id)
 
     def delete_posts(self, message_ids: List[int], deleter: User):
         """
@@ -1151,7 +762,7 @@ class Room:
                 )
 
                 if ids:
-                    if not self.check_moderator(deleter):
+                    if not self.default_bot.check_moderator(self, deleter):
                         # If not a moderator then we only proceed if all of the messages are the
                         # user's own:
                         res = query(
@@ -1186,9 +797,11 @@ class Room:
         """
 
         fail = None
-        if poster.id != deleter.id and not self.check_moderator(deleter):
+        if poster.id != deleter.id and not self.default_bot.check_moderator(self, deleter):
             fail = "user is not a moderator"
-        elif self.check_admin(poster) and not self.check_admin(deleter):
+        elif self.default_bot.check_admin(self, poster) and not self.default_bot.check_admin(
+            self, deleter
+        ):
             fail = "only admins can delete all posts of another admin"
 
         if fail is not None:
@@ -1360,7 +973,11 @@ class Room:
         if user_required and not user:
             app.logger.warning("Reaction request requires user authentication")
             raise BadPermission()
-        if not (self.check_moderator(user) if mod_required else self.check_read(user)):
+        if not (
+            self.default_bot.check_moderator(self, user)
+            if mod_required
+            else self.default_bot.check_read(self, user)
+        ):
             app.logger.warning("Reaction request requires moderator authentication")
             raise BadPermission()
 
@@ -1515,7 +1132,7 @@ class Room:
         ([public_mods], [public_admins], [hidden_mods], [hidden_admins])
         """
 
-        visible_clause = "" if self.check_moderator(user) else "AND visible_mod"
+        visible_clause = "" if self.default_bot.check_moderator(self, user) else "AND visible_mod"
         m, hm, a, ha = [], [], [], []
         for session_id, visible, admin in query(
             f"""
@@ -1570,7 +1187,7 @@ class Room:
         added_by is the user performing the update and must have admin permission.
         """
 
-        if not self.check_admin(added_by):
+        if not self.default_bot.check_admin(self, added_by):
             app.logger.warning(
                 f"Unable to set {user} as {'admin' if admin else 'moderator'} of {self}: "
                 f"{added_by} is not an admin"
@@ -1615,7 +1232,7 @@ class Room:
         a room moderator if already a room moderator or admin.
         """
 
-        if not self.check_admin(removed_by):
+        if not self.default_bot.check_admin(self, removed_by):
             raise BadPermission()
 
         with db.transaction():
@@ -1654,13 +1271,15 @@ class Room:
         with db.transaction():
             with to_ban.check_blinding() as to_ban:
                 fail = None
-                if not self.check_moderator(mod):
+                if not self.default_bot.check_moderator(self, mod):
                     fail = "user is not a moderator"
                 elif to_ban.id == mod.id:
                     fail = "self-ban not permitted"
                 elif to_ban.global_moderator:
                     fail = "global mods/admins cannot be banned"
-                elif self.check_moderator(to_ban) and not self.check_admin(mod):
+                elif self.default_bot.check_moderator(
+                    self, to_ban
+                ) and not self.default_bot.check_admin(self, mod):
                     fail = "only admins can ban room mods/admins"
 
                 if fail is not None:
@@ -1714,7 +1333,7 @@ class Room:
         Throws on other errors (e.g. permission denied).
         """
 
-        if not self.check_moderator(mod):
+        if not self.default_bot.check_moderator(self, mod):
             app.logger.warning(f"Error unbanning {to_unban} from {self} by {mod}: not a moderator")
             raise BadPermission()
 
@@ -1785,7 +1404,7 @@ class Room:
                 "Room.set_permissions: at least one of {', '.join(perm_types)} must be specified"
             )
 
-        if not self.check_moderator(mod):
+        if not self.default_bot.check_moderator(self, mod):
             app.logger.warning(f"Error set perms {perms} on {user} by {mod}: not a moderator")
             raise BadPermission()
 
@@ -1870,7 +1489,7 @@ class Room:
 
     def add_future_permission(
         self,
-        user,
+        user: User,
         *,
         at: float,
         mod: User,
@@ -1945,7 +1564,7 @@ class Room:
         Returns the id of the newly inserted file row.  Throws on error.
         """
 
-        if not self.check_upload(uploader):
+        if not self.default_bot.check_upload(self, uploader):
             raise BadPermission()
 
         files_dir = os.path.join(config.UPLOAD_PATH, self.token)
@@ -2037,7 +1656,7 @@ class Room:
         reorder pins, which are always sorted oldest-to-newest).
         """
 
-        if not self.check_admin(admin):
+        if not self.default_bot.check_admin(self, admin):
             app.logger.warning(f"Unable to pin message to {self}: {admin} is not an admin")
             raise BadPermission()
 
@@ -2064,7 +1683,7 @@ class Room:
         number of pinned messages removed.
         """
 
-        if not self.check_admin(admin):
+        if not self.default_bot.check_admin(self, admin):
             app.logger.warning("Unable to unpin all messages from {self}: {admin} is not an admin")
             raise BadPermission()
 
@@ -2096,7 +1715,7 @@ class Room:
         pinned messages actually removed (i.e. 0 or 1).
         """
 
-        if not self.check_admin(admin):
+        if not self.default_bot.check_admin(self, admin):
             app.logger.warning("Unable to unpin message from {self}: {admin} is not an admin")
             raise BadPermission()
 

@@ -3,6 +3,7 @@ from . import config
 from . import http
 
 import base64
+
 from flask import request, abort, Response
 import json
 from typing import Union, Tuple
@@ -134,6 +135,10 @@ def get_int_param(name, default=None, *, required=False, min=None, max=None, tru
         return default
 
     try:
+        if val == "true" or val == "True" or val == True:
+            val = 1
+        if val == "false" or val == "False" or val == False:
+            val = 0
         val = int(val)
     except Exception:
         abort(http.BAD_REQUEST)
