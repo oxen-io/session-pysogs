@@ -1243,6 +1243,49 @@ class Room:
 
         return len(deleted), files_removed
 
+    def delete_all_user_reactions(self, poster: User, *, deleter: User):
+        """
+        Delete all emoji reactions placed on messages in the room by `poster`.
+        `deleter` must be a moderator if not deleting his/her own reactions, and
+        must be an `admin` if trying to delete all of the posts of another admin.
+        """
+
+        fail = None
+        if poster.id != deleter.id and not self.check_moderator(deleter):
+            fail = "user is not a moderator"
+        elif self.check_admin(poster) and not self.check_admin(deleter):
+            fail = "only admins can delete all reactions of another admin"
+
+        if fail is not None:
+            app.logger.warning(
+                f"Error deleting all reactions by {poster} from {self} by {deleter}: {fail}"
+            )
+            raise BadPermission()
+
+        with db.transaction():
+            deleted = [
+                r[0]
+                for r in query(
+                    'SELECT reaction FROM user_reactions WHERE "user" = :u AND reaction IN (SELECT id FROM reactions WHERE message IN (SELECT id FROM messages WHERE room = :r))',
+                    r=self.id,
+                    u=poster.id,
+                )
+            ]
+
+            query(
+                'DELETE FROM user_reactions WHERE "user" = :u AND reaction IN (SELECT id FROM reactions WHERE message IN (SELECT id FROM messages WHERE room = :r))',
+                r=self.id,
+                u=poster.id,
+            )
+
+        # FIXME: send `deleted` to mule
+
+        app.logger.debug(
+            f"Delete all reactions by {poster} from {self}: {len(deleted)} reactions"
+        )
+
+        return len(deleted)
+
     def attachments_size(self):
         """Returns the number and aggregate size of attachments currently stored in this room"""
         return query(

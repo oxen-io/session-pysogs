@@ -990,3 +990,58 @@ def delete_user_posts_from_all_rooms(sid):
             pass
 
     return jsonify({"total": total, "rooms": deletions})
+
+
+@rooms.delete("/room/<Room:room>/all/reactions/<SessionID:sid>")
+def delete_all_reactions(room, sid):
+    """
+    Deletes all emoji reactions placed by a user in a room
+
+    # URL Parameters
+
+    - `sid` — the session id of the user whose reactions are to be deleted
+
+    # Return value
+
+    An empty json object is returned.
+
+    # Error status codes
+
+    - 403 Forbidden — if the invoking user does not have access to the room.
+    - 404 Not Found — if the user we are deleting posts from made no posts in this room.
+    """
+    user = muser.User(session_id=sid, autovivify=False)
+    deleted = room.delete_all_user_reactions(user, deleter=g.user)
+    if not deleted:
+        abort(http.NOT_FOUND)
+    return jsonify({})
+
+
+@rooms.delete("/rooms/all/reactions/<SessionID:sid>")
+def delete_user_reactions_from_all_rooms(sid):
+    """
+    Deletes all emoji reactions by a given user from all rooms.
+
+    # URL Parameters
+
+    - `sid` — the session id of the user whose reactions are to be deleted
+
+    # Return value
+
+    A JSON dict with the keys:
+
+    - `total` — The total number of reactions deleted across all rooms.
+    - `messages` — A dict of room tokens and their deletion counts.
+    """
+    deletions = {}
+    total = 0
+    user = muser.User(session_id=sid, autovivify=False)
+    for room in mroom.get_accessible_rooms(g.user):
+        try:
+            count = room.delete_all_user_reactions(user, deleter=g.user)
+            total += count
+            deletions[room.token] = count
+        except exc.BadPermission:
+            pass
+
+    return jsonify({"total": total, "messages": deletions})
