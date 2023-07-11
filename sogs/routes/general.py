@@ -15,7 +15,7 @@ general = Blueprint('general', __name__)
 def get_caps():
     """
     Return the list of server features/capabilities.  Optionally takes a required= parameter
-    containing a comma-separated list of capabilites; if any are not satisfied we return a 412
+    containing a comma-separated list of capabilities; if any are not satisfied we return a 412
     (Precondition Failed) response with missing requested capabilities in the `missing` key.
     """
 

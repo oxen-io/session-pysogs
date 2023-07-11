@@ -608,7 +608,7 @@ def test_pinning(room, room2, user, mod, admin, global_admin, no_rate_limit):
         {"id": 6, "pinned_by": global_admin.session_id},
     ]
 
-    # Non-existant id should fail
+    # Non-existent id should fail
     with pytest.raises(exc.NoSuchPost):
         room.pin(123, admin)
 

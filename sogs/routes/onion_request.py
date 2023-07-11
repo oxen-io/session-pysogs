@@ -160,7 +160,7 @@ def handle_v4_onionreq_plaintext(body):
 
     would be encoded as the two-string bencoded list:
 
-        l72:{"method":"POST","endpoint":"/some/thing","headers":{"Some-Header":"a"}}14:post body heree
+        l72:{"method":"POST","endpoint":"/some/thing","headers":{"Some-Header":"a"}}14:post body here
             ^^^^^^^^72-byte request info json^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^   ^^^^^body^^^^^
 
     The return value of the request is always a 2-part bencoded list where the first part contains

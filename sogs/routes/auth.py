@@ -218,7 +218,7 @@ def handle_http_auth():
     touching its last activity timestamp).  If there are no auth headers at all this sets g.user to
     None.
 
-    If authentication headers are present but are unparseable (e.g. wrong size nonce, or failure to
+    If authentication headers are present but are unparsable (e.g. wrong size nonce, or failure to
     decode, or one or more of the headers are missing) then this throws a flask abort with a 400 Bad
     Request response.  Otherwise this can return a request error of:
     - 401 Unauthorized -- invalid signature, for example because of nonce reuse or signature
