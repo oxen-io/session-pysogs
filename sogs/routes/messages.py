@@ -39,7 +39,7 @@ def messages_since(room, seqno):
 
     - `t` — string indicating the types of updates that the client supports, thus allowing the
       client to opt-out of update types that it does not yet support.  Each letter of the string is
-      a flag; flags may be specified in any order, and are case-sensistive.  Unknown flags are
+      a flag; flags may be specified in any order, and are case-sensitive.  Unknown flags are
       ignored by SOGS (to allow for backwards compatibility). Current flags:
 
       - `r` — include message reaction updates

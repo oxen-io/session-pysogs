@@ -29,7 +29,7 @@ parser.add_argument(
     "-o",
     "--output",
     type=str,
-    help="Specify output file (or directory, when using -m); specifing a - or omitting outputs to "
+    help="Specify output file (or directory, when using -m); specifying a - or omitting outputs to "
     "stdout, but is not accepted in multi-file (-m) mode.",
 )
 parser.add_argument(

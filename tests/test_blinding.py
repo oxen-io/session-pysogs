@@ -12,7 +12,7 @@ import time
 from auth import x_sogs
 
 
-# For test reproducability use this fixed server pubkey for the blinding derivation tests (because
+# For test reproducibility use this fixed server pubkey for the blinding derivation tests (because
 # each test environment typically has its own, which completely changes the derived pubkeys).
 fake_server_pubkey_bytes = bytes.fromhex(
     '6a32c7b491f4199dd1260a4cc60ae51c6bd71dad939cc521e738409f53f943be'

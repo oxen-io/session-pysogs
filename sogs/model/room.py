@@ -655,7 +655,7 @@ class Room:
 
         whisper_clause = (
             # For a mod we want to see:
-            # - all whisper_mods messsages
+            # - all whisper_mods messages
             # - anything directed to us specifically
             # - anything we sent (i.e. outbound whispers)
             # - non-whispers
