@@ -98,7 +98,7 @@ blinding_factor = sodium.crypto_core_ed25519_scalar_reduce(
 
 
 @functools.lru_cache(maxsize=1024)
-def compute_blinded_abs_key(x_pk: bytes, *, k: bytes = blinding_factor):
+def compute_blinded15_abs_key(x_pk: bytes, *, k: bytes = blinding_factor):
     """
     Computes the *positive* blinded Ed25519 pubkey from an unprefixed session X25519 pubkey (i.e. 32
     bytes).  The returned value will always have the sign bit (i.e. the most significant bit of the
@@ -117,14 +117,14 @@ def compute_blinded_abs_key(x_pk: bytes, *, k: bytes = blinding_factor):
     return kA
 
 
-def compute_blinded_abs_id(session_id: str, *, k: bytes = blinding_factor):
+def compute_blinded15_abs_id(session_id: str, *, k: bytes = blinding_factor):
     """
     Computes the *positive* blinded id, as hex, from a prefixed, hex session id.  This function is a
     wrapper around compute_derived_key_bytes that handles prefixes and hex conversions.
 
     k allows you to compute for an alternative blinding factor, but should normally be omitted.
     """
-    return '15' + compute_blinded_abs_key(bytes.fromhex(session_id[2:]), k=k).hex()
+    return '15' + compute_blinded15_abs_key(bytes.fromhex(session_id[2:]), k=k).hex()
 
 
 def blinded_abs(blinded_id: str):

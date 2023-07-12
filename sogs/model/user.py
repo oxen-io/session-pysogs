@@ -83,7 +83,7 @@ class User:
 
         if session_id is not None:
             if try_blinding and config.REQUIRE_BLIND_KEYS and session_id.startswith('05'):
-                b_pos = crypto.compute_blinded_abs_id(session_id)
+                b_pos = crypto.compute_blinded15_abs_id(session_id)
                 b_neg = crypto.blinded_neg(b_pos)
                 row = query(
                     "SELECT * FROM users WHERE session_id IN (:pos, :neg) LIMIT 1",
@@ -357,7 +357,7 @@ class User:
             # We already tried (and failed) to get the blinded id during construction
             return None
 
-        b_pos = crypto.compute_blinded_abs_id(self.session_id)
+        b_pos = crypto.compute_blinded15_abs_id(self.session_id)
         b_neg = crypto.blinded_neg(b_pos)
         row = query(
             "SELECT * FROM users WHERE session_id IN (:pos, :neg) LIMIT 1", pos=b_pos, neg=b_neg
@@ -402,7 +402,7 @@ class User:
             INSERT INTO needs_blinding (blinded_abs, "user") VALUES (:b_abs, :u)
             ON CONFLICT DO NOTHING
             """,
-            b_abs=crypto.compute_blinded_abs_id(self.session_id),
+            b_abs=crypto.compute_blinded15_abs_id(self.session_id),
             u=self.id,
         )
 

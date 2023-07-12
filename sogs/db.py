@@ -220,7 +220,7 @@ def check_needs_blinding(dbconn):
             dbconn=dbconn,
         ):
             try:
-                pos_derived = crypto.compute_blinded_abs_id(sid)
+                pos_derived = crypto.compute_blinded15_abs_id(sid)
             except Exception as e:
                 logging.warning(f"Failed to blind session_id {sid}: {e}")
                 continue

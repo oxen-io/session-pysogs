@@ -20,7 +20,7 @@ fake_server_pubkey_bytes = bytes.fromhex(
 
 
 @pytest.mark.parametrize(
-    ["seed_hex", "blinded_id_exp"],
+    ["seed_hex", "blinded15_id_exp"],
     [
         pytest.param(
             "880adf5164a79bce71f7387fbc2cb2693c0bf0ab4cb42bf1edafddade7527a66",
@@ -104,12 +104,12 @@ fake_server_pubkey_bytes = bytes.fromhex(
         ),
     ],
 )
-def test_blinded_key_derivation(seed_hex, blinded_id_exp):
+def test_blinded15_key_derivation(seed_hex, blinded15_id_exp):
     """
     Tests that we can successfully compute the blinded session id from the unblinded session id.
 
     seed_hex - the ed25519 master key seed
-    blinded_id_exp - the expected blinded ed25519-based pubkey
+    blinded15_id_exp - the expected 15xxx blinded ed25519-based pubkey
     """
 
     s = SigningKey(bytes.fromhex(seed_hex))
@@ -124,9 +124,9 @@ def test_blinded_key_derivation(seed_hex, blinded_id_exp):
     session_id = '05' + s.to_curve25519_private_key().public_key.encode().hex()
     blinded_id = '15' + kA.hex()
 
-    assert blinded_id == blinded_id_exp
+    assert blinded_id == blinded15_id_exp
 
-    id_pos = crypto.compute_blinded_abs_id(session_id, k=k)
+    id_pos = crypto.compute_blinded15_abs_id(session_id, k=k)
     assert len(id_pos) == 66
     id_neg = crypto.blinded_neg(id_pos)
     assert len(id_neg) == 66
@@ -138,7 +138,7 @@ def test_blinded_key_derivation(seed_hex, blinded_id_exp):
     assert blinded_id in (id_pos, id_neg)
 
 
-def test_blinded_transition(
+def test_blinded15_transition(
     db, client, room, room2, user, user2, mod, admin, global_mod, global_admin, banned_user
 ):
     r3 = Room.create('R3', name='R3', description='Another room')
