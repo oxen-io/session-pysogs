@@ -5,6 +5,7 @@ import os
 import logging
 import importlib.resources
 import sqlalchemy
+from sys import version_info as python_version
 from sqlalchemy.sql.expression import bindparam
 
 HAVE_FILE_ID_HACKS = False
@@ -108,6 +109,16 @@ def insert_and_get_row(insert, _table, _pk, *, dbconn=None, **params):
         return query(f"SELECT * FROM {_table} WHERE {_pk} = :pk", pk=pkval).first()
 
 
+def read_schema(flavour: str):
+    if python_version >= (3, 9):
+        with (importlib.resources.files('sogs') / f"schema.{flavour}").open(
+            "r", encoding='utf-8', errors='strict'
+        ) as f:
+            return f.read()
+    else:
+        return importlib.resources.read_text('sogs', f"schema.{flavour}")
+
+
 def database_init(create=None, upgrade=True):
     """
     Perform database initialization: constructs the schema, if necessary, and performs any required
@@ -140,10 +151,10 @@ def database_init(create=None, upgrade=True):
 
         logging.warning("No database detected; creating new database schema")
         if engine.name == "sqlite":
-            conn.connection.executescript(importlib.resources.read_text('sogs', 'schema.sqlite'))
+            conn.connection.executescript(read_schema('sqlite'))
         elif engine.name == "postgresql":
             cur = conn.connection.cursor()
-            cur.execute(importlib.resources.read_text('sogs', 'schema.pgsql'))
+            cur.execute(read_schema('pgsql'))
             cur.close()
         else:
             err = f"Don't know how to create the database for {engine.name}"
