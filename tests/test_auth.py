@@ -524,7 +524,7 @@ def test_small_subgroups(client, db):
     assert r.data == b'Invalid authentication: given X-SOGS-Pubkey is not a valid Ed25519 pubkey'
 
     # Now try with a blinded id:
-    headers = x_sogs(a, B, 'GET', '/auth_test/whoami', blinded=True)
+    headers = x_sogs(a, B, 'GET', '/auth_test/whoami', blinded15=True)
     assert headers['X-SOGS-Pubkey'].startswith('15')
     A = bytes.fromhex(headers['X-SOGS-Pubkey'][2:])
 

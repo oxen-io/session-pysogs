@@ -409,7 +409,15 @@ class User:
     @property
     def is_blinded(self):
         """True if the user's session id is a derived key"""
+        return self.session_id.startswith('15') or self.session_id.startswith('25')
+
+    @property
+    def is_blinded15(self):
         return self.session_id.startswith('15')
+
+    @property
+    def is_blinded25(self):
+        return self.session_id.startswith('25')
 
     @property
     def system_user(self):

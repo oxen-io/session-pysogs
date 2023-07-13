@@ -5,15 +5,15 @@ import sogs.crypto
 
 
 class User(sogs.model.user.User):
-    def __init__(self, blinded=False):
+    def __init__(self, blinded15=False):
         self.ed_key = SigningKey.generate()
 
         self.a = self.ed_key.to_curve25519_private_key().encode()
-        self.ka = sodium.crypto_core_ed25519_scalar_mul(sogs.crypto.blinding_factor, self.a)
-        self.kA = sodium.crypto_scalarmult_ed25519_base_noclamp(self.ka)
-        self.blinded_id = '15' + self.kA.hex()
-        if blinded:
-            session_id = self.blinded_id
+        self.ka15 = sodium.crypto_core_ed25519_scalar_mul(sogs.crypto.blinding15_factor, self.a)
+        self.kA15 = sodium.crypto_scalarmult_ed25519_base_noclamp(self.ka15)
+        self.blinded15_id = '15' + self.kA15.hex()
+        if blinded15:
+            session_id = self.blinded15_id
         else:
             session_id = '05' + self.ed_key.to_curve25519_private_key().public_key.encode().hex()
 

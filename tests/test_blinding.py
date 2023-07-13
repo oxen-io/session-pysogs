@@ -253,7 +253,7 @@ def test_blinded15_transition(
         from sogs.model.user import User
 
         # Direct User construction of a new blinded user should transition:
-        b_mod = User(session_id=mod.blinded_id)
+        b_mod = User(session_id=mod.blinded15_id)
         unmigrated.remove(mod.id)
         assert unmigrated == set(r[0] for r in db.query('SELECT "user" FROM needs_blinding'))
         r1mods[0][0] = b_mod.session_id
@@ -262,14 +262,14 @@ def test_blinded15_transition(
         # Transition should occur on the first authenticated request:
         r = client.get(
             '/capabilities',
-            headers=x_sogs(user.ed_key, crypto.server_pubkey, 'GET', '/capabilities', blinded=True),
+            headers=x_sogs(user.ed_key, crypto.server_pubkey, 'GET', '/capabilities', blinded15=True),
         )
         assert r.status_code == 200
 
         unmigrated.remove(user.id)
         assert unmigrated == set(r[0] for r in db.query('SELECT "user" FROM needs_blinding'))
         r3mods[3].clear()
-        r3mods[3].extend(sorted((user.blinded_id, global_admin.session_id)))
+        r3mods[3].extend(sorted((user.blinded15_id, global_admin.session_id)))
         assert room.get_mods(global_admin) == r1mods
         assert room2.get_mods(global_admin) == r2mods
         assert r3.get_mods(global_admin) == r3mods
@@ -278,7 +278,7 @@ def test_blinded15_transition(
             r = client.get(
                 '/capabilities',
                 headers=x_sogs(
-                    u.ed_key, crypto.server_pubkey, 'GET', '/capabilities', blinded=True
+                    u.ed_key, crypto.server_pubkey, 'GET', '/capabilities', blinded15=True
                 ),
             )
             # Banned user should still be banned after migration:
@@ -296,30 +296,30 @@ def test_blinded15_transition(
 
         # NB: "global_admin" isn't actually an admin anymore (we transferred the permission to the
         # blinded equivalent), so shouldn't see the invisible mods:
-        assert room.get_mods(global_admin) == ([mod.blinded_id], [admin.blinded_id], [], [])
+        assert room.get_mods(global_admin) == ([mod.blinded15_id], [admin.blinded15_id], [], [])
         assert room2.get_mods(global_admin) == ([], [], [], [])
         assert r3.get_mods(global_admin) == ([], [], [], [])
 
         r1mods = (
-            [mod.blinded_id],
-            [admin.blinded_id],
-            [global_mod.blinded_id],
-            [global_admin.blinded_id],
+            [mod.blinded15_id],
+            [admin.blinded15_id],
+            [global_mod.blinded15_id],
+            [global_admin.blinded15_id],
         )
-        r2mods = ([], [], [global_mod.blinded_id], [global_admin.blinded_id])
+        r2mods = ([], [], [global_mod.blinded15_id], [global_admin.blinded15_id])
         r3mods = (
             [],
             [],
-            [global_mod.blinded_id],
-            sorted((user.blinded_id, global_admin.blinded_id)),
+            [global_mod.blinded15_id],
+            sorted((user.blinded15_id, global_admin.blinded15_id)),
         )
 
-        b_g_admin = User(session_id=global_admin.blinded_id)
+        b_g_admin = User(session_id=global_admin.blinded15_id)
         assert room.get_mods(b_g_admin) == r1mods
         assert room2.get_mods(b_g_admin) == r2mods
         assert r3.get_mods(b_g_admin) == r3mods
 
-        b_u2 = User(session_id=user2.blinded_id)
+        b_u2 = User(session_id=user2.blinded15_id)
         assert [r[0] for r in db.query('SELECT "user" FROM user_permission_futures')] == [b_u2.id]
         assert [r[0] for r in db.query('SELECT "user" FROM user_ban_futures')] == [b_u2.id]
 
@@ -362,7 +362,7 @@ def test_auto_blinding(db, client, room, user, user2, mod, global_admin):
         assert db.query("SELECT COUNT(*) FROM needs_blinding").fetchone()[0] == 2
 
         # Initializing the blinded user should resolve the needs_blinding:
-        b_user2 = User(session_id=user2.blinded_id)
+        b_user2 = User(session_id=user2.blinded15_id)
         assert b_user2.id != user2.id
 
         upo = get_perm_flags(db, ['write', 'banned'], [mod])
@@ -395,7 +395,7 @@ def test_auto_blinding(db, client, room, user, user2, mod, global_admin):
         u3._refresh()
         assert u3.banned
 
-        b_u3 = User(session_id=u3.blinded_id)
+        b_u3 = User(session_id=u3.blinded15_id)
         assert db.query("SELECT COUNT(*) FROM needs_blinding").fetchone()[0] == 1
         assert b_u3.banned
         u3._refresh()
@@ -413,7 +413,7 @@ def test_auto_blinding(db, client, room, user, user2, mod, global_admin):
         assert b_u3.banned
 
         # Moderator setting migration:
-        b_user = User(session_id=user.blinded_id)
+        b_user = User(session_id=user.blinded15_id)
         user._refresh()
         assert db.query("SELECT COUNT(*) FROM needs_blinding").fetchone()[0] == 0
         room.set_moderator(user, added_by=global_admin)
