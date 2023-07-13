@@ -38,7 +38,15 @@ def x_sogs_raw(
     n = nonce if nonce else x_sogs_nonce()
     ts = int(time.time()) + timestamp_off
 
-    if blinded15:
+    if blinded25:
+        a = s.to_curve25519_private_key().encode()
+        k = sodium.crypto_core_ed25519_scalar_reduce(
+            blake2b([s.to_curve25519_private_key().public_key.encode(), sogs.crypto.server_pubkey_bytes], digest_size=64)
+        )
+        ka = sodium.crypto_core_ed25519_scalar_mul(k, a)
+        kA = sodium.crypto_scalarmult_ed25519_base_noclamp(ka)
+        pubkey = '25' + kA.hex()
+    elif blinded15:
         a = s.to_curve25519_private_key().encode()
         k = sodium.crypto_core_ed25519_scalar_reduce(
             blake2b(sogs.crypto.server_pubkey_bytes, digest_size=64)
@@ -56,7 +64,7 @@ def x_sogs_raw(
     if body:
         to_sign.append(blake2b(body, digest_size=64))
 
-    if blinded15:
+    if blinded15 or blinded25:
         H_rh = sha512(s.encode())[32:]
         r = sodium.crypto_core_ed25519_scalar_reduce(sha512([H_rh, kA, *to_sign]))
         sig_R = sodium.crypto_scalarmult_ed25519_base_noclamp(r)
@@ -85,4 +93,4 @@ def x_sogs(*args, **kwargs):
 
 def x_sogs_for(user, *args, **kwargs):
     B = sogs.crypto.server_pubkey
-    return x_sogs(user.ed_key, B, *args, blinded15=user.is_blinded15, **kwargs)
+    return x_sogs(user.ed_key, B, *args, blinded15=user.is_blinded15, blinded25=user.is_blinded25, **kwargs)
