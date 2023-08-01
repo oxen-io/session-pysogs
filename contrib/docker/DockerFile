@@ -1,0 +1,24 @@
+FROM debian:stable
+
+RUN apt-get update
+RUN apt-get upgrade -y
+
+# we need this to make https://deb.oxen.io fetches work
+RUN apt-get install -y ca-certificates curl apt-utils ucf vim
+
+# install the Oxen apt repository public signing key:
+RUN curl -so /etc/apt/trusted.gpg.d/oxen.gpg https://deb.oxen.io/pub.gpg
+
+# there is no lsb-release package on the base debian build
+RUN echo "deb https://deb.oxen.io $(cat /etc/os-release | grep VERSION_CODENAME | cut -d "=" -f2) main" > /etc/apt/sources.list.d/oxen.list
+RUN cat /etc/apt/sources.list.d/oxen.list
+RUN apt-get update
+
+RUN echo sogs-standalone session-pysogs/url-http string http://example.com | debconf-set-selections
+RUN  apt-get install -y sogs-standalone
+
+# just add an alias to the pysogs start command
+RUN echo '#!/bin/bash\n/usr/bin/uwsgi --uid _loki --ini /etc/sogs/uwsgi-standalone.ini' > /usr/bin/start-sogs-uwsgi && \
+    chmod +x /usr/bin/start-sogs-uwsgi
+
+EXPOSE 80
