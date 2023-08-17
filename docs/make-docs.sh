@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # The following npm packages must be installed 
-# docsify-cli docsify-themeable
+# docsify-cli docsify-themeable docsify-katex@1.4.4 katex marked@4
 
 set -e
 
@@ -36,6 +36,11 @@ cp $npm_dir/prismjs/components/prism-{json,python,http}.min.js api/vendor
 cp $npm_dir/docsify-themeable/dist/css/theme-simple.css api/vendor
 cp $npm_dir/docsify-themeable/dist/css/theme-simple-dark.css api/vendor
 cp $npm_dir/docsify-themeable/dist/js/docsify-themeable.min.js api/vendor
+cp $npm_dir/marked/marked.min.js api/vendor
+cp $npm_dir/katex/dist/katex.min.js api/vendor
+cp $npm_dir/katex/dist/katex.min.css api/vendor
+cp -R $npm_dir/katex/dist/fonts api/vendor
+cp $npm_dir/docsify-katex/dist/docsify-katex.js api/vendor
 
 PYTHONPATH=.. ./generate-api-docs.py -m -o api
 
@@ -65,12 +70,16 @@ if (m{^\s*<script>\s*$} .. m{^\s*</script>\s*$}) {
     s{^\s*<link rel="stylesheet" href="vendor/themes/vue.css">\s*$}{};
     if (m{^\s*</body>}) {
         print qq{
+  <link rel="stylesheet" href="vendor/katex.min.css" />
   <link rel="stylesheet" media="(prefers-color-scheme: light)" href="vendor/theme-simple.css">
   <link rel="stylesheet" media="(prefers-color-scheme: dark)" href="vendor/theme-simple-dark.css">
   <script src="vendor/search.min.js"></script>
   <script src="vendor/prism-json.min.js"></script>
   <script src="vendor/prism-python.min.js"></script>
   <script src="vendor/prism-http.min.js"></script>
+  <script src="vendor/marked.min.js"></script>
+  <script src="vendor/katex.min.js"></script>
+  <script src="vendor/docsify-katex.js"></script>
   <script src="vendor/docsify-themeable.min.js"></script>
 };
     }
