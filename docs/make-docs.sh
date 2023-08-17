@@ -3,6 +3,9 @@
 # The following npm packages must be installed 
 # docsify-cli docsify-themeable docsify-katex@1.4.4 katex marked@4
 
+# To customise the theme see:
+# https://jhildenbiddle.github.io/docsify-themeable/#/customization
+
 set -e
 
 if [ "$(basename $(pwd))" != "docs" ] || ! [ -e "make-docs.sh" ]; then
@@ -73,6 +76,11 @@ if (m{^\s*<script>\s*$} .. m{^\s*</script>\s*$}) {
   <link rel="stylesheet" href="vendor/katex.min.css" />
   <link rel="stylesheet" media="(prefers-color-scheme: light)" href="vendor/theme-simple.css">
   <link rel="stylesheet" media="(prefers-color-scheme: dark)" href="vendor/theme-simple-dark.css">
+  <style>
+    :root {
+      --content-max-width : 1100px;
+    }
+  </style>
   <script src="vendor/search.min.js"></script>
   <script src="vendor/prism-json.min.js"></script>
   <script src="vendor/prism-python.min.js"></script>
