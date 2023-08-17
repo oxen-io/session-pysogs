@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # The following npm packages must be installed 
-# docsify-cli docsify-themeable docsify-katex@latest katex marked@latest
+# docsify-cli docsify-themeable
 
 set -e
 
@@ -33,9 +33,6 @@ fi
 
 cp $npm_dir/docsify/lib/plugins/search.min.js api/vendor
 cp $npm_dir/prismjs/components/prism-{json,python,http}.min.js api/vendor
-cp $npm_dir/katex/dist/katex.min.js api/vendor
-cp $npm_dir/marked/marked.min.js api/vendor
-cp $npm_dir/docsify-katex/dist/docsify-katex.js api/vendor
 cp $npm_dir/docsify-themeable/dist/css/theme-simple.css api/vendor
 cp $npm_dir/docsify-themeable/dist/css/theme-simple-dark.css api/vendor
 cp $npm_dir/docsify-themeable/dist/js/docsify-themeable.min.js api/vendor
@@ -71,12 +68,9 @@ if (m{^\s*<script>\s*$} .. m{^\s*</script>\s*$}) {
   <link rel="stylesheet" media="(prefers-color-scheme: light)" href="vendor/theme-simple.css">
   <link rel="stylesheet" media="(prefers-color-scheme: dark)" href="vendor/theme-simple-dark.css">
   <script src="vendor/search.min.js"></script>
-  <script src="vendor/katex.min.js"></script>
-  <script src="vendor/marked.min.js"></script>
   <script src="vendor/prism-json.min.js"></script>
   <script src="vendor/prism-python.min.js"></script>
   <script src="vendor/prism-http.min.js"></script>
-  <script src="vendor/docsify-katex.js"></script>
   <script src="vendor/docsify-themeable.min.js"></script>
 };
     }
