@@ -15,7 +15,7 @@ fi
 
 rm -rf api
 
-docsify init --local api
+npx docsify init --local api
 
 rm -Rf api/vendor/themes
 rm -f api/README.md
