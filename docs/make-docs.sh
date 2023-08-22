@@ -1,5 +1,11 @@
 #!/bin/bash
 
+# The following npm packages must be installed 
+# docsify-cli docsify-themeable docsify-katex@1.4.4 katex marked@4
+
+# To customise the theme see:
+# https://jhildenbiddle.github.io/docsify-themeable/#/customization
+
 set -e
 
 if [ "$(basename $(pwd))" != "docs" ] || ! [ -e "make-docs.sh" ]; then
@@ -9,8 +15,9 @@ fi
 
 rm -rf api
 
-docsify init --local api
+npx docsify init --local api
 
+rm -Rf api/vendor/themes
 rm -f api/README.md
 
 if [ -n "$NPM_PACKAGES" ]; then
@@ -26,9 +33,17 @@ else
     exit 1
 fi
 
-cp $npm_dir/docsify/node_modules/prismjs/components/prism-{json,python,http}.min.js api/vendor
+
+cp $npm_dir/docsify/lib/plugins/search.min.js api/vendor
+cp $npm_dir/prismjs/components/prism-{json,python,http}.min.js api/vendor
+cp $npm_dir/docsify-themeable/dist/css/theme-simple.css api/vendor
+cp $npm_dir/docsify-themeable/dist/css/theme-simple-dark.css api/vendor
+cp $npm_dir/docsify-themeable/dist/js/docsify-themeable.min.js api/vendor
+cp $npm_dir/marked/marked.min.js api/vendor
+cp $npm_dir/katex/dist/katex.min.js api/vendor
+cp $npm_dir/katex/dist/katex.min.css api/vendor
+cp -R $npm_dir/katex/dist/fonts api/vendor
 cp $npm_dir/docsify-katex/dist/docsify-katex.js api/vendor
-cp $npm_dir/docsify-katex/node_modules/katex/dist/katex.min.css api/vendor
 
 PYTHONPATH=.. ./generate-api-docs.py -m -o api
 
@@ -45,19 +60,35 @@ if (m{^\s*<script>\s*$} .. m{^\s*</script>\s*$}) {
       loadSidebar: "sidebar.md",
       subMaxLevel: 2,
       homepage: "index.md",
+      themeable: {
+        readyTransition : true, // default
+        responsiveTables: true  // default
+      }
     }
   </script>\n};
     }
 } else {
     s{<title>.*</title>}{<title>Session PySOGS API</title>};
     s{(name="description" content=)"[^"]*"}{$1"Session PySOGS API documentation"};
+    s{^\s*<link rel="stylesheet" href="vendor/themes/vue.css">\s*$}{};
     if (m{^\s*</body>}) {
         print qq{
+  <link rel="stylesheet" href="vendor/katex.min.css" />
+  <link rel="stylesheet" media="(prefers-color-scheme: light)" href="vendor/theme-simple.css">
+  <link rel="stylesheet" media="(prefers-color-scheme: dark)" href="vendor/theme-simple-dark.css">
+  <style>
+    :root {
+      --content-max-width : 1100px;
+    }
+  </style>
+  <script src="vendor/search.min.js"></script>
   <script src="vendor/prism-json.min.js"></script>
   <script src="vendor/prism-python.min.js"></script>
   <script src="vendor/prism-http.min.js"></script>
+  <script src="vendor/marked.min.js"></script>
+  <script src="vendor/katex.min.js"></script>
   <script src="vendor/docsify-katex.js"></script>
-  <link rel="stylesheet" href="vendor/katex.min.css" />
+  <script src="vendor/docsify-themeable.min.js"></script>
 };
     }
     print;
