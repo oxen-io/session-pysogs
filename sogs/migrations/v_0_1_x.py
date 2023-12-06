@@ -5,10 +5,11 @@ import os
 import logging
 import time
 from .exc import DatabaseUpgradeRequired
+from .. import db
 
 
 def migrate(conn, *, check_only):
-    n_rooms = conn.execute("SELECT COUNT(*) FROM rooms").first()[0]
+    n_rooms = db.query("SELECT COUNT(*) FROM rooms", dbconn=conn).first()[0]
 
     # Migration from a v0.1.x database:
     if n_rooms > 0 or not os.path.exists("database.db"):

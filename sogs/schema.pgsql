@@ -206,7 +206,7 @@ EXECUTE PROCEDURE trigger_user_admins_are_mods();
 -- ids are added by raw session ID (e.g. when adding a moderator by session id).
 CREATE TABLE needs_blinding (
     blinded_abs TEXT NOT NULL PRIMARY KEY, -- the positive of the possible two blinded keys
-    "user" BIGINT NOT NULL UNIQUE REFERENCES users ON DELETE CASCADE
+    "user" BIGINT NOT NULL REFERENCES users ON DELETE CASCADE
 );
 
 

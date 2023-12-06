@@ -178,7 +178,7 @@ END;
 -- ids are added by raw session ID (e.g. when adding a moderator by session id).
 CREATE TABLE needs_blinding (
     blinded_abs TEXT NOT NULL PRIMARY KEY, -- the positive of the possible two blinded keys
-    "user" INTEGER NOT NULL UNIQUE REFERENCES users ON DELETE CASCADE
+    "user" INTEGER NOT NULL REFERENCES users ON DELETE CASCADE
 );
 
 

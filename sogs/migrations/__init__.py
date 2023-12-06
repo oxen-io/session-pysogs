@@ -4,6 +4,7 @@ import coloredlogs
 from .. import config
 
 from . import (
+    blind25,
     file_message,
     fix_info_update_triggers,
     import_hacks,
@@ -50,6 +51,7 @@ def migrate(conn, *, check_only=False):
         user_permissions,
         file_message,
         fix_info_update_triggers,
+        blind25,
         import_hacks,
     ):
         changes = False

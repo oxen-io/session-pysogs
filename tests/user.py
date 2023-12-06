@@ -24,7 +24,7 @@ class User(sogs.model.user.User):
             ),
             self.a,
         )
-        self.kA25 = sodium.crypto_scalarmult_ed25519_base_noclamp(self.ka15)
+        self.kA25 = sodium.crypto_scalarmult_ed25519_base_noclamp(self.ka25)
         self.blinded15_id = '15' + self.kA15.hex()
         self.blinded25_id = '25' + self.kA25.hex()
         if blinded25:

@@ -52,7 +52,7 @@ def query(query, *, dbconn=None, bind_expanding=None, **params):
     if bind_expanding:
         q = q.bindparams(*(bindparam(c, expanding=True) for c in bind_expanding))
 
-    return dbconn.execute(q, **params)
+    return dbconn.execute(q, params)
 
 
 # Begins a (potentially nested) transaction.  Takes an optional connection; if omitted uses
@@ -231,17 +231,19 @@ def check_needs_blinding(dbconn):
             dbconn=dbconn,
         ):
             try:
-                pos_derived = crypto.compute_blinded15_abs_id(sid)
+                pos_derived15 = crypto.compute_blinded15_abs_id(sid)
+                pos_derived25 = crypto.compute_blinded25_abs_id(sid)
             except Exception as e:
                 logging.warning(f"Failed to blind session_id {sid}: {e}")
                 continue
 
-            query(
-                'INSERT INTO needs_blinding (blinded_abs, "user") VALUES (:blinded, :uid)',
-                blinded=pos_derived,
-                uid=uid,
-                dbconn=dbconn,
-            )
+            for pos_derived in (pos_derived15, pos_derived25):
+                query(
+                    'INSERT INTO needs_blinding (blinded_abs, "user") VALUES (:blinded, :uid)',
+                    blinded=pos_derived,
+                    uid=uid,
+                    dbconn=dbconn,
+                )
 
 
 engine, engine_initial_pid, metadata = None, None, None
@@ -311,7 +313,7 @@ def init_engine(*args, **kwargs):
         @sqlalchemy.event.listens_for(engine, "begin")
         def do_begin(conn):
             # emit our own BEGIN
-            conn.execute("BEGIN IMMEDIATE")
+            conn.exec_driver_sql("BEGIN IMMEDIATE")
 
     else:
         have_returning = True

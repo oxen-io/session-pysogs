@@ -19,7 +19,8 @@ import secrets
 import hmac
 import functools
 
-import pyonionreq
+import pyonionreq  # FIXME
+from session_util import blinding
 
 if [int(v) for v in nacl.__version__.split('.')] < [1, 4]:
     raise ImportError("SOGS requires nacl v1.4.0+")
@@ -109,7 +110,7 @@ def compute_blinded_abs_key_base(x_pk: bytes, *, k: bytes):
 
     Input and result are raw pubkeys as bytes (i.e. no 0x05/0x15/0x25 prefix).
 
-    k is specific to the type of blinding in use (e.g. 15xx or 25xx use different k values).
+    k is specific to the type of ublinding in use (e.g. 15xx or 25xx use different k values).
     """
     A = xed25519_pubkey(x_pk)
     kA = sodium.crypto_scalarmult_ed25519_noclamp(k, A)
@@ -161,17 +162,13 @@ def compute_blinded25_key_from_15(
         k15_inv = sodium.crypto_core_ed25519_scalar_invert(sodium.crypto_core_ed25519_scalar_reduce(
             blake2b(_server_pk, digest_size=64)))
 
-    x = sodium.crypto_scalarmult_ed25519_noclamp(k15_inv, blinded15_pubkey)
-    return sodium.crypto_scalarmult_ed25519_noclamp(
-        sodium.crypto_core_ed25519_scalar_reduce(
-            blake2b([sodium.crypto_sign_ed25519_pk_to_curve25519(x), _server_pk], digest_size=64)
-        ),
-        x,
-    )
+    ed = sodium.crypto_scalarmult_ed25519_noclamp(k15_inv, blinded15_pubkey)
+    x = sodium.crypto_sign_ed25519_pk_to_curve25519(ed)
+    return blinding.blind25_id(x, _server_pk)[1:]
 
 
 def compute_blinded25_id_from_15(
-    blinded15_id: bytes, *, _server_pk: Optional[bytes] = None
+    blinded15_id: str, *, _server_pk: Optional[bytes] = None
 ):
     """
     Same as above, but works on and returns prefixed hex strings.
@@ -179,41 +176,11 @@ def compute_blinded25_id_from_15(
     return '25' + compute_blinded25_key_from_15(bytes.fromhex(blinded15_id[2:]), _server_pk=_server_pk).hex()
 
 
-@functools.lru_cache(maxsize=1024)
-def compute_blinded25_abs_key(x_pk: bytes, *, _server_pk: bytes = server_pubkey_bytes):
+def blinded15_abs(blinded_id: str):
     """
-    Computes the *positive* 25xxx-style blinded Ed25519 pubkey from an unprefixed session X25519
-    pubkey (i.e. 32 bytes).  The returned value will always have the sign bit (i.e. the most
-    significant bit of the last byte) set to 0; the actual derived key associated with this session
-    id could have either sign.
-
-    Input and result are in bytes, without the 0x05 or 0x25 prefix.
-
-    `_server_pk` is intended only for the test suite and normally should not be provided.
-    """
-    # Our "k" for blinding is: H(session_xpubkey || server_pk), where session_xpubkey is the binary
-    # pubkey (i.e. the session_id in bytes, without the leading 0x05).
-    k = sodium.crypto_core_ed25519_scalar_reduce(blake2b([x_pk, _server_pk], digest_size=64))
-
-    return compute_blinded_abs_key_base(x_pk, k=k)
-
-
-def compute_blinded25_abs_id(session_id: str, *, _server_pk: bytes = server_pubkey_bytes):
-    """
-    Computes the *positive* 25xxx blinded id, as hex, from a prefixed, hex session id.  This
-    function is a wrapper around compute_blinded25_abs_key that handles prefixes and hex
-    conversions.
-    """
-    return (
-        '25' + compute_blinded25_abs_key(bytes.fromhex(session_id[2:]), _server_pk=_server_pk).hex()
-    )
-
-
-def blinded_abs(blinded_id: str):
-    """
-    Takes a blinded hex pubkey (i.e. length 66, prefixed with either 15 or 25) and returns the
-    positive pubkey alternative (including prefix): that is, if the pubkey is already positive, it
-    is returned as-is; otherwise the returned value is a copy with the sign bit cleared.
+    Takes a 15-blinded hex pubkey (i.e. length 66, prefixed with 15) and returns the positive pubkey
+    alternative (including prefix): that is, if the pubkey is already positive, it is returned
+    as-is; otherwise the returned value is a copy with the sign bit cleared.
     """
 
     # Sign bit is the MSB of the last byte, which will be at [31] of the private key, hence 64 is
@@ -224,9 +191,9 @@ def blinded_abs(blinded_id: str):
     return blinded_id
 
 
-def blinded_neg(blinded_id: str):
+def blinded15_neg(blinded_id: str):
     """
-    Counterpart to blinded_abs that always returns the *negative* pubkey alternative.
+    Counterpart to blinded15_abs that always returns the *negative* pubkey alternative.
     """
 
     msn = int(blinded_id[64], 16)

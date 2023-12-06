@@ -47,7 +47,9 @@ class User:
         *not* blinded then attempt to look up the possible blinded versions of the session id and
         use one of those (if they exist) rather than the given unblinded id.  If no blinded version
         exists then the unblinded id will be used (check `.is_blinded` after construction to see if
-        we found and switched to the blinded id).
+        we found and switched to the blinded id).  This option will prefer using a 25xxx blinded ID,
+        if found, over a 15xxx blinded ID (including re-blinding a given 15xxx id to a 25xxx blinded
+        id).
 
         touch - if True (default is False) then update the last_activity time of this user before
         returning it.
@@ -82,15 +84,25 @@ class User:
         self._tried_blinding = False
 
         if session_id is not None:
-            if try_blinding and config.REQUIRE_BLIND_KEYS and session_id.startswith('05'):
-                b_pos = crypto.compute_blinded15_abs_id(session_id)
-                b_neg = crypto.blinded_neg(b_pos)
-                row = query(
-                    "SELECT * FROM users WHERE session_id IN (:pos, :neg) LIMIT 1",
-                    pos=b_pos,
-                    neg=b_neg,
-                ).first()
-                self._tried_blinding = True
+            if try_blinding and config.REQUIRE_BLIND_KEYS:
+                if session_id.startswith('05'):
+                    id25 = crypto.compute_blinded25_id(session_id)
+                    pos15 = crypto.compute_blinded15_abs_id(session_id)
+                    neg15 = crypto.blinded_neg(pos15)
+                    row = query(
+                        "SELECT * FROM users WHERE session_id IN (:id25, :pos15, :neg15)"
+                        "ORDER BY session_id DESC LIMIT 1",  # Order descending so that we prefer the 25 variant if both are present
+                        id25=id25,
+                        pos15=pos15,
+                        neg15=neg15,
+                    ).first()
+                    self._tried_blinding = True
+                elif session_id.startswith('15'):
+                    row = query(
+                        "SELECT * FROM users WHERE session_id = :b25",
+                        b25=crypto.compute_blinded25_id_from_15(session_id),
+                    ).first()
+                    self._tried_blinding = True
 
             if not row:
                 row = query("SELECT * FROM users WHERE session_id = :s", s=session_id).first()
@@ -127,7 +139,7 @@ class User:
         Any permissions/bans are *moved* from the old, unblinded id to the new blinded user record.
         """
 
-        if not session_id.startswith('15'):
+        if not (session_id.startswith('15') or session_id.startswith('25')):
             return
         blind_abs = crypto.blinded_abs(session_id.lower())
         with db.transaction():
