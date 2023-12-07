@@ -345,7 +345,7 @@ class User:
         """verify signature signed by this session id
         return True if the signature is valid otherwise return False
         """
-        pk = crypto.xed25519_pubkey(bytes.fromhex(self.session_id[2:]))
+        pk = crypto.xed25519.pubkey(bytes.fromhex(self.session_id[2:]))
         return crypto.verify_sig_from_pk(message, sig, pk)
 
     def find_blinded(self):

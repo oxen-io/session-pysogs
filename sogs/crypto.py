@@ -19,8 +19,7 @@ import secrets
 import hmac
 import functools
 
-import pyonionreq  # FIXME
-from session_util import blinding
+from session_util import blinding, xed25519
 
 if [int(v) for v in nacl.__version__.split('.')] < [1, 4]:
     raise ImportError("SOGS requires nacl v1.4.0+")
@@ -66,9 +65,6 @@ server_pubkey_hash_bytes = blake2b(server_pubkey_bytes)
 server_pubkey_hex = server_pubkey.encode(HexEncoder).decode('ascii')
 server_pubkey_base64 = server_pubkey.encode(Base64Encoder).decode('ascii')
 
-_junk_parser = pyonionreq.junk.Parser(privkey=_privkey_bytes, pubkey=server_pubkey_bytes)
-parse_junk = _junk_parser.parse_junk
-
 
 def verify_sig_from_pk(data, sig, pk):
     return VerifyKey(pk).verify(data, sig)
@@ -89,10 +85,6 @@ def server_encrypt(pk, data):
     return nonce + AESGCM(secret).encrypt(nonce, data, None)
 
 
-xed25519_sign = pyonionreq.xed25519.sign
-xed25519_verify = pyonionreq.xed25519.verify
-xed25519_pubkey = pyonionreq.xed25519.pubkey
-
 # AKA "k" for deprecated 15xxx blinding crypto:
 blinding15_factor = sodium.crypto_core_ed25519_scalar_reduce(
     blake2b(server_pubkey_bytes, digest_size=64)
@@ -112,7 +104,7 @@ def compute_blinded_abs_key_base(x_pk: bytes, *, k: bytes):
 
     k is specific to the type of ublinding in use (e.g. 15xx or 25xx use different k values).
     """
-    A = xed25519_pubkey(x_pk)
+    A = xed25519.pubkey(x_pk)
     kA = sodium.crypto_scalarmult_ed25519_noclamp(k, A)
 
     if kA[31] & 0x80:
