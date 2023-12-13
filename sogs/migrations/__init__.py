@@ -44,6 +44,7 @@ def migrate(conn, *, check_only=False):
         seqno_etc,
         reactions,
         seqno_creation,
+        blind25,
         message_views,
         user_perm_futures,
         room_accessible,
@@ -51,7 +52,6 @@ def migrate(conn, *, check_only=False):
         user_permissions,
         file_message,
         fix_info_update_triggers,
-        blind25,
         import_hacks,
     ):
         changes = False
