@@ -15,7 +15,7 @@ if config.PROFANITY_FILTER:
 capabilities = {
     'sogs',  # Basic sogs capabilities
     'reactions',  # Reactions, added in 0.3.1
-    'blind25', # v2 blinded keys, "25xxx", are supported (check `blind` to see if required)
+    'blind25',  # v2 blinded keys, "25xxx", are supported (check `blind` to see if required)
     # 'newcap',  # Add here
 }
 

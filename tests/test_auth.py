@@ -379,7 +379,6 @@ def test_auth_batch(client, db):
 
 
 def test_auth_legacy(client, db, admin, user, room):
-
     # Make a legacy auth token to make sure it works as expected first, but also to make sure it
     # gets ignored when we use X-SOGS-*.
     raw_token = sogs.utils.make_legacy_token(admin.session_id)

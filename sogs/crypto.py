@@ -138,9 +138,7 @@ def compute_blinded15_abs_id(session_id: str, *, _k: bytes = blinding15_factor):
 
 
 @functools.lru_cache(maxsize=1024)
-def compute_blinded25_key_from_15(
-    blinded15_pubkey: bytes, *, _server_pk: Optional[bytes] = None
-):
+def compute_blinded25_key_from_15(blinded15_pubkey: bytes, *, _server_pk: Optional[bytes] = None):
     """
     Computes a 25xxx blinded key from a given 15xxx blinded key.  Takes just the pubkey (i.e. not
     including the 0x15) as bytes, returns just the pubkey as bytes (i.e. no 0x25 prefix).
@@ -151,21 +149,25 @@ def compute_blinded25_key_from_15(
         _server_pk = server_pubkey_bytes
         k15_inv = b15_inv
     else:
-        k15_inv = sodium.crypto_core_ed25519_scalar_invert(sodium.crypto_core_ed25519_scalar_reduce(
-            blake2b(_server_pk, digest_size=64)))
+        k15_inv = sodium.crypto_core_ed25519_scalar_invert(
+            sodium.crypto_core_ed25519_scalar_reduce(blake2b(_server_pk, digest_size=64))
+        )
 
     ed = sodium.crypto_scalarmult_ed25519_noclamp(k15_inv, blinded15_pubkey)
     x = sodium.crypto_sign_ed25519_pk_to_curve25519(ed)
     return blinding.blind25_id(x, _server_pk)[1:]
 
 
-def compute_blinded25_id_from_15(
-    blinded15_id: str, *, _server_pk: Optional[bytes] = None
-):
+def compute_blinded25_id_from_15(blinded15_id: str, *, _server_pk: Optional[bytes] = None):
     """
     Same as above, but works on and returns prefixed hex strings.
     """
-    return '25' + compute_blinded25_key_from_15(bytes.fromhex(blinded15_id[2:]), _server_pk=_server_pk).hex()
+    return (
+        '25'
+        + compute_blinded25_key_from_15(
+            bytes.fromhex(blinded15_id[2:]), _server_pk=_server_pk
+        ).hex()
+    )
 
 
 def blinded15_abs(blinded_id: str):

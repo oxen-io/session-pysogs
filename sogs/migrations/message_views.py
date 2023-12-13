@@ -7,10 +7,13 @@ def migrate(conn, *, check_only):
 
     need_migration = False
 
-    if not ('message_metadata' in db.metadata.tables and all(
-        x in db.metadata.tables['message_metadata'].c
-        for x in ('whisper_to', 'whisper_mods', 'filtered', 'seqno', 'seqno_data')
-    )):
+    if not (
+        'message_metadata' in db.metadata.tables
+        and all(
+            x in db.metadata.tables['message_metadata'].c
+            for x in ('whisper_to', 'whisper_mods', 'filtered', 'seqno', 'seqno_data')
+        )
+    ):
         need_migration = True
 
     query_bad_trigger = (
@@ -26,15 +29,14 @@ def migrate(conn, *, check_only):
             AND routine_definition LIKE :like_bad
         """
     )
-    if (
-        db.query(query_bad_trigger, dbconn=conn, like_bad='%DELETE FROM reactions%').first()[0]
-        != 0
-    ):
+    if db.query(query_bad_trigger, dbconn=conn, like_bad='%DELETE FROM reactions%').first()[0] != 0:
         need_migration = True
 
     # added in 25-blinding
-    if not ('message_details' in db.metadata.tables and
-            'signing_id' in db.metadata.tables['message_metadata'].c):
+    if not (
+        'message_details' in db.metadata.tables
+        and 'signing_id' in db.metadata.tables['message_metadata'].c
+    ):
         need_migration = True
 
     if not need_migration:

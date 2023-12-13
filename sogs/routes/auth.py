@@ -263,7 +263,8 @@ def handle_http_auth():
 
     if pk[0] not in (0x00, 0x15, 0x25):
         abort_with_reason(
-            http.BAD_REQUEST, "Invalid authentication: X-SOGS-Pubkey must be 00-, 15-, or 25- prefixed"
+            http.BAD_REQUEST,
+            "Invalid authentication: X-SOGS-Pubkey must be 00-, 15-, or 25- prefixed",
         )
     blinded15_pk = pk[0] == 0x15
     blinded25_pk = pk[0] == 0x25
