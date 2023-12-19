@@ -463,7 +463,7 @@ elif update_room:
 
     if args.delete_moderators:
         for a in args.delete_moderators:
-            if not re.fullmatch(r'[01]5[A-Fa-f0-9]{64}', a):
+            if not re.fullmatch(r'[012]5[A-Fa-f0-9]{64}', a):
                 print(f"Error: '{a}' is not a valid session id", file=sys.stderr)
                 sys.exit(1)
 
@@ -471,49 +471,32 @@ elif update_room:
 
         if global_rooms:
             for sid in args.delete_moderators:
-                u = User(session_id=sid, try_blinding=True)
-                was_admin = u.global_admin
-                if not u.global_admin and not u.global_moderator:
-                    print(f"{u.session_id} was not a global moderator")
-                else:
-                    u.remove_moderator(removed_by=sysadmin)
-                    print(
-                        f"Removed {u.session_id} as global {'admin' if was_admin else 'moderator'}"
-                    )
-
-                if u.is_blinded and sid.startswith('05'):
-                    try:
-                        u2 = User(session_id=sid, try_blinding=False, autovivify=False)
-                        if u2.global_admin or u2.global_moderator:
-                            was_admin = u2.global_admin
-                            u2.remove_moderator(removed_by=sysadmin)
-                            print(
-                                f"Removed {u2.session_id} as global "
-                                f"{'admin' if was_admin else 'moderator'}"
-                            )
-                    except NoSuchUser:
-                        pass
+                try:
+                    u = User(session_id=sid, autovivify=False)
+                    if u.global_admin or u.global_moderator:
+                        was_admin = u.global_admin
+                        u.remove_moderator(removed_by=sysadmin)
+                        print(
+                            f"Removed {u.session_id} "
+                            f"(identified by {sid}) "
+                            f"as global {'admin' if was_admin else 'moderator'}"
+                        )
+                except NoSuchUser:
+                    pass
         else:
             for sid in args.delete_moderators:
-                u = User(session_id=sid, try_blinding=True)
-                u2 = None
-                if u.is_blinded and sid.startswith('05'):
-                    try:
-                        u2 = User(session_id=sid, try_blinding=False, autovivify=False)
-                    except NoSuchUser:
-                        pass
-
-                for room in rooms:
-                    room.remove_moderator(u, removed_by=sysadmin)
-                    print(
-                        f"Removed {u.session_id} as moderator/admin of {room.name} ({room.token})"
-                    )
-                    if u2 is not None:
-                        room.remove_moderator(u2, removed_by=sysadmin)
+                try:
+                    u = User(session_id=sid, autovivify=False)
+                    for room in rooms:
+                        room.remove_moderator(u, removed_by=sysadmin)
                         print(
-                            f"Removed {u2.session_id} as moderator/admin of {room.name} "
-                            f"({room.token})"
+                            f"Removed {u.session_id} "
+                            f"(identified by {sid}) "
+                            f"as moderator/admin of {room.name} ({room.token})"
                         )
+                except NoSuchUser:
+                    pass
+
 
     if args.add_perms or args.clear_perms or args.remove_perms:
         if global_rooms:
