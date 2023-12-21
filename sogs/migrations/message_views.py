@@ -5,28 +5,42 @@ from .exc import DatabaseUpgradeRequired
 def migrate(conn, *, check_only):
     from .. import db
 
-    if 'message_metadata' in db.metadata.tables and all(
-        x in db.metadata.tables['message_metadata'].c
-        for x in ('whisper_to', 'whisper_mods', 'filtered', 'seqno', 'seqno_data')
-    ):
-        query_bad_trigger = (
-            """
-            SELECT COUNT(*) FROM sqlite_master
-                WHERE type = 'trigger' AND name = 'message_details_deleter'
-                AND sql LIKE :like_bad
-            """
-            if db.engine.name == "sqlite"
-            else """
-            SELECT COUNT(*) FROM information_schema.routines
-                WHERE routine_name = 'trigger_message_details_deleter'
-                AND routine_definition LIKE :like_bad
-            """
+    need_migration = False
+
+    if not (
+        'message_metadata' in db.metadata.tables
+        and all(
+            x in db.metadata.tables['message_metadata'].c
+            for x in ('whisper_to', 'whisper_mods', 'filtered', 'seqno', 'seqno_data')
         )
-        if (
-            db.query(query_bad_trigger, dbconn=conn, like_bad='%DELETE FROM reactions%').first()[0]
-            == 0
-        ):
-            return False
+    ):
+        need_migration = True
+
+    query_bad_trigger = (
+        """
+        SELECT COUNT(*) FROM sqlite_master
+            WHERE type = 'trigger' AND name = 'message_details_deleter'
+            AND sql LIKE :like_bad
+        """
+        if db.engine.name == "sqlite"
+        else """
+        SELECT COUNT(*) FROM information_schema.routines
+            WHERE routine_name = 'trigger_message_details_deleter'
+            AND routine_definition LIKE :like_bad
+        """
+    )
+    if db.query(query_bad_trigger, dbconn=conn, like_bad='%DELETE FROM reactions%').first()[0] != 0:
+        need_migration = True
+
+    # added in 25-blinding
+    if not (
+        'message_details' in db.metadata.tables
+        and 'signing_id' in db.metadata.tables['message_metadata'].c
+    ):
+        need_migration = True
+
+    if not need_migration:
+        return False
 
     logging.warning("DB migration: recreating message_metadata/message_details views")
     if check_only:
@@ -40,7 +54,7 @@ def migrate(conn, *, check_only):
         conn.execute(
             """
 CREATE VIEW message_details AS
-SELECT messages.*, uposter.session_id, uwhisper.session_id AS whisper_to
+SELECT messages.*, uposter.session_id, uwhisper.session_id AS whisper_to, COALESCE(messages.alt_id, uposter.session_id) AS signing_id
     FROM messages
         JOIN users uposter ON messages."user" = uposter.id
         LEFT JOIN users uwhisper ON messages.whisper = uwhisper.id
@@ -51,7 +65,7 @@ SELECT messages.*, uposter.session_id, uwhisper.session_id AS whisper_to
 CREATE TRIGGER message_details_deleter INSTEAD OF DELETE ON message_details
 FOR EACH ROW WHEN OLD.data IS NOT NULL
 BEGIN
-    UPDATE messages SET data = NULL, data_size = NULL, signature = NULL
+    UPDATE messages SET data = NULL, data_size = NULL, signature = NULL, alt_id = NULL
         WHERE id = OLD.id;
     DELETE FROM user_reactions WHERE reaction IN (
         SELECT id FROM reactions WHERE message = OLD.id);

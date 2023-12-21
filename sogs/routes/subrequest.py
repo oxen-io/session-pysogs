@@ -85,12 +85,11 @@ def make_subrequest(
         "PATH_INFO": monkey_path,
         "QUERY_STRING": query_string,
         "CONTENT_TYPE": content_type,
-        "CONTENT_LENGTH": content_length,
+        "CONTENT_LENGTH": str(content_length),
         **http_headers,
         'wsgi.input': body_input,
         'flask._preserve_context': False,
     }
-
     try:
         app.logger.debug(f"Initiating sub-request for {method} {path}")
         g.user_reauth = user_reauth
