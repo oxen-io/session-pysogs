@@ -353,23 +353,17 @@ def handle_legacy_banhammer():
     return jsonify({"status_code": http.OK})
 
 
-@legacy.delete("/block_list/<SessionID:session_id>")
+@legacy.delete("/block_list/<string:session_id>")
 def handle_legacy_unban(session_id):
-    app.logger.warning(f"handle_legacy_unban, session_id = {session_id}")
     user, room = legacy_check_user_room(moderator=True)
     to_unban = User(session_id=session_id, autovivify=False)
-    app.logger.warning(f"calling unban_user for: {session_id}")
     if room.unban_user(to_unban, mod=user):
-        app.logger.warning(f"calling unban_user success")
         return jsonify({"status_code": http.OK})
 
-    app.logger.warning(f"calling unban_user failed")
     abort(http.NOT_FOUND)
-
 
 @legacy.get("/block_list")
 def handle_legacy_banlist():
-    app.logger.warning(f"handle_legacy_banlist")
     # Bypass permission checks here because we want to continue even if we are banned:
     user, room = legacy_check_user_room(no_perms=True)
 
@@ -383,7 +377,6 @@ def handle_legacy_banlist():
         bans = []
 
     return jsonify({"status_code": http.OK, "banned_members": bans})
-
 
 @legacy.get("/moderators")
 def handle_legacy_get_mods():
