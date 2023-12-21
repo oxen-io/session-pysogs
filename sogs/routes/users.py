@@ -178,7 +178,7 @@ def set_mod(sid):
     404 Not Found — if one or more of the given `rooms` tokens do not exist.
     """
 
-    user = User(session_id=sid, try_blinding=True)
+    user = User(session_id=sid)
 
     req = request.json
 
@@ -310,7 +310,7 @@ def ban_user(sid):
     404 Not Found — if one or more of the given `rooms` tokens do not exist.
     """
 
-    user = User(session_id=sid, try_blinding=True)
+    user = User(session_id=sid)
     req = request.json
     rooms, global_ban = extract_rooms_or_global(req, admin=False)
 
@@ -378,7 +378,7 @@ def unban_user(sid):
     404 Not Found — if one or more of the given `rooms` tokens do not exist.
     """
 
-    user = User(session_id=sid, try_blinding=True)
+    user = User(session_id=sid)
     rooms, global_ban = extract_rooms_or_global(request.json, admin=False)
 
     if rooms:

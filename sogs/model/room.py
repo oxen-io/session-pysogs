@@ -1578,34 +1578,33 @@ class Room:
             raise BadPermission()
 
         with db.transaction():
-            with user.check_blinding() as u:
-                query(
-                    f"""
-                    INSERT INTO user_permission_overrides
-                        (room,
-                        "user",
-                        moderator,
-                        {'admin,' if admin is not None else ''}
-                        visible_mod)
-                    VALUES (:r, :u, TRUE, {':admin,' if admin is not None else ''} :visible)
-                    ON CONFLICT (room, "user") DO UPDATE SET
-                        moderator = excluded.moderator,
-                        {'admin = excluded.admin,' if admin is not None else ''}
-                        visible_mod = excluded.visible_mod
-                    """,
-                    r=self.id,
-                    u=u.id,
-                    admin=admin,
-                    visible=visible,
-                )
+            query(
+                f"""
+                INSERT INTO user_permission_overrides
+                    (room,
+                    "user",
+                    moderator,
+                    {'admin,' if admin is not None else ''}
+                    visible_mod)
+                VALUES (:r, :u, TRUE, {':admin,' if admin is not None else ''} :visible)
+                ON CONFLICT (room, "user") DO UPDATE SET
+                    moderator = excluded.moderator,
+                    {'admin = excluded.admin,' if admin is not None else ''}
+                    visible_mod = excluded.visible_mod
+                """,
+                r=self.id,
+                u=user.id,
+                admin=admin,
+                visible=visible,
+            )
 
-                self._refresh()
-                if u.id in self._perm_cache:
-                    del self._perm_cache[u.id]
+            self._refresh()
+            if user.id in self._perm_cache:
+                del self._perm_cache[user.id]
 
-                app.logger.info(
-                    f"{added_by} set {u} as {'admin' if admin else 'moderator'} of {self}"
-                )
+            app.logger.info(
+                f"{added_by} set {user} as {'admin' if admin else 'moderator'} of {self}"
+            )
 
     def remove_moderator(self, user: User, *, removed_by: User, remove_admin_only: bool = False):
         """
@@ -1619,23 +1618,22 @@ class Room:
             raise BadPermission()
 
         with db.transaction():
-            with user.check_blinding() as u:
-                query(
-                    f"""
-                    UPDATE user_permission_overrides
-                    SET admin = FALSE
-                        {', moderator = FALSE, visible_mod = TRUE' if not remove_admin_only else ''}
-                    WHERE room = :r AND "user" = :u
-                    """,
-                    r=self.id,
-                    u=user.id,
-                )
+            query(
+                f"""
+                UPDATE user_permission_overrides
+                SET admin = FALSE
+                    {', moderator = FALSE, visible_mod = TRUE' if not remove_admin_only else ''}
+                WHERE room = :r AND "user" = :u
+                """,
+                r=self.id,
+                u=user.id,
+            )
 
-                self._refresh()
-                if user.id in self._perm_cache:
-                    del self._perm_cache[user.id]
+            self._refresh()
+            if user.id in self._perm_cache:
+                del self._perm_cache[user.id]
 
-                app.logger.info(f"{removed_by} removed {u} as mod/admin of {self}")
+            app.logger.info(f"{removed_by} removed {u} as mod/admin of {self}")
 
     def ban_user(self, to_ban: User, *, mod: User, timeout: Optional[float] = None):
         """
@@ -1652,58 +1650,57 @@ class Room:
         """
 
         with db.transaction():
-            with to_ban.check_blinding() as to_ban:
-                fail = None
-                if not self.check_moderator(mod):
-                    fail = "user is not a moderator"
-                elif to_ban.id == mod.id:
-                    fail = "self-ban not permitted"
-                elif to_ban.global_moderator:
-                    fail = "global mods/admins cannot be banned"
-                elif self.check_moderator(to_ban) and not self.check_admin(mod):
-                    fail = "only admins can ban room mods/admins"
+            fail = None
+            if not self.check_moderator(mod):
+                fail = "user is not a moderator"
+            elif to_ban.id == mod.id:
+                fail = "self-ban not permitted"
+            elif to_ban.global_moderator:
+                fail = "global mods/admins cannot be banned"
+            elif self.check_moderator(to_ban) and not self.check_admin(mod):
+                fail = "only admins can ban room mods/admins"
 
-                if fail is not None:
-                    app.logger.warning(f"Error banning {to_ban} from {self} by {mod}: {fail}")
-                    raise BadPermission()
+            if fail is not None:
+                app.logger.warning(f"Error banning {to_ban} from {self} by {mod}: {fail}")
+                raise BadPermission()
 
-                # TODO: log the banning action for auditing
+            # TODO: log the banning action for auditing
 
+            query(
+                """
+                INSERT INTO user_permission_overrides (room, "user", banned, moderator, admin)
+                    VALUES (:r, :ban, TRUE, FALSE, FALSE)
+                ON CONFLICT (room, "user") DO
+                    UPDATE SET banned = TRUE, moderator = FALSE, admin = FALSE
+                """,
+                r=self.id,
+                ban=to_ban.id,
+            )
+
+            # Replace (or remove) an existing scheduled bans/unbans:
+            query(
+                'DELETE FROM user_ban_futures WHERE room = :r AND "user" = :u',
+                r=self.id,
+                u=to_ban.id,
+            )
+            if timeout:
                 query(
                     """
-                    INSERT INTO user_permission_overrides (room, "user", banned, moderator, admin)
-                        VALUES (:r, :ban, TRUE, FALSE, FALSE)
-                    ON CONFLICT (room, "user") DO
-                        UPDATE SET banned = TRUE, moderator = FALSE, admin = FALSE
+                    INSERT INTO user_ban_futures
+                    (room, "user", banned, at) VALUES (:r, :u, FALSE, :at)
                     """,
                     r=self.id,
-                    ban=to_ban.id,
-                )
-
-                # Replace (or remove) an existing scheduled bans/unbans:
-                query(
-                    'DELETE FROM user_ban_futures WHERE room = :r AND "user" = :u',
-                    r=self.id,
                     u=to_ban.id,
+                    at=time.time() + timeout,
                 )
-                if timeout:
-                    query(
-                        """
-                        INSERT INTO user_ban_futures
-                        (room, "user", banned, at) VALUES (:r, :u, FALSE, :at)
-                        """,
-                        r=self.id,
-                        u=to_ban.id,
-                        at=time.time() + timeout,
-                    )
 
-                if to_ban.id in self._perm_cache:
-                    del self._perm_cache[to_ban.id]
+            if to_ban.id in self._perm_cache:
+                del self._perm_cache[to_ban.id]
 
-                app.logger.debug(
-                    f"Banned {to_ban} from {self} {f'for {timeout}s ' if timeout else ''}"
-                    f"(banned by {mod})"
-                )
+            app.logger.debug(
+                f"Banned {to_ban} from {self} {f'for {timeout}s ' if timeout else ''}"
+                f"(banned by {mod})"
+            )
 
     def unban_user(self, to_unban: User, *, mod: User):
         """
@@ -1719,27 +1716,26 @@ class Room:
             raise BadPermission()
 
         with db.transaction():
-            with to_unban.check_blinding() as to_unban:
-                result = query(
-                    """
-                    UPDATE user_permission_overrides SET banned = FALSE
-                    WHERE room = :r AND "user" = :unban AND banned
-                    """,
-                    r=self.id,
-                    unban=to_unban.id,
-                )
-                if result.rowcount > 0:
-                    app.logger.debug(f"{mod} unbanned {to_unban} from {self}")
+            result = query(
+                """
+                UPDATE user_permission_overrides SET banned = FALSE
+                WHERE room = :r AND "user" = :unban AND banned
+                """,
+                r=self.id,
+                unban=to_unban.id,
+            )
+            if result.rowcount > 0:
+                app.logger.warning(f"{mod} unbanned {to_unban} from {self}")
 
-                    if to_unban.id in self._perm_cache:
-                        del self._perm_cache[to_unban.id]
+                if to_unban.id in self._perm_cache:
+                    del self._perm_cache[to_unban.id]
 
-                    return True
+                return True
 
-                app.logger.debug(
-                    f"{mod} unbanned {to_unban} from {self} (but user was already unbanned)"
-                )
-                return False
+            app.logger.warning(
+                f"{mod} unbanned {to_unban} from {self} (but user was already unbanned)"
+            )
+            return False
 
     def get_bans(self):
         """
@@ -1790,27 +1786,26 @@ class Room:
             raise BadPermission()
 
         with db.transaction():
-            with user.check_blinding() as user:
-                set_perms = perms.keys()
-                query(
-                    f"""
-                    INSERT INTO user_permission_overrides (room, "user", {', '.join(set_perms)})
-                    VALUES (:r, :u, :{', :'.join(set_perms)})
-                    ON CONFLICT (room, "user") DO UPDATE SET
-                        {', '.join(f"{p} = :{p}" for p in set_perms)}
-                    """,
-                    r=self.id,
-                    u=user.id,
-                    read=perms.get('read'),
-                    accessible=perms.get('accessible'),
-                    write=perms.get('write'),
-                    upload=perms.get('upload'),
-                )
+            set_perms = perms.keys()
+            query(
+                f"""
+                INSERT INTO user_permission_overrides (room, "user", {', '.join(set_perms)})
+                VALUES (:r, :u, :{', :'.join(set_perms)})
+                ON CONFLICT (room, "user") DO UPDATE SET
+                    {', '.join(f"{p} = :{p}" for p in set_perms)}
+                """,
+                r=self.id,
+                u=user.id,
+                read=perms.get('read'),
+                accessible=perms.get('accessible'),
+                write=perms.get('write'),
+                upload=perms.get('upload'),
+            )
 
-                if user.id in self._perm_cache:
-                    del self._perm_cache[user.id]
+            if user.id in self._perm_cache:
+                del self._perm_cache[user.id]
 
-                app.logger.debug(f"{mod} applied {self} permission(s) {perms} to {user}")
+            app.logger.debug(f"{mod} applied {self} permission(s) {perms} to {user}")
 
     def clear_future_permissions(
         self,
@@ -1845,28 +1840,27 @@ class Room:
             return
 
         with db.transaction():
-            with user.check_blinding() as u:
-                r = query(
-                    f"""
-                    UPDATE user_permission_futures
-                    SET {', '.join(sets)}
-                    WHERE room = :r AND "user" = :u
+            r = query(
+                f"""
+                UPDATE user_permission_futures
+                SET {', '.join(sets)}
+                WHERE room = :r AND "user" = :u
+                """,
+                r=self.id,
+                u=user.id,
+            )
+
+            # Clear any rows that we updated to all-nulls:
+            if r.rowcount > 0:
+                query(
+                    """
+                    DELETE FROM user_permission_futures
+                    WHERE room = :r AND "user" = :u AND
+                        read = NULL AND write = NULL AND upload = NULL
                     """,
                     r=self.id,
-                    u=u.id,
+                    u=user.id,
                 )
-
-                # Clear any rows that we updated to all-nulls:
-                if r.rowcount > 0:
-                    query(
-                        """
-                        DELETE FROM user_permission_futures
-                        WHERE room = :r AND "user" = :u AND
-                            read = NULL AND write = NULL AND upload = NULL
-                        """,
-                        r=self.id,
-                        u=u.id,
-                    )
 
     def add_future_permission(
         self,
@@ -1890,19 +1884,18 @@ class Room:
             return
 
         with db.transaction():
-            with user.check_blinding() as u:
-                query(
-                    """
-                    INSERT INTO user_permission_futures (room, "user", at, read, write, upload)
-                    VALUES (:r, :u, :at, :read, :write, :upload)
-                    """,
-                    r=self.id,
-                    u=u.id,
-                    at=at,
-                    read=read,
-                    write=write,
-                    upload=upload,
-                )
+            query(
+                """
+                INSERT INTO user_permission_futures (room, "user", at, read, write, upload)
+                VALUES (:r, :u, :at, :read, :write, :upload)
+                """,
+                r=self.id,
+                u=user.id,
+                at=at,
+                read=read,
+                write=write,
+                upload=upload,
+            )
 
     def get_file(self, file_id: int):
         """Retrieves a file uploaded to this room by id.  Returns None if not found."""

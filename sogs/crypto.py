@@ -169,6 +169,11 @@ def compute_blinded25_id_from_15(blinded15_id: str, *, _server_pk: Optional[byte
         ).hex()
     )
 
+def compute_blinded25_id_from_05(session_id: str, *, _server_pk: Optional[bytes] = None):
+    if _server_pk is None:
+        _server_pk = server_pubkey_bytes
+    return '25' + blinding.blind25_id(bytes.fromhex(session_id[2:]), _server_pk)[1:].hex()
+
 
 def blinded15_abs(blinded_id: str):
     """

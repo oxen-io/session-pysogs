@@ -75,14 +75,11 @@ class User:
         if session_id is not None:
             b25 = None
             if session_id.startswith('05'):
-                b25 = crypto.compute_blinded25_id(session_id)
+                b25 = crypto.compute_blinded25_id_from_05(session_id)
             elif session_id.startswith('15'):
                 b25 = crypto.compute_blinded25_id_from_15(session_id)
-            elif session_id.startswith('25'):
-                b25 = session_id
             else:
-                # FIXME: check for 'ff' (system user) / error if not?  Or just error here?
-                pass
+                b25 = session_id
 
             row = query("SELECT * FROM users WHERE session_id = :b25", b25=b25).first()
 
@@ -107,7 +104,7 @@ class User:
             bool(row[c]) for c in ('banned', 'moderator', 'admin', 'visible_mod')
         )
 
-        if self.using_id = None:
+        if self.using_id is None:
             self.using_id = self.session_id
 
     def __str__(self):
@@ -170,22 +167,21 @@ class User:
             raise BadPermission()
 
         with db.transaction():
-            with self.check_blinding() as u:
-                query(
-                    f"""
-                    UPDATE users
-                    SET moderator = TRUE, visible_mod = :visible
-                        {', admin = :admin' if admin is not None else ''}
-                    WHERE id = :u
-                    """,
-                    admin=bool(admin),
-                    visible=visible,
-                    u=u.id,
-                )
+            query(
+                f"""
+                UPDATE users
+                SET moderator = TRUE, visible_mod = :visible
+                    {', admin = :admin' if admin is not None else ''}
+                WHERE id = :u
+                """,
+                admin=bool(admin),
+                visible=visible,
+                u=self.id,
+            )
 
-        u.global_admin = admin
-        u.global_moderator = True
-        u.visible_mod = visible
+        self.global_admin = admin
+        self.global_moderator = True
+        self.visible_mod = visible
 
     def remove_moderator(self, *, removed_by: User, remove_admin_only: bool = False):
         """Removes this user's global moderator/admin status, if set."""
@@ -225,26 +221,25 @@ class User:
             raise BadPermission()
 
         with db.transaction():
-            with self.check_blinding() as u:
-                if u.global_moderator:
-                    app.logger.warning(f"Cannot ban {u}: user is a global moderator/admin")
-                    raise BadPermission()
+            if self.global_moderator:
+                app.logger.warning(f"Cannot ban {self}: user is a global moderator/admin")
+                raise BadPermission()
 
-                query("UPDATE users SET banned = TRUE WHERE id = :u", u=u.id)
-                query('DELETE FROM user_ban_futures WHERE room IS NULL AND "user" = :u', u=u.id)
+            query("UPDATE users SET banned = TRUE WHERE id = :u", u=self.id)
+            query('DELETE FROM user_ban_futures WHERE room IS NULL AND "user" = :u', u=self.id)
 
-                if timeout:
-                    query(
-                        """
-                        INSERT INTO user_ban_futures
-                        ("user", room, banned, at) VALUES (:u, NULL, FALSE, :at)
-                        """,
-                        u=u.id,
-                        at=time.time() + timeout,
-                    )
+            if timeout:
+                query(
+                    """
+                    INSERT INTO user_ban_futures
+                    ("user", room, banned, at) VALUES (:u, NULL, FALSE, :at)
+                    """,
+                    u=self.id,
+                    at=time.time() + timeout,
+                )
 
-        app.logger.debug(f"{banned_by} globally banned {u}{f' for {timeout}s' if timeout else ''}")
-        u.banned = True
+        app.logger.debug(f"{banned_by} globally banned {self}{f' for {timeout}s' if timeout else ''}")
+        self.banned = True
 
     def unban(self, *, unbanned_by: User):
         """

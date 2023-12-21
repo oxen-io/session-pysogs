@@ -427,7 +427,7 @@ elif update_room:
 
     if args.add_moderators:
         for a in args.add_moderators:
-            if not re.fullmatch(r'[01]5[A-Fa-f0-9]{64}', a):
+            if not re.fullmatch(r'[012]5[A-Fa-f0-9]{64}', a):
                 print(f"Error: '{a}' is not a valid session id", file=sys.stderr)
                 sys.exit(1)
 
@@ -435,7 +435,7 @@ elif update_room:
 
         if global_rooms:
             for sid in args.add_moderators:
-                u = User(session_id=sid, try_blinding=True)
+                u = User(session_id=sid)
                 u.set_moderator(admin=args.admin, visible=args.visible, added_by=sysadmin)
                 print(
                     "Added {} as {} global {}".format(
@@ -446,7 +446,7 @@ elif update_room:
                 )
         else:
             for sid in args.add_moderators:
-                u = User(session_id=sid, try_blinding=True)
+                u = User(session_id=sid)
                 for room in rooms:
                     room.set_moderator(
                         u, admin=args.admin, visible=not args.hidden, added_by=sysadmin
@@ -506,9 +506,10 @@ elif update_room:
             )
             sys.exit(1)
 
+        vivify =  args.add_perms or args.remove_perms
         users = []
         if args.users:
-            users = [User(session_id=sid, try_blinding=True) for sid in args.users]
+            users = [User(session_id=sid, autovivify=vivify) for sid in args.users]
 
         # users not specified means set room defaults
         if not len(users):
