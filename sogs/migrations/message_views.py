@@ -35,7 +35,7 @@ def migrate(conn, *, check_only):
     # added in 25-blinding
     if not (
         'message_details' in db.metadata.tables
-        and 'signing_id' in db.metadata.tables['message_metadata'].c
+        and 'signing_id' in db.metadata.tables['message_details'].c
     ):
         need_migration = True
 
@@ -72,6 +72,7 @@ BEGIN
 END
 """
         )
+        # FIXME: this view appears unused, remove?
         conn.execute(
             """
 CREATE VIEW message_metadata AS
@@ -89,7 +90,7 @@ SELECT id, room, "user", session_id, posted, edited, seqno, seqno_data, seqno_re
 -- table of the user who posted it, and the session id of the whisper recipient (as `whisper_to`) if
 -- a directed whisper.
 CREATE VIEW message_details AS
-SELECT messages.*, uposter.session_id, uwhisper.session_id AS whisper_to
+SELECT messages.*, uposter.session_id, uwhisper.session_id AS whisper_to, COALESCE(messages.alt_id, uposter.session_id) AS signing_id
     FROM messages
         JOIN users uposter ON messages.user = uposter.id
         LEFT JOIN users uwhisper ON messages.whisper = uwhisper.id;

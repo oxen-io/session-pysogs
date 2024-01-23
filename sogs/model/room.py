@@ -1633,7 +1633,7 @@ class Room:
             if user.id in self._perm_cache:
                 del self._perm_cache[user.id]
 
-            app.logger.info(f"{removed_by} removed {u} as mod/admin of {self}")
+            app.logger.info(f"{removed_by} removed {user} ({user.using_id}) as mod/admin of {self}")
 
     def ban_user(self, to_ban: User, *, mod: User, timeout: Optional[float] = None):
         """

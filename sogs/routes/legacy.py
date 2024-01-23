@@ -353,7 +353,7 @@ def handle_legacy_banhammer():
     return jsonify({"status_code": http.OK})
 
 
-@legacy.delete("/block_list/<string:session_id>")
+@legacy.delete("/block_list/<SessionID:session_id>")
 def handle_legacy_unban(session_id):
     user, room = legacy_check_user_room(moderator=True)
     to_unban = User(session_id=session_id, autovivify=False)

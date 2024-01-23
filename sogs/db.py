@@ -185,8 +185,6 @@ def database_init(create=None, upgrade=True):
     # Make sure the system admin users exists
     create_admin_user(conn)
 
-    check_needs_blinding(conn)
-
     return created or migrated
 
 
@@ -206,44 +204,6 @@ def create_admin_user(dbconn):
         sid="ff" + crypto.server_pubkey_hex,
         dbconn=dbconn,
     )
-
-
-def check_needs_blinding(dbconn):
-    if not config.REQUIRE_BLIND_KEYS:
-        return
-
-    with transaction(dbconn):
-        for uid, sid in query(
-            """
-            SELECT id, session_id FROM users WHERE id IN (
-                SELECT "user" FROM user_permission_overrides
-                UNION
-                SELECT "user" FROM user_permission_futures
-                UNION
-                SELECT "user" FROM user_ban_futures
-                UNION
-                SELECT id FROM users WHERE session_id LIKE '05%' AND (admin OR moderator OR banned)
-                EXCEPT
-                SELECT "user" FROM needs_blinding
-            )
-            AND session_id LIKE '05%'
-            """,
-            dbconn=dbconn,
-        ):
-            try:
-                pos_derived15 = crypto.compute_blinded15_abs_id(sid)
-                pos_derived25 = crypto.compute_blinded25_abs_id(sid)
-            except Exception as e:
-                logging.warning(f"Failed to blind session_id {sid}: {e}")
-                continue
-
-            for pos_derived in (pos_derived15, pos_derived25):
-                query(
-                    'INSERT INTO needs_blinding (blinded_abs, "user") VALUES (:blinded, :uid)',
-                    blinded=pos_derived,
-                    uid=uid,
-                    dbconn=dbconn,
-                )
 
 
 engine, engine_initial_pid, metadata = None, None, None

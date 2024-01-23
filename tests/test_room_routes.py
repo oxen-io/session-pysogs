@@ -1564,11 +1564,10 @@ def test_set_room_perms_blinding(client, db, room, user, user2, mod):
         )
         assert r.status_code == 200
         assert r.json == {
-            # user has a known blinded id so should have been inserted blinded:
-            user.blinded15_id: {'read': True, 'write': False},
-            # user2 doesn't, so would be set up unblinded:
-            user2.session_id: {'upload': False},
-            mod.blinded15_id: {'moderator': True},
+            # all users are 25-blinded in the database now
+            user.blinded25_id: {'read': True, 'write': False},
+            user2.blinded25_id: {'upload': False},
+            mod.blinded25_id: {'moderator': True},
         }
 
         r = client.get(
@@ -1583,8 +1582,8 @@ def test_set_room_perms_blinding(client, db, room, user, user2, mod):
         )
         assert r.status_code == 200
         assert filter_timestamps(r.json) == [
-            {'session_id': user.blinded15_id, 'write': True},
-            {'session_id': user2.session_id, 'upload': True},
+            {'session_id': user.blinded25_id, 'write': True},
+            {'session_id': user2.blinded25_id, 'upload': True},
         ]
         assert r.json[0]['at'] == from_now.seconds(0.001)
         assert r.json[1]['at'] == from_now.seconds(0.002)
@@ -1611,9 +1610,9 @@ def test_set_room_perms_blinding(client, db, room, user, user2, mod):
         )
         assert r.status_code == 200
         assert r.json == {
-            user.blinded15_id: {'read': True, 'write': False},
-            user2.blinded15_id: {'upload': False},
-            mod.blinded15_id: {'moderator': True},
+            user.blinded25_id: {'read': True, 'write': False},
+            user2.blinded25_id: {'upload': False},
+            mod.blinded25_id: {'moderator': True},
         }
 
         r = client.get(
@@ -1628,8 +1627,8 @@ def test_set_room_perms_blinding(client, db, room, user, user2, mod):
         )
         assert r.status_code == 200
         assert filter_timestamps(r.json) == [
-            {'session_id': user.blinded15_id, 'write': True},
-            {'session_id': user2.blinded15_id, 'upload': True},
+            {'session_id': user.blinded25_id, 'write': True},
+            {'session_id': user2.blinded25_id, 'upload': True},
         ]
         assert r.json[0]['at'] == from_now.seconds(0.001)
         assert r.json[1]['at'] == from_now.seconds(0.002)

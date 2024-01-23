@@ -15,7 +15,7 @@ def _serialize_message(msg, include_message=True):
         "id": msg.id,
         "posted_at": msg.posted_at,
         "expires_at": msg.expires_at,
-        "sender": msg.sender.signing_id,
+        "sender": msg.signing_key,
         "recipient": msg.recipient.session_id,
     }
     if include_message:
@@ -93,6 +93,7 @@ def send_inbox(sid):
     404 Not Found — if the given Session ID does not exist on this server, either because they have
     never accessed the server, or because they have been permanently banned.
     """
+    print(f"inbox post, recipient = {sid}")
     try:
         recip_user = User(session_id=sid, autovivify=False)
     except NoSuchUser:

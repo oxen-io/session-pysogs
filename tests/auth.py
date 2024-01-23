@@ -39,18 +39,7 @@ def x_sogs_raw(
     ts = int(time.time()) + timestamp_off
 
     if blinded25:
-        a = s.to_curve25519_private_key().encode()
-        k = sodium.crypto_core_ed25519_scalar_reduce(
-            blake2b(
-                [
-                    s.to_curve25519_private_key().public_key.encode(),
-                    sogs.crypto.server_pubkey_bytes,
-                ],
-                digest_size=64,
-            )
-        )
-        ka = sodium.crypto_core_ed25519_scalar_mul(k, a)
-        kA = sodium.crypto_scalarmult_ed25519_base_noclamp(ka)
+        kA, ka = blinding.blind25_key_pair(s.encode(), sogs.crypto.server_pubkey_bytes)
         pubkey = '25' + kA.hex()
     elif blinded15:
         a = s.to_curve25519_private_key().encode()

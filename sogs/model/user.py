@@ -107,6 +107,8 @@ class User:
         if self.using_id is None:
             self.using_id = self.session_id
 
+        self.is_blinded = not self.using_id.startswith('05')
+
     def __str__(self):
         """Returns string representation of a user: U[050123…cdef], the id prefixed with @ or % if
         the user is a global admin or moderator, respectively."""

@@ -585,6 +585,7 @@ CREATE TABLE inbox (
     recipient BIGINT NOT NULL REFERENCES users ON DELETE CASCADE,
     sender BIGINT NOT NULL REFERENCES users ON DELETE CASCADE,
     body BYTEA NOT NULL,
+    alt_id TEXT, /* The Session ID which sender used to encrypt the message if not the "25" blinding key; null if it is */
     posted_at FLOAT DEFAULT (extract(epoch from now())),
     expiry FLOAT DEFAULT (extract(epoch from now() + '15 days'))
 );

@@ -6,7 +6,7 @@ from .. import crypto, http, utils
 
 from .subrequest import make_subrequest
 
-from session_util import onionreq
+from session_util.onionreq import OnionReqParser
 
 onion_request = Blueprint('onion_request', __name__)
 
@@ -247,7 +247,7 @@ def handle_v4_onionreq_plaintext(body):
 
 def decrypt_onionreq():
     try:
-        return OnionReqParser(crypto._privkey_bytes, crypto.server_pubkey_bytes, request.data)
+        return OnionReqParser(crypto.server_pubkey_bytes, crypto._privkey_bytes, request.data)
     except Exception as e:
         app.logger.warning("Failed to decrypt onion request: {}".format(e))
     abort(http.BAD_REQUEST)

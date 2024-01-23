@@ -9,6 +9,11 @@ from util import from_now
 from itertools import product
 
 
+def test_dm_inbox_nonblinded(client, user):
+    r = sogs_get(client, '/inbox', user)
+    assert r.status_code == 401
+
+
 def test_dm_default_empty(client, blind15_user):
     r = sogs_get(client, '/inbox', blind15_user)
     assert r.status_code == 200
@@ -21,11 +26,11 @@ def test_dm_banned_user(client, banned_user):
 
 
 def make_post(message, sender, to):
-    assert sender.is_blinded15
-    assert to.is_blinded15
+    assert sender.is_blinded
+    assert to.is_blinded
     a = sender.ed_key.to_curve25519_private_key().encode()
-    kA = bytes.fromhex(sender.session_id[2:])
-    kB = bytes.fromhex(to.session_id[2:])
+    kA = bytes.fromhex(sender.using_id[2:])
+    kB = bytes.fromhex(to.using_id[2:])
     key = blake2b(sodium.crypto_scalarmult_ed25519_noclamp(a, kB) + kA + kB, digest_size=32)
 
     # MESSAGE || UNBLINDED_ED_PUBKEY
@@ -65,11 +70,11 @@ def test_dm_send(client, blind15_user, blind15_user2):
     msg_expected = {
         'id': 1,
         'message': post['message'],
-        'sender': blind15_user.session_id,
+        'sender': blind15_user.using_id,
         'recipient': blind15_user2.session_id,
     }
 
-    r = sogs_post(client, f'/inbox/{blind15_user2.session_id}', post, blind15_user)
+    r = sogs_post(client, f'/inbox/{blind15_user2.using_id}', post, blind15_user)
     assert r.status_code == 201
     data = r.json
     assert data.pop('posted_at') == from_now.seconds(0)
@@ -97,6 +102,7 @@ def test_dm_delete(client, blind15_user, blind15_user2):
     for sender, recip in product((blind15_user, blind15_user2), repeat=2):
         # make DMs
         for n in range(num_posts):
+            print(f"from: {sender.using_id}, to: {recip.using_id}")
             post = make_post(f"bep-{n}".encode('ascii'), sender=sender, to=recip)
             r = sogs_post(client, f'/inbox/{recip.session_id}', post, sender)
             assert r.status_code == 201

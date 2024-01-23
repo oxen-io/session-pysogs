@@ -163,12 +163,14 @@ def test_blinded_key_derivation(seed_hex, blinded15_id_exp, blinded25_id_exp):
 
     assert blinded15_id == blinded15_id_exp
     assert blinded25_id == blinded25_id_exp
+    assert blinded25_id == crypto.compute_blinded25_id_from_05(session_id, _server_pk=fake_server_pubkey_bytes)
+    assert blinded25_id == crypto.compute_blinded25_id_from_15(blinded15_id, _server_pk=fake_server_pubkey_bytes)
 
     assert blinded25_id == blinding.blind25_id(session_id, fake_server_pubkey_bytes.hex())
 
     id15_pos = crypto.compute_blinded15_abs_id(session_id, _k=k15)
     assert len(id15_pos) == 66
-    id15_neg = crypto.blinded_neg(id15_pos)
+    id15_neg = crypto.blinded15_neg(id15_pos)
     print("id15+: {}, id15-: {}".format(id15_pos, id15_neg), file=sys.stderr)
     assert len(id15_neg) == 66
     assert id15_pos != id15_neg
@@ -190,6 +192,9 @@ def test_blinded_key_derivation(seed_hex, blinded15_id_exp, blinded25_id_exp):
     )
 
 
+# TODO: how to test migration to 25-blinded.  This requires a database that the code no
+#       longer knows how to construct nor populate, so that will be interesting.
+'''
 @pytest.mark.parametrize(
     ["get_blinded_id", "x_sogs_blind"],
     [
@@ -241,7 +246,6 @@ def test_blinded_transition(
     )
 
     assert db.query("SELECT COUNT(*) FROM users").fetchone()[0] == 9
-    assert db.query("SELECT COUNT(*) FROM needs_blinding").fetchone()[0] == 0
 
     assert [r[0] for r in db.query('SELECT "user" FROM user_permission_futures')] == [user2.id]
     assert [r[0] for r in db.query('SELECT "user" FROM user_ban_futures')] == [user2.id]
@@ -357,7 +361,7 @@ def test_blinded_transition(
         b_u2 = User(session_id=get_blinded_id(user2))
         assert [r[0] for r in db.query('SELECT "user" FROM user_permission_futures')] == [b_u2.id]
         assert [r[0] for r in db.query('SELECT "user" FROM user_ban_futures')] == [b_u2.id]
-
+'''
 
 def get_perm_flags(db, cols, exclude=[]):
     return {
@@ -377,83 +381,15 @@ def get_perm_flags(db, cols, exclude=[]):
 def test_auto_blinding(db, client, room, user, user2, mod, global_admin):
     with config_override(REQUIRE_BLIND_KEYS=True):
         assert db.query("SELECT COUNT(*) FROM users").fetchone()[0] == 5
-        assert db.query("SELECT COUNT(*) FROM needs_blinding").fetchone()[0] == 0
 
-        # Banning a user by unblinded ID should set up the ban for the unblinded id *and* put them
-        # in the needs_blinding table
-
-        room.ban_user(user2, mod=mod)
-        # Set these in two separate calls so that we are making sure multiple changes on the same
-        # user works as expected:
-        room.set_permissions(user, mod=mod, write=True)
-        room.set_permissions(user, mod=mod, write=False)
-        room.set_permissions(user, mod=mod, upload=False)
-
-        upo = get_perm_flags(db, ['write', 'banned', 'upload'], [mod])
-        assert upo == {
-            user.id: {'banned': False, 'write': False, 'upload': False},
-            user2.id: {'banned': True, 'write': None, 'upload': None},
-        }
-        assert db.query("SELECT COUNT(*) FROM needs_blinding").fetchone()[0] == 2
-
-        # Initializing the blinded user should resolve the needs_blinding:
+        # Getting a user by unblinded ID or 15-blinded ID should get the single user row for that
+        # user, and user.using_id will equal the unblinded or 15-blinded ID used
         b_user2 = User(session_id=user2.blinded15_id)
-        assert b_user2.id != user2.id
-
-        upo = get_perm_flags(db, ['write', 'banned'], [mod])
-        assert upo == {
-            user.id: {'banned': False, 'write': False},
-            b_user2.id: {'banned': True, 'write': None},
-        }
-        assert db.query("SELECT COUNT(*) FROM needs_blinding").fetchone()[0] == 1
-
-        room.unban_user(b_user2, mod=mod)
-        upo = get_perm_flags(db, ['write', 'banned'], [mod])
-        assert upo == {user.id: {'banned': False, 'write': False}}
-        # Now, since user2's blinded account already exists, attempting to ban user2 should ban
-        # b_user2 directly:
-        user2._refresh()
-        room.ban_user(user2, mod=mod)
-        upo = get_perm_flags(db, ['write', 'banned'], [mod])
-        assert upo == {
-            user.id: {'banned': False, 'write': False},
-            b_user2.id: {'banned': True, 'write': None},
-        }
-        assert db.query("SELECT COUNT(*) FROM needs_blinding").fetchone()[0] == 1
-
-        u3 = TUser()
-        # Try the same for a global ban:
-        u3.ban(banned_by=global_admin)
-        u3.unban(unbanned_by=global_admin)
-        u3.ban(banned_by=global_admin)
-        assert db.query("SELECT COUNT(*) FROM needs_blinding").fetchone()[0] == 2
-        u3._refresh()
-        assert u3.banned
-
-        b_u3 = User(session_id=u3.blinded15_id)
-        assert db.query("SELECT COUNT(*) FROM needs_blinding").fetchone()[0] == 1
-        assert b_u3.banned
-        u3._refresh()
-        assert not u3.banned
-
-        b_u3.unban(unbanned_by=global_admin)
-        u3._refresh()
-        b_u3._refresh()
-        assert not u3.banned
-        assert not b_u3.banned
-        u3.ban(banned_by=global_admin)  # should ban b_u3 instead
-        b_u3._refresh()
-        u3._refresh()
-        assert not u3.banned
-        assert b_u3.banned
-
-        # Moderator setting migration:
-        b_user = User(session_id=user.blinded15_id)
-        user._refresh()
-        assert db.query("SELECT COUNT(*) FROM needs_blinding").fetchone()[0] == 0
-        room.set_moderator(user, added_by=global_admin)
-        user._refresh()
-        b_user._refresh()
-        assert not room.check_moderator(user)
-        assert room.check_moderator(b_user)
-        assert not room.check_admin(b_user)
+        b25_user2 = User(session_id=user2.blinded25_id)
+        assert user2.session_id == user2.blinded25_id
+        assert user2.session_id == crypto.compute_blinded25_id_from_05(user2.unblinded_id)
+        assert user2.session_id == crypto.compute_blinded25_id_from_15(user2.blinded15_id)
+        assert b_user2.session_id == user2.session_id
+        assert b25_user2.session_id == user2.session_id
+        assert b_user2.id == user2.id
+        assert b25_user2.id == user2.id

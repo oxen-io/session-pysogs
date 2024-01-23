@@ -9,18 +9,20 @@ def migrate(conn, *, check_only):
     that table accordingly, de-duplicating as necessary as well
     """
 
-    from .. import db
+    from .. import db, crypto
 
     if 'alt_id' in db.metadata.tables['messages'].c:
         return False
 
-    logging.warning("DB migration: Migrating tables to 25-blinded only")
     if check_only:
         raise DatabaseUpgradeRequired("Tables need to be migrated to 25-blinded")
 
-    conn.execute(f"ALTER TABLE messages ADD COLUMN alt_id TEXT")
+    logging.warning("DB migration: Migrating tables to 25-blinded only")
 
-    user_rows_15 = db.query("SELECT * FROM users WHERE session_id LIKE '15%'")
+    conn.execute(f"ALTER TABLE messages ADD COLUMN alt_id TEXT")
+    conn.execute(f"ALTER TABLE inbox ADD COLUMN alt_id TEXT")
+
+    user_rows_15 = db.query("SELECT * FROM users WHERE session_id LIKE '15%'", dbconn=conn)
     for row in user_rows_15.all():
         b15_id = row["session_id"]
         rowid = row["id"]
@@ -32,14 +34,17 @@ def migrate(conn, *, check_only):
         conn.execute(
             'UPDATE messages SET alt_id = :b15_id WHERE "user" = :rowid', b15_id=b15_id, rowid=rowid
         )
+        conn.execute(
+            'UPDATE inbox SET alt_id = :b15_id WHERE "sender" = :rowid', b15_id=b15_id, rowid=rowid
+        )
 
-    user_rows_05 = db.query("SELECT * FROM users WHERE session_id LIKE '05%'")
+    user_rows_05 = db.query("SELECT * FROM users WHERE session_id LIKE '05%'", dbconn=conn)
     for row in user_rows_05.all():
         b05_id = row["session_id"]
         rowid = row["id"]
-        b25 = crypto.compute_blinded25_id(session_id)
+        b25 = crypto.compute_blinded25_id_from_05(b05_id)
 
-        new_row = db.query("SELECT id FROM users WHERE session_id = :b25", b25=b25).first()
+        new_row = db.query("SELECT id FROM users WHERE session_id = :b25", b25=b25, dbconn=conn).first()
 
         # if there were both 05 and 15 user rows for the 25 key, drop the 05 row and point references
         # to it to the (modified to 25 above) old 15 row, else do basically as above for the 15 rows
@@ -49,6 +54,12 @@ def migrate(conn, *, check_only):
             conn.execute(
                 'UPDATE messages SET whisper = :rowid WHERE whisper = :oldrow',
                 rowid=rowid,
+                oldrow=row["id"],
+            )
+            conn.execute(
+                'UPDATE messages SET user = :rowid, alt_id = :b05_id WHERE user = :oldrow',
+                rowid=rowid,
+                b05_id=b05_id,
                 oldrow=row["id"],
             )
             conn.execute(
@@ -77,8 +88,9 @@ def migrate(conn, *, check_only):
                 oldrow=row["id"],
             )
             conn.execute(
-                'UPDATE inbox SET sender = :rowid WHERE sender = :oldrow',
+                'UPDATE inbox SET sender = :rowid, alt_id = :b05_id WHERE sender = :oldrow',
                 rowid=rowid,
+                b05_id=b05_id,
                 oldrow=row["id"],
             )
             conn.execute('DELETE FROM users WHERE id = :oldrow', oldrow=row["id"])
