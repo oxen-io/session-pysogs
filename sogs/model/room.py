@@ -703,7 +703,8 @@ class Room:
                 msgs.append({x: row[x] for x in ('id', 'seqno')})
                 continue
 
-            msg = {x: row[x] for x in ('id', 'session_id', 'posted', 'seqno')}
+            msg = {x: row[x] for x in ('id', 'posted', 'seqno')}
+            msg["session_id"] = row["signing_id"]
             data = row['data']
             if data is None:
                 msg['data'] = None
@@ -856,8 +857,8 @@ class Room:
         if msg_fmt:
             pbmsg = protobuf.Content()
             body = msg_fmt.format(
-                profile_name=(user.session_id if msg().username is None else msg().username),
-                profile_at="@" + user.session_id,
+                profile_name=(user.using_id if msg().username is None else msg().username),
+                profile_at="@" + user.using_id,
                 room_name=self.name,
                 room_token=self.token,
             ).encode()
@@ -1006,9 +1007,9 @@ class Room:
             msg_id = db.insert_and_get_pk(
                 """
                 INSERT INTO messages
-                    (room, "user", data, data_size, signature, filtered, whisper, whisper_mods)
+                    (room, "user", data, data_size, signature, filtered, whisper, whisper_mods, alt_id)
                     VALUES
-                    (:r, :u, :data, :data_size, :signature, :filtered, :whisper, :whisper_mods)
+                    (:r, :u, :data, :data_size, :signature, :filtered, :whisper, :whisper_mods, :alt_id)
                 """,
                 "id",
                 r=self.id,
@@ -1019,6 +1020,7 @@ class Room:
                 filtered=filtered is not None,
                 whisper=whisper_to.id if whisper_to else None,
                 whisper_mods=whisper_mods,
+                alt_id=user.using_id if user.using_id else None,
             )
 
             if files:
@@ -1029,7 +1031,7 @@ class Room:
             row = query("SELECT posted, seqno FROM messages WHERE id = :m", m=msg_id).first()
             msg = {
                 'id': msg_id,
-                'session_id': user.session_id,
+                'session_id': user.using_id,
                 'posted': row[0],
                 'seqno': row[1],
                 'data': data,
@@ -1042,7 +1044,7 @@ class Room:
                 msg['whisper'] = True
                 msg['whisper_mods'] = whisper_mods
                 if whisper_to:
-                    msg['whisper_to'] = whisper_to.session_id
+                    msg['whisper_to'] = whisper_to.using_id
 
         # Don't call this inside the transaction because, if it's inserting a reply, we want the
         # reply to have a later timestamp for proper ordering (because the timestamp inside a

@@ -651,7 +651,7 @@ def test_fetch_since(client, room, user, no_rate_limit):
                     'posted',
                     'reactions',
                 }
-                assert post['session_id'] == user.session_id
+                assert post['session_id'] == user.using_id
                 assert post['seqno'] == j
                 assert utils.decode_base64(post['data']) == f"fake data {j}".encode()
                 assert utils.decode_base64(post['signature']) == pad64(f"fake sig {j}")
@@ -938,7 +938,7 @@ def test_posting(client, room, user, user2, mod, global_mod):
     assert filter_timestamps(p1) == {
         'id': 1,
         'seqno': 1,
-        'session_id': user.session_id,
+        'session_id': user.using_id,
         'data': d,
         'signature': s,
         'reactions': {},
@@ -965,7 +965,7 @@ def test_whisper_to(client, room, user, user2, mod, global_mod):
     assert filter_timestamps(msg) == {
         'id': 1,
         'seqno': 1,
-        'session_id': mod.session_id,
+        'session_id': mod.using_id,
         'data': d,
         'signature': s,
         'whisper': True,
@@ -1012,7 +1012,7 @@ def test_whisper_mods(client, room, user, user2, mod, global_mod, admin):
     assert filter_timestamps(msg) == {
         'id': 1,
         'seqno': 1,
-        'session_id': mod.session_id,
+        'session_id': mod.using_id,
         'data': d,
         'signature': s,
         'whisper': True,
@@ -1048,7 +1048,7 @@ def test_whisper_both(client, room, user, user2, mod, admin):
     assert filter_timestamps(msg) == {
         'id': 1,
         'seqno': 1,
-        'session_id': user.session_id,
+        'session_id': user.using_id,
         'data': d,
         'signature': s,
         'reactions': {},
@@ -1077,7 +1077,7 @@ def test_whisper_both(client, room, user, user2, mod, admin):
         {
             'id': 1,
             'seqno': 1,
-            'session_id': user.session_id,
+            'session_id': user.using_id,
             'data': utils.encode_base64('offensive post!'.encode()),
             'signature': utils.encode_base64(pad64('sig')),
             'reactions': {},
@@ -1085,7 +1085,7 @@ def test_whisper_both(client, room, user, user2, mod, admin):
         {
             'id': 2,
             'seqno': 2,
-            'session_id': mod.session_id,
+            'session_id': mod.using_id,
             'data': utils.encode_base64("I'm going to scare this guy".encode()),
             'signature': utils.encode_base64(pad64('sig2')),
             'whisper': True,
@@ -1095,7 +1095,7 @@ def test_whisper_both(client, room, user, user2, mod, admin):
         {
             'id': 3,
             'seqno': 3,
-            'session_id': mod.session_id,
+            'session_id': mod.using_id,
             'data': utils.encode_base64("WTF, do you want a ban?".encode()),
             'signature': utils.encode_base64(pad64('sig3')),
             'whisper': True,
@@ -1106,7 +1106,7 @@ def test_whisper_both(client, room, user, user2, mod, admin):
         {
             'id': 4,
             'seqno': 4,
-            'session_id': user.session_id,
+            'session_id': user.using_id,
             'data': utils.encode_base64("No please I'm sorry!!!".encode()),
             'signature': utils.encode_base64(pad64('sig4')),
             'reactions': {},
@@ -1138,7 +1138,7 @@ def test_edits(client, room, user, user2, mod, global_admin):
     assert filter_timestamps(p1) == {
         'id': 1,
         'seqno': 1,
-        'session_id': user.session_id,
+        'session_id': user.using_id,
         'data': d,
         'signature': s,
         'reactions': {},
@@ -1183,7 +1183,7 @@ def test_edits(client, room, user, user2, mod, global_admin):
     assert filter_timestamps(p2) == {
         'id': 2,
         'seqno': 3,
-        'session_id': user2.session_id,
+        'session_id': user2.using_id,
         'data': d,
         'signature': s,
         'reactions': {},

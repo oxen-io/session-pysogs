@@ -310,7 +310,7 @@ SELECT messages.*, uposter.session_id, uwhisper.session_id AS whisper_to, COALES
 CREATE OR REPLACE FUNCTION trigger_message_details_deleter()
 RETURNS TRIGGER LANGUAGE PLPGSQL AS $$BEGIN
     IF OLD.data IS NOT NULL THEN
-        UPDATE messages SET data = NULL, data_size = NULL, signature = NULL, alt_id = NULL
+        UPDATE messages SET data = NULL, data_size = NULL, signature = NULL
             WHERE id = OLD.id;
         DELETE FROM user_reactions WHERE reaction IN (
             SELECT id FROM reactions WHERE message = OLD.id);

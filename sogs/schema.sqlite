@@ -263,7 +263,7 @@ SELECT messages.*, uposter.session_id, uwhisper.session_id AS whisper_to, COALES
 CREATE TRIGGER message_details_deleter INSTEAD OF DELETE ON message_details
 FOR EACH ROW WHEN OLD.data IS NOT NULL
 BEGIN
-    UPDATE messages SET data = NULL, data_size = NULL, signature = NULL, alt_id = NULL
+    UPDATE messages SET data = NULL, data_size = NULL, signature = NULL
         WHERE id = OLD.id;
     DELETE FROM user_reactions WHERE reaction IN (
         SELECT id FROM reactions WHERE message = OLD.id);
