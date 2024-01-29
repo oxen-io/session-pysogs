@@ -163,8 +163,12 @@ def test_blinded_key_derivation(seed_hex, blinded15_id_exp, blinded25_id_exp):
 
     assert blinded15_id == blinded15_id_exp
     assert blinded25_id == blinded25_id_exp
-    assert blinded25_id == crypto.compute_blinded25_id_from_05(session_id, _server_pk=fake_server_pubkey_bytes)
-    assert blinded25_id == crypto.compute_blinded25_id_from_15(blinded15_id, _server_pk=fake_server_pubkey_bytes)
+    assert blinded25_id == crypto.compute_blinded25_id_from_05(
+        session_id, _server_pk=fake_server_pubkey_bytes
+    )
+    assert blinded25_id == crypto.compute_blinded25_id_from_15(
+        blinded15_id, _server_pk=fake_server_pubkey_bytes
+    )
 
     assert blinded25_id == blinding.blind25_id(session_id, fake_server_pubkey_bytes.hex())
 
@@ -362,6 +366,7 @@ def test_blinded_transition(
         assert [r[0] for r in db.query('SELECT "user" FROM user_permission_futures')] == [b_u2.id]
         assert [r[0] for r in db.query('SELECT "user" FROM user_ban_futures')] == [b_u2.id]
 '''
+
 
 def get_perm_flags(db, cols, exclude=[]):
     return {

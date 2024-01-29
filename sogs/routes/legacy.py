@@ -362,6 +362,7 @@ def handle_legacy_unban(session_id):
 
     abort(http.NOT_FOUND)
 
+
 @legacy.get("/block_list")
 def handle_legacy_banlist():
     # Bypass permission checks here because we want to continue even if we are banned:
@@ -377,6 +378,7 @@ def handle_legacy_banlist():
         bans = []
 
     return jsonify({"status_code": http.OK, "banned_members": bans})
+
 
 @legacy.get("/moderators")
 def handle_legacy_get_mods():

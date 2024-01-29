@@ -44,7 +44,9 @@ def migrate(conn, *, check_only):
         rowid = row["id"]
         b25 = crypto.compute_blinded25_id_from_05(b05_id)
 
-        new_row = db.query("SELECT id FROM users WHERE session_id = :b25", b25=b25, dbconn=conn).first()
+        new_row = db.query(
+            "SELECT id FROM users WHERE session_id = :b25", b25=b25, dbconn=conn
+        ).first()
 
         # if there were both 05 and 15 user rows for the 25 key, drop the 05 row and point references
         # to it to the (modified to 25 above) old 15 row, else do basically as above for the 15 rows

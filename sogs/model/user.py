@@ -240,7 +240,9 @@ class User:
                     at=time.time() + timeout,
                 )
 
-        app.logger.debug(f"{banned_by} globally banned {self}{f' for {timeout}s' if timeout else ''}")
+        app.logger.debug(
+            f"{banned_by} globally banned {self}{f' for {timeout}s' if timeout else ''}"
+        )
         self.banned = True
 
     def unban(self, *, unbanned_by: User):

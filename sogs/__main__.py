@@ -497,7 +497,6 @@ elif update_room:
                 except NoSuchUser:
                     pass
 
-
     if args.add_perms or args.clear_perms or args.remove_perms:
         if global_rooms:
             print(
@@ -506,7 +505,7 @@ elif update_room:
             )
             sys.exit(1)
 
-        vivify =  args.add_perms or args.remove_perms
+        vivify = args.add_perms or args.remove_perms
         users = []
         if args.users:
             users = [User(session_id=sid, autovivify=vivify) for sid in args.users]
