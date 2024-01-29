@@ -1,5 +1,5 @@
 from sogs.web import app
-from sogs.crypto import server_pubkey
+from sogs.crypto import server_pubkey, compute_blinded25_id_from_05
 from sogs.routes.auth import user_required
 from auth import x_sogs_raw, x_sogs
 import sogs.utils
@@ -19,7 +19,7 @@ def auth_test_whoami():
     if g.user is None:
         res["user"] = None
     else:
-        res["user"] = {"uid": g.user.id, "session_id": g.user.session_id}
+        res["user"] = {"uid": g.user.id, "session_id": g.user.using_id}
 
     if 'X-Foo' in request.headers:
         res["foo"] = request.headers['X-Foo']
@@ -134,7 +134,7 @@ def test_auth_banned(client, global_admin, user, db):
     assert r.json == {'user': None}
     r = client.get("/auth_test/whoami", headers=x_sogs(a, B, 'GET', '/auth_test/whoami'))
     assert r.status_code == 200
-    assert r.json == {"user": {"uid": 2, "session_id": user.session_id}}
+    assert r.json == {"user": {"uid": 2, "session_id": user.using_id}}
 
     user.ban(banned_by=global_admin)
 
@@ -379,10 +379,9 @@ def test_auth_batch(client, db):
 
 
 def test_auth_legacy(client, db, admin, user, room):
-
     # Make a legacy auth token to make sure it works as expected first, but also to make sure it
     # gets ignored when we use X-SOGS-*.
-    raw_token = sogs.utils.make_legacy_token(admin.session_id)
+    raw_token = sogs.utils.make_legacy_token(admin.using_id)
     token = sogs.utils.encode_base64(raw_token)
 
     a = admin.ed_key
@@ -395,7 +394,7 @@ def test_auth_legacy(client, db, admin, user, room):
     r = client.post(
         "/legacy/block_list",
         headers={"Room": room.token, "Authorization": bad_token},
-        json={"public_key": user.session_id},
+        json={"public_key": user.using_id},
     )
     assert r.status_code == 401
 
@@ -403,12 +402,13 @@ def test_auth_legacy(client, db, admin, user, room):
     r = client.post(
         "/legacy/block_list",
         headers={"Room": room.token, "Authorization": token},
-        json={"public_key": user.session_id},
+        json={"public_key": user.using_id},
     )
     assert r.status_code == 200
     assert r.json == {"status_code": 200}
 
     S2 = '05' + a2.verify_key.to_curve25519_public_key().encode().hex()
+    S2_25 = compute_blinded25_id_from_05(S2)
     r = client.post(
         "/legacy/block_list",
         headers={"Room": room.token, "Authorization": token},
@@ -420,10 +420,10 @@ def test_auth_legacy(client, db, admin, user, room):
     # Verify that both bans are present
     r = client.get("/legacy/block_list", headers={"Room": room.token, "Authorization": token})
     assert r.status_code == 200
-    assert r.json == {"status_code": 200, "banned_members": sorted([user.session_id, S2])}
+    assert r.json == {"status_code": 200, "banned_members": sorted([user.session_id, S2_25])}
 
     # Retrieve bans as one of the banned users: should only see himself
-    utoken = sogs.utils.encode_base64(sogs.utils.make_legacy_token(user.session_id))
+    utoken = sogs.utils.encode_base64(sogs.utils.make_legacy_token(user.using_id))
     r = client.get("/legacy/block_list", headers={"Room": room.token, "Authorization": utoken})
     assert r.status_code == 200
     assert r.json == {"status_code": 200, "banned_members": [user.session_id]}
@@ -441,7 +441,9 @@ def test_auth_legacy(client, db, admin, user, room):
     h['Room'] = room.token
     r = client.get("/legacy/block_list", headers=h)
     assert r.status_code == 200
-    assert r.json == {"status_code": 200, "banned_members": [S2]}
+    assert r.json == {"status_code": 200, "banned_members": [S2_25]}
+
+    app.logger.warning(f"spacing log line")
 
     # Remove the bans as admin, with X-SOGS
     rh = {"Room": room.token}
@@ -470,7 +472,7 @@ def test_auth_legacy(client, db, admin, user, room):
         {
             'code': 200,
             'headers': {'content-type': 'application/json'},
-            'body': {'status_code': 200, 'banned_members': sorted([user.session_id, S2])},
+            'body': {'status_code': 200, 'banned_members': sorted([user.session_id, S2_25])},
         },
         {
             'code': 200,
@@ -480,7 +482,7 @@ def test_auth_legacy(client, db, admin, user, room):
         {
             'code': 200,
             'headers': {'content-type': 'application/json'},
-            'body': {'status_code': 200, 'banned_members': [S2]},
+            'body': {'status_code': 200, 'banned_members': [S2_25]},
         },
         {
             'code': 200,
@@ -524,7 +526,7 @@ def test_small_subgroups(client, db):
     assert r.data == b'Invalid authentication: given X-SOGS-Pubkey is not a valid Ed25519 pubkey'
 
     # Now try with a blinded id:
-    headers = x_sogs(a, B, 'GET', '/auth_test/whoami', blinded=True)
+    headers = x_sogs(a, B, 'GET', '/auth_test/whoami', blinded15=True)
     assert headers['X-SOGS-Pubkey'].startswith('15')
     A = bytes.fromhex(headers['X-SOGS-Pubkey'][2:])
 

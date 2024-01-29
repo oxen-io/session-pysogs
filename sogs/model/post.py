@@ -18,17 +18,17 @@ class Post:
 
     @property
     def text(self):
-        """ accessor for the post body """
+        """accessor for the post body"""
         return self._proto.body
 
     @property
     def username(self):
-        """ accessor for the username of the post's author """
+        """accessor for the username of the post's author"""
         if self.profile is None:
             return
         return self.profile.displayName
 
     @property
     def profile(self):
-        """ accessor for the user profile data containing things like username etc """
+        """accessor for the user profile data containing things like username etc"""
         return self._proto.profile

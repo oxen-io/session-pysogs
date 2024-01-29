@@ -6,6 +6,8 @@ from .. import crypto, http, utils
 
 from .subrequest import make_subrequest
 
+from session_util.onionreq import OnionReqParser
+
 onion_request = Blueprint('onion_request', __name__)
 
 
@@ -245,7 +247,7 @@ def handle_v4_onionreq_plaintext(body):
 
 def decrypt_onionreq():
     try:
-        return crypto.parse_junk(request.data)
+        return OnionReqParser(crypto.server_pubkey_bytes, crypto._privkey_bytes, request.data)
     except Exception as e:
         app.logger.warning("Failed to decrypt onion request: {}".format(e))
     abort(http.BAD_REQUEST)
@@ -262,8 +264,8 @@ def handle_v3_onion_request():
     Deprecated in favour of /v4/.
     """
 
-    junk = decrypt_onionreq()
-    return utils.encode_base64(junk.transformReply(handle_v3_onionreq_plaintext(junk.payload)))
+    parser = decrypt_onionreq()
+    return utils.encode_base64(parser.encrypt_reply(handle_v3_onionreq_plaintext(parser.payload)))
 
 
 @onion_request.post("/oxen/v4/lsrpc")
@@ -287,7 +289,7 @@ def handle_v4_onion_request():
     # The parse_junk here takes care of decoding and decrypting this according to the fields *meant
     # for us* in the json (which include things like the encryption type and ephemeral key):
     try:
-        junk = crypto.parse_junk(request.data)
+        parser = decrypt_onionreq()
     except RuntimeError as e:
         app.logger.warning("Failed to decrypt onion request: {}".format(e))
         abort(http.BAD_REQUEST)
@@ -295,5 +297,5 @@ def handle_v4_onion_request():
     # On the way back out we re-encrypt via the junk parser (which uses the ephemeral key and
     # enc_type that were specified in the outer request).  We then return that encrypted binary
     # payload as-is back to the client which bounces its way through the SN path back to the client.
-    response = handle_v4_onionreq_plaintext(junk.payload)
-    return junk.transformReply(response)
+    response = handle_v4_onionreq_plaintext(parser.payload)
+    return parser.encrypt_reply(response)

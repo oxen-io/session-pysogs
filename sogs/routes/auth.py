@@ -261,11 +261,13 @@ def handle_http_auth():
             http.BAD_REQUEST, "Invalid authentication: X-SOGS-Pubkey is not a valid 66-hex digit id"
         )
 
-    if pk[0] not in (0x00, 0x15):
+    if pk[0] not in (0x00, 0x15, 0x25):
         abort_with_reason(
-            http.BAD_REQUEST, "Invalid authentication: X-SOGS-Pubkey must be 00- or 15- prefixed"
+            http.BAD_REQUEST,
+            "Invalid authentication: X-SOGS-Pubkey must be 00-, 15-, or 25- prefixed",
         )
-    blinded_pk = pk[0] == 0x15
+    blinded15_pk = pk[0] == 0x15
+    blinded25_pk = pk[0] == 0x25
     pk = pk[1:]
 
     if not sodium.crypto_core_ed25519_is_valid_point(pk):
@@ -275,7 +277,9 @@ def handle_http_auth():
         )
 
     pk = VerifyKey(pk)
-    if blinded_pk:
+    if blinded25_pk:
+        session_id = '25' + pk.encode().hex()
+    elif blinded15_pk and not config.REQUIRE_BLIND_V2:
         session_id = '15' + pk.encode().hex()
     elif config.REQUIRE_BLIND_KEYS:
         abort_with_reason(

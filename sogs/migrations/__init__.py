@@ -4,6 +4,7 @@ import coloredlogs
 from .. import config
 
 from . import (
+    blind25,
     file_message,
     fix_info_update_triggers,
     import_hacks,
@@ -43,6 +44,7 @@ def migrate(conn, *, check_only=False):
         seqno_etc,
         reactions,
         seqno_creation,
+        blind25,
         message_views,
         user_perm_futures,
         room_accessible,

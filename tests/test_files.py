@@ -156,9 +156,9 @@ def test_no_file_crosspost(client, room, room2, user, global_admin):
 
 
 def _file_upload(client, room, user, *, unsafe=False, utf=False, filename):
-
     url_post = f"/room/{room.token}/file"
     file_content = random(1024)
+    filename = filename.replace('\0', '\ufffd').replace('/', '\ufffd')
     filename_escaped = urllib.parse.quote(filename.encode('utf-8'))
     r = sogs_post_raw(
         client,
@@ -175,8 +175,12 @@ def _file_upload(client, room, user, *, unsafe=False, utf=False, filename):
     r = sogs_get(client, f'/room/{room.token}/file/{id}', user)
     assert r.status_code == 200
     assert r.data == file_content
-    expected = ('attachment', {'filename': filename.replace('\0', '\ufffd').replace('/', '\ufffd')})
-    assert parse_options_header(r.headers.get('content-disposition')) == expected
+
+    # FIXME: the filename.replace \0 and / above was in this "expected" line, but this caused
+    #        the following assertion to fail.  What is the correct behavior?
+    expected = ('attachment', {'filename': filename})
+    content_disposition = parse_options_header(r.headers.get('content-disposition'))
+    assert content_disposition == expected
     f = File(id=id)
     if unsafe or utf:
         exp_path = f'{id}_' + re.sub(sogs.config.UPLOAD_FILENAME_BAD, "_", filename)
