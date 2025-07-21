@@ -1,6 +1,6 @@
 from .. import config
 
-if config.PROFANITY_FILTER:
+if config.PROFANITY_FILTER and config.RUNNING_AS_APP:
     import better_profanity
 
     if config.PROFANITY_CUSTOM:

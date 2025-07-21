@@ -42,6 +42,6 @@ def teardown_db_conn(exception):
 # as __main__.py, we may have replaced this with a non-lazy, actual current connection).
 appdb = LocalProxy(get_db_conn)
 
-
-from . import routes
-from . import cleanup
+if config.RUNNING_AS_APP:
+    from . import routes
+    from . import cleanup
