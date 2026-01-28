@@ -74,7 +74,7 @@
 [rooms]
 
 ; How many days we consider a user to be "active" in a room without having at least retrieved
-; messages from the room, in days.  (This must be ≤ active_prune_threshold, below).
+; messages from the room, in days.  (This must be <= active_prune_threshold, below).
 ;
 ;active_threshold = 7
 

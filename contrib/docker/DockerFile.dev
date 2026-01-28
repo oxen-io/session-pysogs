@@ -1,0 +1,30 @@
+# check docker/Readme.md
+FROM debian:stable
+
+RUN apt-get update
+RUN apt-get upgrade -y
+
+# we need this to make https://deb.oxen.io fetches work
+RUN apt-get install -y ca-certificates
+
+COPY contrib/deb.oxen.io.gpg /etc/apt/trusted.gpg.d/oxen.gpg
+
+
+# there is no lsb-release package on the base debian build
+RUN echo "deb https://deb.oxen.io $(cat /etc/os-release | grep VERSION_CODENAME | cut -d "=" -f2) main" > /etc/apt/sources.list.d/oxen.list
+RUN cat /etc/apt/sources.list.d/oxen.list
+RUN apt-get update
+RUN apt -y install git vim python3-oxenmq python3-oxenc python3-pyonionreq python3-coloredlogs python3-uwsgidecorators python3-flask \
+    python3-cryptography python3-nacl python3-pil python3-protobuf python3-openssl python3-qrencode python3-better-profanity \
+    python3-sqlalchemy python3-sqlalchemy-utils uwsgi-plugin-python3 python3-pytest python3-pycryptodome python3-qrcode
+
+# just add an alias to the pysogs-start command
+RUN echo '#!/bin/bash\nuwsgi contrib/docker/uwsgi-sogs-docker.ini' > /usr/bin/start-sogs-uwsgi && \
+    chmod +x /usr/bin/start-sogs-uwsgi
+
+
+RUN mkdir session-pysogs
+WORKDIR session-pysogs
+
+
+EXPOSE 80
