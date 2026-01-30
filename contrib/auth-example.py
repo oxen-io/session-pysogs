@@ -71,7 +71,6 @@ def get_signing_headers(
     body,
     blinded: bool = True,
 ):
-
     assert len(server_pk) == 32
     assert len(nonce) == 16
 

@@ -5,7 +5,6 @@ import time
 
 
 def test_global_mods(client, room, room2, user, user2, mod, admin, global_admin, global_mod):
-
     assert not room2.check_moderator(user)
     assert not room2.check_moderator(user2)
 
@@ -167,7 +166,6 @@ def test_global_mods(client, room, room2, user, user2, mod, admin, global_admin,
 
 
 def test_room_mods(client, room, room2, user, user2, mod, admin, global_admin, global_mod):
-
     # Track expected info_updates values; the initial values are because creating the mod/admin/etc.
     # fixtures imported here perform db modifications that trigger updates (2 global mods + 2 mods
     # of `room`):

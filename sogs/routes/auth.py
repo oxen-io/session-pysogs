@@ -261,11 +261,13 @@ def handle_http_auth():
             http.BAD_REQUEST, "Invalid authentication: X-SOGS-Pubkey is not a valid 66-hex digit id"
         )
 
-    if pk[0] not in (0x00, 0x15):
+    if pk[0] not in (0x00, 0x15, 0x25):
         abort_with_reason(
-            http.BAD_REQUEST, "Invalid authentication: X-SOGS-Pubkey must be 00- or 15- prefixed"
+            http.BAD_REQUEST,
+            "Invalid authentication: X-SOGS-Pubkey must be 00-, 15-, or 25- prefixed",
         )
-    blinded_pk = pk[0] == 0x15
+    blinded15_pk = pk[0] == 0x15
+    blinded25_pk = pk[0] == 0x25
     pk = pk[1:]
 
     if not sodium.crypto_core_ed25519_is_valid_point(pk):
@@ -275,7 +277,9 @@ def handle_http_auth():
         )
 
     pk = VerifyKey(pk)
-    if blinded_pk:
+    if blinded25_pk:
+        session_id = '25' + pk.encode().hex()
+    elif blinded15_pk and not config.REQUIRE_BLIND_V2:
         session_id = '15' + pk.encode().hex()
     elif config.REQUIRE_BLIND_KEYS:
         abort_with_reason(
@@ -320,7 +324,7 @@ def handle_http_auth():
             http.TOO_EARLY, "Invalid authentication: X-SOGS-Timestamp is too far from current time"
         )
 
-    user = User(session_id=session_id, autovivify=True, touch=False)
+    user = User(session_id=session_id, autovivify=True, touch=False, update_last_id=True)
     if user.banned:
         # If the user is banned don't even bother verifying the signature because we want to reject
         # the request whether or not the signature validation passes.
@@ -332,6 +336,8 @@ def handle_http_auth():
         abort_with_reason(http.TOO_EARLY, "Invalid authentication: X-SOGS-Nonce cannot be reused")
 
     # Signature validation
+    # Cast the timestamp to a string because Android sometimes sends it as an int
+    ts_str = str(ts_str)
 
     # Signature should be on:
     #     SERVER_PUBKEY || NONCE || TIMESTAMP || METHOD || PATH || HBODY

@@ -63,13 +63,15 @@ def dump_rows(table, extra=None, where=None, order="id", skip=set()):
     for r in cur:
         table.add_row(
             [
-                'NULL'
-                if r[i] is None
-                else int(r[i])
-                if isinstance(r[i], bool)
-                else f"{r[i]:.3f}"
-                if isinstance(r[i], float)
-                else r[i]
+                (
+                    'NULL'
+                    if r[i] is None
+                    else (
+                        int(r[i])
+                        if isinstance(r[i], bool)
+                        else f"{r[i]:.3f}" if isinstance(r[i], float) else r[i]
+                    )
+                )
                 for i in indices
             ]
         )

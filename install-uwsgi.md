@@ -28,7 +28,7 @@ Python using:
 sudo curl -so /etc/apt/trusted.gpg.d/oxen.gpg https://deb.oxen.io/pub.gpg
 echo "deb https://deb.oxen.io $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/oxen.list
 sudo apt update
-sudo apt install python3-{oxenmq,oxenc,pyonionreq,coloredlogs,uwsgidecorators,flask,cryptography,nacl,pil,protobuf,openssl,qrcode,better-profanity,sqlalchemy,sqlalchemy-utils} uwsgi-plugin-python3
+sudo apt install python3-{oxenmq,oxenc,session-util,coloredlogs,uwsgidecorators,flask,cryptography,nacl,pil,protobuf,openssl,qrcode,better-profanity,sqlalchemy,sqlalchemy-utils} uwsgi-plugin-python3
 ```
 
 If you want to use a postgresql database backend then you will also need the python3-psycopg2
@@ -45,7 +45,7 @@ Copy the `sogs.ini.sample` to `sogs.ini`:
 cp sogs.ini.sample sogs.ini
 ```
 
-and edit it to change settings as desired.  At a minimum you must uncomment and set the `base_url`
+Use a text editor like nano to open the file and edit it to change settings as desired.  At a minimum you must uncomment and set the `base_url`
 setting to your SOGS URL; this can be a domain name or a public ip address.  Using a domain name is
 recommended over a bare IP as it can later be moved to a new host or new ISP, while while a bare IP
 cannot.
@@ -55,7 +55,7 @@ For example:
 base_url = http://sogs.example.com
 ```
 
-### uwsgi.ini
+### uwsgi-sogs.ini
 
 SOGS requires uwsgi to manage processes; sample configurations are available in the contrib/
 directory.  For a simple setup listening directly on a public IP/port you can use the standalone

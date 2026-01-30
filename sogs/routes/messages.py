@@ -14,7 +14,7 @@ def qs_reactors():
 
 
 @messages.get("/room/<Room:room>/messages/since/<int:seqno>")
-@auth.read_required
+@auth.accessible_required
 def messages_since(room, seqno):
     """
     Retrieves message *updates* from a room.  This is the main message polling endpoint in SOGS.
@@ -98,7 +98,7 @@ def messages_since(room, seqno):
 
 
 @messages.get("/room/<Room:room>/messages/before/<int:msg_id>")
-@auth.read_required
+@auth.accessible_required
 def messages_before(room, msg_id):
     """
     Retrieves messages from the room preceding a given id.
@@ -141,7 +141,7 @@ def messages_before(room, msg_id):
 
 
 @messages.get("/room/<Room:room>/messages/recent")
-@auth.read_required
+@auth.accessible_required
 def messages_recent(room):
     """
     Retrieves recent messages posted to this room.
@@ -552,7 +552,7 @@ def message_unpin_all(room):
 
 @messages.put("/room/<Room:room>/reaction/<int:msg_id>/<path:reaction>")
 @auth.user_required
-@auth.read_required
+@auth.accessible_required
 def message_react(room, msg_id, reaction):
     """
     Adds a reaction to the given message in this room.  The user must have read access in the room.

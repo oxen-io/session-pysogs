@@ -42,6 +42,7 @@ CREATE TABLE messages (
     data BLOB, /* Actual message content, not including trailing padding; set to null to delete a message */
     data_size INTEGER, /* The message size, including trailing padding (needed because the signature is over the padded data) */
     signature BLOB, /* Signature of `data` by `public_key`; set to null when deleting a message */
+    alt_id TEXT, /* The Session ID which generated `signature` if not the user's "25" blinding key; null if it is */
     filtered BOOLEAN NOT NULL DEFAULT FALSE, /* If true then we accept the message but never distribute it (e.g. for silent filtration) */
     whisper INTEGER REFERENCES users(id), /* If set: this is a whisper meant for the given user */
     whisper_mods BOOLEAN NOT NULL DEFAULT FALSE /* If true: this is a whisper that all mods should see (may or may not have a `whisper` target) */
@@ -155,6 +156,7 @@ CREATE TABLE users (
     moderator BOOLEAN NOT NULL DEFAULT FALSE, /* true = moderator of all rooms, and can add global bans */
     admin BOOLEAN NOT NULL DEFAULT FALSE, /* true = admin of all rooms, and can appoint global bans/mod/admins */
     visible_mod BOOLEAN NOT NULL DEFAULT FALSE, /* if true this user's moderator status is viewable by regular room users of all rooms */
+    last_id TEXT, /* last session_id seen from this user (05-, 15-, or 25-blinded), TODO drop after 25 transition complete*/
     CHECK(NOT (banned AND (moderator OR admin))) /* someone cannot be banned *and* a moderator at the same time */
 );
 CREATE INDEX users_last_active ON users(last_active);
@@ -169,17 +171,6 @@ FOR EACH ROW WHEN NEW.admin AND NOT NEW.moderator
 BEGIN
     UPDATE users SET moderator = TRUE WHERE id = NEW.id;
 END;
-
-
--- This table tracks unblinded session ids in user_permission (and related) rows that need to be
--- blinded, which will happen the first time the user authenticates with their blinded id (until
--- they do, we can't know the actual sign bit of their blinded id).  It is populated at startup
--- when blinding is first enabled, and is used both for the initial blinding transition and when
--- ids are added by raw session ID (e.g. when adding a moderator by session id).
-CREATE TABLE needs_blinding (
-    blinded_abs TEXT NOT NULL PRIMARY KEY, -- the positive of the possible two blinded keys
-    "user" INTEGER NOT NULL UNIQUE REFERENCES users ON DELETE CASCADE
-);
 
 
 -- Reactions
@@ -263,7 +254,7 @@ END;
 -- table of the user who posted it, and the session id of the whisper recipient (as `whisper_to`) if
 -- a directed whisper.
 CREATE VIEW message_details AS
-SELECT messages.*, uposter.session_id, uwhisper.session_id AS whisper_to
+SELECT messages.*, uposter.session_id, uwhisper.session_id AS whisper_to, COALESCE(messages.alt_id, uposter.session_id) AS signing_id
     FROM messages
         JOIN users uposter ON messages."user" = uposter.id
         LEFT JOIN users uwhisper ON messages.whisper = uwhisper.id;
@@ -429,7 +420,7 @@ SELECT
     -- room_moderator will be TRUE if the user is specifically listed as a moderator of the room
     COALESCE(user_permission_overrides.moderator, FALSE) AS room_moderator,
     -- global_moderator will be TRUE if the user is a global moderator/admin (note that this is
-    -- *not* exclusive of room_moderator: a moderator/admin could be listed in both).
+    -- *not* exclusive of room_moderator: a moderator/admin could be listed in pluginh).
     users.moderator as global_moderator,
     -- visible_mod will be TRUE if this mod is a publicly viewable moderator of the room
     CASE
@@ -444,7 +435,7 @@ FROM
 -- Used to accesses the moderator list for a room.  This view is considerably faster than querying
 -- the `user_permissions` table for a list of all moderators.
 CREATE VIEW room_moderators AS
-SELECT session_id, mods.* FROM (
+SELECT COALESCE(users.last_id, users.session_id) as session_id, mods.* FROM (
     SELECT
         room,
         "user",
@@ -521,10 +512,32 @@ CREATE TABLE inbox (
     recipient INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     sender INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     body BLOB NOT NULL,
+    alt_id TEXT, /* The Session ID which sender used to encrypt the message if not the "25" blinding key; null if it is */
     posted_at FLOAT DEFAULT ((julianday('now') - 2440587.5)*86400.0),
     expiry FLOAT DEFAULT ((julianday('now') - 2440587.5 + 15.0)*86400.0) /* now + 15 days */
 );
 CREATE INDEX inbox_recipient ON inbox(recipient);
+
+
+CREATE TABLE plugins (
+    id INTEGER NOT NULL PRIMARY KEY,
+    auth_key TEXT UNIQUE, /* the plugin's auth key, if the plugin connection requires it */
+    "user" INTEGER REFERENCES users(id) ON DELETE CASCADE, /* the plugin can be tied to a session_id/user */
+    global BOOLEAN DEFAULT FALSE,
+    approver BOOLEAN DEFAULT FALSE, /* can this plugin deny/disapprove messages? */
+    required BOOLEAN DEFAULT FALSE, /* is this plugin's approval **required** for messages? */
+    subscribe BOOLEAN DEFAULT TRUE /* does this plugin want to receive all new messages? */
+);
+
+
+CREATE TABLE room_plugins (
+    plugin INTEGER NOT NULL REFERENCES plugins(id) ON DELETE CASCADE,
+    room INTEGER NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+    approver BOOLEAN DEFAULT FALSE, /* can this plugin deny/disapprove messages (in this room)? */
+    required BOOLEAN DEFAULT FALSE, /* is this plugin's approval **required** for messages (in this room)? */
+    subscribe BOOLEAN DEFAULT TRUE, /* does this plugin want to receive all new messages (in this room)? */
+    PRIMARY KEY(plugin, room)
+);
 
 
 COMMIT;
