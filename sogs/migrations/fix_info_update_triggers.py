@@ -8,17 +8,19 @@ def migrate(conn, *, check_only):
     # Room info_updates triggers for global mods didn't fire for invisible global mods/admins, but
     # should (so that other mods/admins notice the change).
     has_bad_trigger = db.query(
-        """
+        (
+            """
         SELECT COUNT(*) FROM sqlite_master
             WHERE type = 'trigger' AND name = :trigger
             AND LOWER(sql) LIKE :bad
         """
-        if db.engine.name == "sqlite"
-        else """
+            if db.engine.name == "sqlite"
+            else """
         SELECT COUNT(*) FROM information_schema.triggers
             WHERE trigger_name = :trigger
             AND LOWER(action_condition) LIKE :bad
-        """,
+        """
+        ),
         trigger='room_metadata_global_mods_insert',
         bad='% new.visible_mod%',
         dbconn=conn,

@@ -9,7 +9,6 @@ from util import pad64, from_now
 
 
 def test_create(room, room2):
-
     r3 = Room.create('Test_Room-3', name='Test room 3', description='Test suite testing room3')
 
     rooms = get_rooms()
@@ -36,7 +35,6 @@ def test_create(room, room2):
 
 
 def test_token_insensitive(room):
-
     r = Room.create('Test_Ro-om', name='TR2', description='Test suite testing room2')
 
     r_a = Room(token='Test_Ro-om')
@@ -92,7 +90,6 @@ def test_info(room):
 
 
 def test_updates(room):
-
     assert room.message_sequence == 0 and room.info_updates == 0 and room.name == 'Test room'
 
     room.name = 'Test Room'
@@ -118,7 +115,6 @@ def test_updates(room):
 
 
 def test_permissions(room, user, user2, mod, admin, global_mod, global_admin):
-
     # Public permissions:
     assert not room.check_permission(admin=True)
     assert not room.check_permission(moderator=True)
@@ -386,7 +382,6 @@ def test_bans(room, user, user2, mod, admin, global_mod, global_admin):
 
 
 def test_mods(room, user, user2, mod, admin, global_mod, global_admin):
-
     room.set_moderator(user, added_by=admin)
     assert room.check_moderator(user)
     assert not room.check_admin(user)
@@ -458,7 +453,6 @@ def test_mods(room, user, user2, mod, admin, global_mod, global_admin):
 
 
 def test_upload(room, user):
-
     import os
 
     file = File(id=room.upload_file(content=b'abc', uploader=user, filename="abc.txt", lifetime=30))
@@ -489,7 +483,6 @@ def test_upload(room, user):
 
 
 def test_upload_expiry(room, user):
-
     import os
 
     file = File(id=room.upload_file(content=b'abc', uploader=user, filename="abc.txt", lifetime=-1))
@@ -512,7 +505,6 @@ def test_upload_expiry(room, user):
 
 
 def test_image(room, user):
-
     assert room.image is None
 
     fid = room.upload_file(content=b'abc', uploader=user, filename="abc.txt")

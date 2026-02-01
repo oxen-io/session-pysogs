@@ -42,6 +42,7 @@ CREATE TABLE messages (
     data BLOB, /* Actual message content, not including trailing padding; set to null to delete a message */
     data_size INTEGER, /* The message size, including trailing padding (needed because the signature is over the padded data) */
     signature BLOB, /* Signature of `data` by `public_key`; set to null when deleting a message */
+    alt_id TEXT, /* The Session ID which generated `signature` if not the user's "25" blinding key; null if it is */
     filtered BOOLEAN NOT NULL DEFAULT FALSE, /* If true then we accept the message but never distribute it (e.g. for silent filtration) */
     whisper INTEGER REFERENCES users(id), /* If set: this is a whisper meant for the given user */
     whisper_mods BOOLEAN NOT NULL DEFAULT FALSE /* If true: this is a whisper that all mods should see (may or may not have a `whisper` target) */
@@ -171,17 +172,6 @@ BEGIN
 END;
 
 
--- This table tracks unblinded session ids in user_permission (and related) rows that need to be
--- blinded, which will happen the first time the user authenticates with their blinded id (until
--- they do, we can't know the actual sign bit of their blinded id).  It is populated at startup
--- when blinding is first enabled, and is used both for the initial blinding transition and when
--- ids are added by raw session ID (e.g. when adding a moderator by session id).
-CREATE TABLE needs_blinding (
-    blinded_abs TEXT NOT NULL PRIMARY KEY, -- the positive of the possible two blinded keys
-    "user" INTEGER NOT NULL UNIQUE REFERENCES users ON DELETE CASCADE
-);
-
-
 -- Reactions
 CREATE TABLE reactions (
     id INTEGER NOT NULL PRIMARY KEY,
@@ -263,7 +253,7 @@ END;
 -- table of the user who posted it, and the session id of the whisper recipient (as `whisper_to`) if
 -- a directed whisper.
 CREATE VIEW message_details AS
-SELECT messages.*, uposter.session_id, uwhisper.session_id AS whisper_to
+SELECT messages.*, uposter.session_id, uwhisper.session_id AS whisper_to, COALESCE(messages.alt_id, uposter.session_id) AS signing_id
     FROM messages
         JOIN users uposter ON messages."user" = uposter.id
         LEFT JOIN users uwhisper ON messages.whisper = uwhisper.id;
@@ -521,10 +511,32 @@ CREATE TABLE inbox (
     recipient INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     sender INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     body BLOB NOT NULL,
+    alt_id TEXT, /* The Session ID which sender used to encrypt the message if not the "25" blinding key; null if it is */
     posted_at FLOAT DEFAULT ((julianday('now') - 2440587.5)*86400.0),
     expiry FLOAT DEFAULT ((julianday('now') - 2440587.5 + 15.0)*86400.0) /* now + 15 days */
 );
 CREATE INDEX inbox_recipient ON inbox(recipient);
+
+
+CREATE TABLE bots (
+    id INTEGER NOT NULL PRIMARY KEY,
+    auth_key TEXT UNIQUE, /* the bot's auth key, if the bot connection requires it */
+    "user" INTEGER REFERENCES users(id) ON DELETE CASCADE, /* the bot can be tied to a session_id/user */
+    global BOOLEAN DEFAULT FALSE,
+    approver BOOLEAN DEFAULT FALSE, /* can this bot deny/disapprove messages? */
+    required BOOLEAN DEFAULT FALSE, /* is this bot's approval **required** for messages? */
+    subscribe BOOLEAN DEFAULT TRUE /* does this bot want to receive all new messages? */
+);
+
+
+CREATE TABLE room_bots (
+    bot INTEGER NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+    room INTEGER NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+    approver BOOLEAN DEFAULT FALSE, /* can this bot deny/disapprove messages (in this room)? */
+    required BOOLEAN DEFAULT FALSE, /* is this bot's approval **required** for messages (in this room)? */
+    subscribe BOOLEAN DEFAULT TRUE, /* does this bot want to receive all new messages (in this room)? */
+    PRIMARY KEY(bot, room)
+);
 
 
 COMMIT;

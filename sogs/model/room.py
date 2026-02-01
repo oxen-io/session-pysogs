@@ -1,7 +1,8 @@
 from .. import config, crypto, db, utils, session_pb2 as protobuf
 from ..db import query
 from ..hashing import blake2b
-from ..omq import send_mule
+from ..omq import send_mule, synchronous_mule_request
+from oxenc import bt_deserialize
 from ..web import app
 from .user import User
 from .file import File
@@ -25,6 +26,11 @@ import sqlalchemy.exc
 import time
 from typing import Optional, Union, List
 
+import sys
+
+test_suite = False
+if "pytest" in sys.modules:
+    test_suite = True
 
 # TODO: These really should be room properties, not random global constants (these
 # are carried over from old SOGS).
@@ -436,6 +442,7 @@ class Room:
         accessible=False,
         write=False,
         upload=False,
+        get_all=False,
     ):
         """
         Checks whether `user` has the required permissions for this room and isn't banned.  Returns
@@ -484,15 +491,20 @@ class Room:
                 ).first()
                 self._perm_cache[user.id] = [bool(c) for c in row]
 
-            (
-                is_banned,
-                can_read,
-                can_access,
-                can_write,
-                can_upload,
-                is_mod,
-                is_admin,
-            ) = self._perm_cache[user.id]
+            (is_banned, can_read, can_access, can_write, can_upload, is_mod, is_admin) = (
+                self._perm_cache[user.id]
+            )
+
+        if get_all:
+            return {
+                "is_banned": is_banned,
+                "can_read": can_read,
+                "can_access": can_access,
+                "can_write": can_write,
+                "can_upload": can_upload,
+                "is_mod": is_mod,
+                "is_admin": is_admin,
+            }
 
         if is_admin:
             return True
@@ -605,6 +617,29 @@ class Room:
         """
 
         mod = self.check_moderator(user)
+        whispers_only = not self.check_read(
+            user
+        )  # access but not read still allows whispers to be seen
+
+        # if this is a "public" read request and default read is false, return empty list
+        if whispers_only and not user:
+            return []
+
+        # if user doesn't have permission overrides for this room, treat this as a permissions request
+        if whispers_only and len(self.user_permissions(user)) == 0:
+            req = {
+                "user_id": user.id,
+                "session_id": user.using_id,
+                "room_id": self.id,
+                "room_token": self.token,
+            }
+            # response is meaningless for now; just used to wait for mule.
+            from datetime import timedelta
+
+            bot_resp = synchronous_mule_request(
+                "worker.request_read", req, prefix=None, timeout=timedelta(seconds=3)
+            )
+
         msgs = []
 
         opt_count = sum(arg is not None for arg in (sequence, after, before, single)) + bool(recent)
@@ -642,15 +677,19 @@ class Room:
         message_clause = (
             'AND seqno > :sequence AND seqno_data > :sequence'
             if sequence is not None and not reaction_updates
-            else 'AND seqno > :sequence'
-            if sequence is not None
-            else 'AND id > :after'
-            if after is not None
-            else 'AND id < :before'
-            if before is not None
-            else 'AND id = :single'
-            if single is not None
-            else ''
+            else (
+                'AND seqno > :sequence'
+                if sequence is not None
+                else (
+                    'AND id > :after'
+                    if after is not None
+                    else (
+                        'AND id < :before'
+                        if before is not None
+                        else 'AND id = :single' if single is not None else ''
+                    )
+                )
+            )
         )
 
         whisper_clause = (
@@ -661,24 +700,36 @@ class Room:
             # - non-whispers
             'AND (whisper_mods OR whisper = :user OR "user" = :user OR whisper IS NULL)'
             if mod
-            # For a regular user we want to see:
+            # If the user only has access but not read/write, we want to see:
             # - anything with whisper_to sent to us
-            # - non-whispers
-            else "AND (whisper = :user OR (whisper IS NULL AND NOT whisper_mods))"
-            if user
-            # Otherwise for public, non-user access we want to see:
-            # - non-whispers
-            else "AND whisper IS NULL AND NOT whisper_mods"
+            else (
+                "AND whisper = :user"
+                if whispers_only
+                # For a regular user we want to see:
+                # - anything with whisper_to sent to us
+                # - non-whispers
+                else (
+                    "AND (whisper = :user OR (whisper IS NULL AND NOT whisper_mods))"
+                    if user
+                    # Otherwise for public, non-user access we want to see:
+                    # - non-whispers
+                    else "AND whisper IS NULL AND NOT whisper_mods"
+                )
+            )
         )
 
         order_limit = (
             'ORDER BY seqno ASC LIMIT :limit'
             if sequence is not None
-            else ''
-            if single is not None
-            else 'ORDER BY id ASC LIMIT :limit'
-            if after is not None
-            else 'ORDER BY id DESC LIMIT :limit'
+            else (
+                ''
+                if single is not None
+                else (
+                    'ORDER BY id ASC LIMIT :limit'
+                    if after is not None
+                    else 'ORDER BY id DESC LIMIT :limit'
+                )
+            )
         )
         for row in query(
             f"""
@@ -703,7 +754,8 @@ class Room:
                 msgs.append({x: row[x] for x in ('id', 'seqno')})
                 continue
 
-            msg = {x: row[x] for x in ('id', 'session_id', 'posted', 'seqno')}
+            msg = {x: row[x] for x in ('id', 'posted', 'seqno')}
+            msg["session_id"] = row["signing_id"]
             data = row['data']
             if data is None:
                 msg['data'] = None
@@ -719,6 +771,14 @@ class Room:
                 if row['whisper_to'] is not None:
                     msg['whisper_to'] = row['whisper_to']
             msgs.append(msg)
+        app.logger.debug(f"{len(msgs)} going to user for room")
+
+        # If the user only has "access", we want to lie about sequence numbers so that if
+        # that user gains "read" later their client will request messages from before that
+        # access was granted.
+        if whispers_only:
+            for msg in msgs:
+                msg['seqno'] = 0
 
         if reactions:
             reacts = self.get_reactions(
@@ -856,8 +916,8 @@ class Room:
         if msg_fmt:
             pbmsg = protobuf.Content()
             body = msg_fmt.format(
-                profile_name=(user.session_id if msg().username is None else msg().username),
-                profile_at="@" + user.session_id,
+                profile_name=(user.using_id if msg().username is None else msg().username),
+                profile_at="@" + user.using_id,
                 room_name=self.name,
                 room_token=self.token,
             ).encode()
@@ -891,9 +951,9 @@ class Room:
                 query(
                     """
                     INSERT INTO messages
-                        (room, "user", data, data_size, signature, whisper)
+                        (room, "user", data, data_size, signature, whisper, alt_id)
                         VALUES
-                        (:r, :u, :data, :data_size, :signature, :whisper)
+                        (:r, :u, :data, :data_size, :signature, :whisper, :alt_id)
                     """,
                     r=self.id,
                     u=server_fake_user.id,
@@ -901,6 +961,7 @@ class Room:
                     data_size=len(pbmsg),
                     signature=sig,
                     whisper=None if pub else user.id,
+                    alt_id=server_fake_user.using_id if server_fake_user.alt_id else None,
                 )
 
             if filt[filter_type + '_silent']:
@@ -949,6 +1010,42 @@ class Room:
             bind_expanding=['ids'],
         )
 
+    def insert_message(self, message):
+        with db.transaction():
+
+            unpadded_data = utils.remove_session_message_padding(message[b"message_data"])
+            msg_id = db.insert_and_get_pk(
+                """
+                INSERT INTO messages
+                    (room, "user", data, data_size, signature, filtered, whisper, whisper_mods, alt_id)
+                    VALUES
+                    (:r, :u, :data, :data_size, :signature, :filtered, :whisper, :whisper_mods, :alt_id)
+                """,
+                "id",
+                r=self.id,
+                u=message[b"user_id"],
+                data=unpadded_data,
+                data_size=message[b"data_size"],
+                signature=message[b"sig"],
+                filtered=message[b"filtered"],
+                whisper=message[b"whisper_to"] if b"whisper_to" in message else None,
+                whisper_mods=message[b"whisper_mods"],
+                alt_id=message[b"alt_id"] if b"alt_id" in message else None,
+            )
+            return msg_id
+
+    def bot_handle_message(self, message_args):
+        try:
+            app.logger.warning("Filtering via bots")
+
+            return bt_deserialize(
+                synchronous_mule_request("worker.message_request", message_args, prefix=None)[0]
+            )
+        except Exception as e:
+            app.logger.warn(f"Bot filter exception: {e}")
+            if not test_suite:
+                raise PostRejected(f"filtration rejected message (bot rejected)")
+
     def add_post(
         self,
         user: User,
@@ -982,7 +1079,9 @@ class Room:
         if whisper_to and not isinstance(whisper_to, User):
             whisper_to = User(session_id=whisper_to, autovivify=True, touch=False)
 
-        filtered = self.should_filter(user, data)
+        filtered = None  # self.should_filter(user, data)
+        if config.USE_OLD_SOGS_FILTERING:
+            filtered = self.should_filter(user, data)
 
         with db.transaction():
             if rate_limit_size and not self.check_admin(user):
@@ -1000,26 +1099,43 @@ class Room:
                 if recent_count >= rate_limit_size:
                     raise PostRateLimited()
 
-            data_size = len(data)
-            unpadded_data = utils.remove_session_message_padding(data)
+        data_size = len(data)
 
-            msg_id = db.insert_and_get_pk(
-                """
-                INSERT INTO messages
-                    (room, "user", data, data_size, signature, filtered, whisper, whisper_mods)
-                    VALUES
-                    (:r, :u, :data, :data_size, :signature, :filtered, :whisper, :whisper_mods)
-                """,
-                "id",
-                r=self.id,
-                u=user.id,
-                data=unpadded_data,
-                data_size=data_size,
-                signature=sig,
-                filtered=filtered is not None,
-                whisper=whisper_to.id if whisper_to else None,
-                whisper_mods=whisper_mods,
+        message_args = {
+            "room_id": self.id,
+            "room_token": self.token,
+            "room_name": self.name,
+            "user_id": user.id,
+            "session_id": user.session_id,
+            "message_data": data,
+            "data_size": data_size,
+            "sig": sig,
+            "filtered": filtered is not None,
+            "is_mod": self.check_moderator(user),
+            "whisper_mods": whisper_mods,
+        }
+        if whisper_to:
+            message_args["whisper_to"] = whisper_to.id
+        if user.alt_id:
+            message_args["alt_id"] = user.using_id
+
+        bot_response = self.bot_handle_message(message_args)
+
+        if not b"ok" in bot_response:
+            error_str = (
+                bot_response[b"error"] if b"error" in bot_response else "an unknown error occurred"
             )
+            app.logger.warning(f"add_post, bot error: {error_str}")
+            raise PostRejected(f"{error_str}")
+
+        if b"msg_id" not in bot_response:
+            # TODO: work out a response Session will like that says "message handled fine, but not inserted"
+            #       e.g. for slash-command handling
+            return dict()
+
+        msg_id = bot_response[b"msg_id"]
+
+        with db.transaction():
 
             if files:
                 # Take ownership of any uploaded files attached to the post:
@@ -1029,20 +1145,19 @@ class Room:
             row = query("SELECT posted, seqno FROM messages WHERE id = :m", m=msg_id).first()
             msg = {
                 'id': msg_id,
-                'session_id': user.session_id,
+                'session_id': user.using_id,
                 'posted': row[0],
                 'seqno': row[1],
                 'data': data,
                 'signature': sig,
                 'reactions': {},
+                'filtered': False,
             }
-            if filtered is not None:
-                msg['filtered'] = True
             if whisper_to or whisper_mods:
                 msg['whisper'] = True
                 msg['whisper_mods'] = whisper_mods
                 if whisper_to:
-                    msg['whisper_to'] = whisper_to.session_id
+                    msg['whisper_to'] = whisper_to.using_id
 
         # Don't call this inside the transaction because, if it's inserting a reply, we want the
         # reply to have a later timestamp for proper ordering (because the timestamp inside a
@@ -1050,7 +1165,6 @@ class Room:
         if filtered is not None:
             filtered()
 
-        send_mule("message_posted", msg['id'])
         return msg
 
     def edit_post(self, user: User, msg_id: int, data: bytes, sig: bytes, *, files: List[int] = []):
@@ -1360,14 +1474,24 @@ class Room:
         if user_required and not user:
             app.logger.warning("Reaction request requires user authentication")
             raise BadPermission()
-        if not (self.check_moderator(user) if mod_required else self.check_read(user)):
+        if mod_required and not self.check_moderator(user):
             app.logger.warning("Reaction request requires moderator authentication")
             raise BadPermission()
 
         if not self.is_regular_message(msg_id):
             raise NoSuchPost(msg_id)
 
-    def add_reaction(self, user: User, msg_id: int, reaction: str):
+        # users with "access" but not "read" can only react to whispers directed at them
+        if not self.check_read(user):
+            whisper_for_user = query(
+                "SELECT count(*) FROM messages WHERE id = :msg and whisper = :user",
+                msg=msg_id,
+                user=user.id,
+            ).first()[0]
+            if not whisper_for_user:
+                raise NoSuchPost(msg_id)
+
+    def add_reaction(self, user: User, msg_id: int, reaction: str, *args, send_to_bots=True):
         """
         Adds a reaction to the given post.  Returns True if the reaction was added, False if the
         reaction by this user was already present, throws on other errors.
@@ -1398,6 +1522,20 @@ class Room:
                 )
                 added = True
                 seqno = query("SELECT seqno FROM messages WHERE id = :msg", msg=msg_id).first()[0]
+                is_mod = self.check_moderator(user)
+                is_admin = self.check_admin(user)
+                if send_to_bots:
+                    reaction_dict = {
+                        'msg_id': msg_id,
+                        'reaction': reaction,
+                        'user_id': user.id,
+                        'session_id': user.using_id,
+                        'room_id': self.id,
+                        'room_token': self.token,
+                        'is_mod': is_mod,
+                        'is_admin': is_admin,
+                    }
+                    send_mule("reaction_posted", reaction_dict)
 
             except sqlalchemy.exc.IntegrityError:
                 added = False
@@ -1578,34 +1716,33 @@ class Room:
             raise BadPermission()
 
         with db.transaction():
-            with user.check_blinding() as u:
-                query(
-                    f"""
-                    INSERT INTO user_permission_overrides
-                        (room,
-                        "user",
-                        moderator,
-                        {'admin,' if admin is not None else ''}
-                        visible_mod)
-                    VALUES (:r, :u, TRUE, {':admin,' if admin is not None else ''} :visible)
-                    ON CONFLICT (room, "user") DO UPDATE SET
-                        moderator = excluded.moderator,
-                        {'admin = excluded.admin,' if admin is not None else ''}
-                        visible_mod = excluded.visible_mod
-                    """,
-                    r=self.id,
-                    u=u.id,
-                    admin=admin,
-                    visible=visible,
-                )
+            query(
+                f"""
+                INSERT INTO user_permission_overrides
+                    (room,
+                    "user",
+                    moderator,
+                    {'admin,' if admin is not None else ''}
+                    visible_mod)
+                VALUES (:r, :u, TRUE, {':admin,' if admin is not None else ''} :visible)
+                ON CONFLICT (room, "user") DO UPDATE SET
+                    moderator = excluded.moderator,
+                    {'admin = excluded.admin,' if admin is not None else ''}
+                    visible_mod = excluded.visible_mod
+                """,
+                r=self.id,
+                u=user.id,
+                admin=admin,
+                visible=visible,
+            )
 
-                self._refresh()
-                if u.id in self._perm_cache:
-                    del self._perm_cache[u.id]
+            self._refresh()
+            if user.id in self._perm_cache:
+                del self._perm_cache[user.id]
 
-                app.logger.info(
-                    f"{added_by} set {u} as {'admin' if admin else 'moderator'} of {self}"
-                )
+            app.logger.info(
+                f"{added_by} set {user} as {'admin' if admin else 'moderator'} of {self}"
+            )
 
     def remove_moderator(self, user: User, *, removed_by: User, remove_admin_only: bool = False):
         """
@@ -1619,23 +1756,22 @@ class Room:
             raise BadPermission()
 
         with db.transaction():
-            with user.check_blinding() as u:
-                query(
-                    f"""
-                    UPDATE user_permission_overrides
-                    SET admin = FALSE
-                        {', moderator = FALSE, visible_mod = TRUE' if not remove_admin_only else ''}
-                    WHERE room = :r AND "user" = :u
-                    """,
-                    r=self.id,
-                    u=user.id,
-                )
+            query(
+                f"""
+                UPDATE user_permission_overrides
+                SET admin = FALSE
+                    {', moderator = FALSE, visible_mod = TRUE' if not remove_admin_only else ''}
+                WHERE room = :r AND "user" = :u
+                """,
+                r=self.id,
+                u=user.id,
+            )
 
-                self._refresh()
-                if user.id in self._perm_cache:
-                    del self._perm_cache[user.id]
+            self._refresh()
+            if user.id in self._perm_cache:
+                del self._perm_cache[user.id]
 
-                app.logger.info(f"{removed_by} removed {u} as mod/admin of {self}")
+            app.logger.info(f"{removed_by} removed {user} ({user.using_id}) as mod/admin of {self}")
 
     def ban_user(self, to_ban: User, *, mod: User, timeout: Optional[float] = None):
         """
@@ -1652,58 +1788,57 @@ class Room:
         """
 
         with db.transaction():
-            with to_ban.check_blinding() as to_ban:
-                fail = None
-                if not self.check_moderator(mod):
-                    fail = "user is not a moderator"
-                elif to_ban.id == mod.id:
-                    fail = "self-ban not permitted"
-                elif to_ban.global_moderator:
-                    fail = "global mods/admins cannot be banned"
-                elif self.check_moderator(to_ban) and not self.check_admin(mod):
-                    fail = "only admins can ban room mods/admins"
+            fail = None
+            if not self.check_moderator(mod):
+                fail = "user is not a moderator"
+            elif to_ban.id == mod.id:
+                fail = "self-ban not permitted"
+            elif to_ban.global_moderator:
+                fail = "global mods/admins cannot be banned"
+            elif self.check_moderator(to_ban) and not self.check_admin(mod):
+                fail = "only admins can ban room mods/admins"
 
-                if fail is not None:
-                    app.logger.warning(f"Error banning {to_ban} from {self} by {mod}: {fail}")
-                    raise BadPermission()
+            if fail is not None:
+                app.logger.warning(f"Error banning {to_ban} from {self} by {mod}: {fail}")
+                raise BadPermission()
 
-                # TODO: log the banning action for auditing
+            # TODO: log the banning action for auditing
 
+            query(
+                """
+                INSERT INTO user_permission_overrides (room, "user", banned, moderator, admin)
+                    VALUES (:r, :ban, TRUE, FALSE, FALSE)
+                ON CONFLICT (room, "user") DO
+                    UPDATE SET banned = TRUE, moderator = FALSE, admin = FALSE
+                """,
+                r=self.id,
+                ban=to_ban.id,
+            )
+
+            # Replace (or remove) an existing scheduled bans/unbans:
+            query(
+                'DELETE FROM user_ban_futures WHERE room = :r AND "user" = :u',
+                r=self.id,
+                u=to_ban.id,
+            )
+            if timeout:
                 query(
                     """
-                    INSERT INTO user_permission_overrides (room, "user", banned, moderator, admin)
-                        VALUES (:r, :ban, TRUE, FALSE, FALSE)
-                    ON CONFLICT (room, "user") DO
-                        UPDATE SET banned = TRUE, moderator = FALSE, admin = FALSE
+                    INSERT INTO user_ban_futures
+                    (room, "user", banned, at) VALUES (:r, :u, FALSE, :at)
                     """,
                     r=self.id,
-                    ban=to_ban.id,
-                )
-
-                # Replace (or remove) an existing scheduled bans/unbans:
-                query(
-                    'DELETE FROM user_ban_futures WHERE room = :r AND "user" = :u',
-                    r=self.id,
                     u=to_ban.id,
+                    at=time.time() + timeout,
                 )
-                if timeout:
-                    query(
-                        """
-                        INSERT INTO user_ban_futures
-                        (room, "user", banned, at) VALUES (:r, :u, FALSE, :at)
-                        """,
-                        r=self.id,
-                        u=to_ban.id,
-                        at=time.time() + timeout,
-                    )
 
-                if to_ban.id in self._perm_cache:
-                    del self._perm_cache[to_ban.id]
+            if to_ban.id in self._perm_cache:
+                del self._perm_cache[to_ban.id]
 
-                app.logger.debug(
-                    f"Banned {to_ban} from {self} {f'for {timeout}s ' if timeout else ''}"
-                    f"(banned by {mod})"
-                )
+            app.logger.debug(
+                f"Banned {to_ban} from {self} {f'for {timeout}s ' if timeout else ''}"
+                f"(banned by {mod})"
+            )
 
     def unban_user(self, to_unban: User, *, mod: User):
         """
@@ -1719,27 +1854,26 @@ class Room:
             raise BadPermission()
 
         with db.transaction():
-            with to_unban.check_blinding() as to_unban:
-                result = query(
-                    """
-                    UPDATE user_permission_overrides SET banned = FALSE
-                    WHERE room = :r AND "user" = :unban AND banned
-                    """,
-                    r=self.id,
-                    unban=to_unban.id,
-                )
-                if result.rowcount > 0:
-                    app.logger.debug(f"{mod} unbanned {to_unban} from {self}")
+            result = query(
+                """
+                UPDATE user_permission_overrides SET banned = FALSE
+                WHERE room = :r AND "user" = :unban AND banned
+                """,
+                r=self.id,
+                unban=to_unban.id,
+            )
+            if result.rowcount > 0:
+                app.logger.warning(f"{mod} unbanned {to_unban} from {self}")
 
-                    if to_unban.id in self._perm_cache:
-                        del self._perm_cache[to_unban.id]
+                if to_unban.id in self._perm_cache:
+                    del self._perm_cache[to_unban.id]
 
-                    return True
+                return True
 
-                app.logger.debug(
-                    f"{mod} unbanned {to_unban} from {self} (but user was already unbanned)"
-                )
-                return False
+            app.logger.warning(
+                f"{mod} unbanned {to_unban} from {self} (but user was already unbanned)"
+            )
+            return False
 
     def get_bans(self):
         """
@@ -1790,27 +1924,26 @@ class Room:
             raise BadPermission()
 
         with db.transaction():
-            with user.check_blinding() as user:
-                set_perms = perms.keys()
-                query(
-                    f"""
-                    INSERT INTO user_permission_overrides (room, "user", {', '.join(set_perms)})
-                    VALUES (:r, :u, :{', :'.join(set_perms)})
-                    ON CONFLICT (room, "user") DO UPDATE SET
-                        {', '.join(f"{p} = :{p}" for p in set_perms)}
-                    """,
-                    r=self.id,
-                    u=user.id,
-                    read=perms.get('read'),
-                    accessible=perms.get('accessible'),
-                    write=perms.get('write'),
-                    upload=perms.get('upload'),
-                )
+            set_perms = perms.keys()
+            query(
+                f"""
+                INSERT INTO user_permission_overrides (room, "user", {', '.join(set_perms)})
+                VALUES (:r, :u, :{', :'.join(set_perms)})
+                ON CONFLICT (room, "user") DO UPDATE SET
+                    {', '.join(f"{p} = :{p}" for p in set_perms)}
+                """,
+                r=self.id,
+                u=user.id,
+                read=perms.get('read'),
+                accessible=perms.get('accessible'),
+                write=perms.get('write'),
+                upload=perms.get('upload'),
+            )
 
-                if user.id in self._perm_cache:
-                    del self._perm_cache[user.id]
+            if user.id in self._perm_cache:
+                del self._perm_cache[user.id]
 
-                app.logger.debug(f"{mod} applied {self} permission(s) {perms} to {user}")
+            app.logger.debug(f"{mod} applied {self} permission(s) {perms} to {user}")
 
     def clear_future_permissions(
         self,
@@ -1845,28 +1978,27 @@ class Room:
             return
 
         with db.transaction():
-            with user.check_blinding() as u:
-                r = query(
-                    f"""
-                    UPDATE user_permission_futures
-                    SET {', '.join(sets)}
-                    WHERE room = :r AND "user" = :u
+            r = query(
+                f"""
+                UPDATE user_permission_futures
+                SET {', '.join(sets)}
+                WHERE room = :r AND "user" = :u
+                """,
+                r=self.id,
+                u=user.id,
+            )
+
+            # Clear any rows that we updated to all-nulls:
+            if r.rowcount > 0:
+                query(
+                    """
+                    DELETE FROM user_permission_futures
+                    WHERE room = :r AND "user" = :u AND
+                        read = NULL AND write = NULL AND upload = NULL
                     """,
                     r=self.id,
-                    u=u.id,
+                    u=user.id,
                 )
-
-                # Clear any rows that we updated to all-nulls:
-                if r.rowcount > 0:
-                    query(
-                        """
-                        DELETE FROM user_permission_futures
-                        WHERE room = :r AND "user" = :u AND
-                            read = NULL AND write = NULL AND upload = NULL
-                        """,
-                        r=self.id,
-                        u=u.id,
-                    )
 
     def add_future_permission(
         self,
@@ -1890,19 +2022,18 @@ class Room:
             return
 
         with db.transaction():
-            with user.check_blinding() as u:
-                query(
-                    """
-                    INSERT INTO user_permission_futures (room, "user", at, read, write, upload)
-                    VALUES (:r, :u, :at, :read, :write, :upload)
-                    """,
-                    r=self.id,
-                    u=u.id,
-                    at=at,
-                    read=read,
-                    write=write,
-                    upload=upload,
-                )
+            query(
+                """
+                INSERT INTO user_permission_futures (room, "user", at, read, write, upload)
+                VALUES (:r, :u, :at, :read, :write, :upload)
+                """,
+                r=self.id,
+                u=user.id,
+                at=at,
+                read=read,
+                write=write,
+                upload=upload,
+            )
 
     def get_file(self, file_id: int):
         """Retrieves a file uploaded to this room by id.  Returns None if not found."""
@@ -2015,14 +2146,14 @@ class Room:
 
     def is_regular_message(self, msg_id: int):
         """
-        Returns true if the given id is a regular (i.e. not deleted, not a whisper) message of this
+        Returns true if the given id is a regular (i.e. not deleted, not a mod whisper) message of this
         room.
         """
         return query(
             """
             SELECT COUNT(*) FROM messages
             WHERE room = :r AND id = :m AND data IS NOT NULL
-                AND NOT filtered AND whisper IS NULL AND NOT whisper_mods
+                AND NOT filtered AND NOT whisper_mods
             """,
             r=self.id,
             m=msg_id,

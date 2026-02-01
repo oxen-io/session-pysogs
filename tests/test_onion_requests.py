@@ -138,7 +138,6 @@ def decrypt_reply(data, *, v, enc_type):
 
 
 def test_v3(room, client):
-
     # Construct an onion request for /room/test-room
     req = {'method': 'GET', 'endpoint': '/room/test-room'}
     data = build_payload(req, v=3, enc_type="xchacha20")
@@ -154,7 +153,6 @@ def test_v3(room, client):
 
 
 def test_v3_authenticated(room, mod, client):
-
     # Construct an onion request for /room/test-room
     req = {'method': 'GET', 'endpoint': '/room/test-room'}
     req['headers'] = auth.x_sogs(mod.ed_key, crypto.server_pubkey, req['method'], req['endpoint'])

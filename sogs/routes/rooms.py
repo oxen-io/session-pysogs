@@ -333,7 +333,7 @@ def get_user_permission_info(room, sid):
     but not room defaults are included in the response.
     """
 
-    user = muser.User(session_id=sid, try_blinding=True)
+    user = muser.User(session_id=sid)
     return jsonify(addExtraPermInfo(room.user_permissions(user)))
 
 
@@ -364,7 +364,7 @@ def get_user_future_permissions(room, sid):
     id is known then this returns results for the blinded id rather than the unblinded id.
     """
 
-    user = muser.User(session_id=sid, try_blinding=True)
+    user = muser.User(session_id=sid)
     return jsonify(room.user_future_permissions(user))
 
 
@@ -427,7 +427,7 @@ def set_permissions(room, sid):
     if the blinded ID is known to the server.
     """
 
-    user = muser.User(session_id=sid, try_blinding=True)
+    user = muser.User(session_id=sid)
     req = request.json
 
     perms = {}
@@ -445,22 +445,20 @@ def set_permissions(room, sid):
             perms[p] = None
 
     with db.transaction():
-        with user.check_blinding() as u:
+        if req.get('unschedule') is not False and any(
+            p in perms for p in ('read', 'write', 'upload')
+        ):
+            room.clear_future_permissions(
+                user,
+                mod=g.user,
+                read='read' in perms,
+                write='write' in perms,
+                upload='upload' in perms,
+            )
 
-            if req.get('unschedule') is not False and any(
-                p in perms for p in ('read', 'write', 'upload')
-            ):
-                room.clear_future_permissions(
-                    u,
-                    mod=g.user,
-                    read='read' in perms,
-                    write='write' in perms,
-                    upload='upload' in perms,
-                )
+        room.set_permissions(user, mod=g.user, **perms)
 
-            room.set_permissions(u, mod=g.user, **perms)
-
-            res = room.user_permissions(u)
+        res = room.user_permissions(user)
 
     if res:
         res = addExtraPermInfo(res)
@@ -636,7 +634,7 @@ def set_future_permissions(room, sid):
     scheduled against the *blinded* Session ID, if known, rather than the unblinded id.
     """
 
-    user = muser.User(session_id=sid, try_blinding=True)
+    user = muser.User(session_id=sid)
     req = request.json
 
     perms = {}
@@ -663,16 +661,15 @@ def set_future_permissions(room, sid):
         abort(http.BAD_REQUEST)
 
     with db.transaction():
-        with user.check_blinding() as u:
-            room.add_future_permission(u, mod=g.user, at=time.time() + duration, **perms)
+        room.add_future_permission(user, mod=g.user, at=time.time() + duration, **perms)
 
-            res = room.user_future_permissions(u)
+        res = room.user_future_permissions(user)
 
     return jsonify(res)
 
 
 @rooms.get("/room/<Room:room>/pollInfo/<int:info_updated>")
-@auth.read_required
+@auth.accessible_required
 def poll_room_info(room, info_updated):
     """
     Polls a room for metadata updates.

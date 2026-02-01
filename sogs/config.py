@@ -36,11 +36,13 @@ ALPHABET_FILTERS = set()
 ALPHABET_SILENT = True
 FILTER_MODS = False
 REQUIRE_BLIND_KEYS = True
+REQUIRE_BLIND_V2 = False
 TEMPLATE_PATH = 'templates'
 STATIC_PATH = 'static'
 UPLOAD_PATH = 'uploads'
 ROOM_OVERRIDES = {}
 FILTER_SETTINGS = {}
+USE_OLD_SOGS_FILTERING = True
 
 # Will be true if we're running as a uwsgi app, false otherwise; used where we need to do things
 # only in one case or another (e.g. database initialization only via app mode).
@@ -147,7 +149,10 @@ def load_config():
             'active_prune_threshold': ('ROOM_ACTIVE_PRUNE_THRESHOLD', None, days_to_seconds),
         },
         'direct_messages': {'expiry': ('DM_EXPIRY', None, days_to_seconds)},
-        'users': {'require_blind_keys': bool_opt('REQUIRE_BLIND_KEYS')},
+        'users': {
+            'require_blind_keys': bool_opt('REQUIRE_BLIND_KEYS'),
+            'require_blind_v2': bool_opt('REQUIRE_BLIND_V2'),
+        },
         'messages': {
             'history_prune_threshold': ('MESSAGE_HISTORY_PRUNE_THRESHOLD', None, days_to_seconds),
             'profanity_filter': bool_opt('PROFANITY_FILTER'),
@@ -156,6 +161,7 @@ def load_config():
             'alphabet_filters': ('ALPHABET_FILTERS', None, set_of_strs),
             'alphabet_silent': bool_opt('ALPHABET_SILENT'),
             'filter_mods': bool_opt('FILTER_MODS'),
+            'use_old_sogs_filtering': bool_opt('USE_OLD_SOGS_FILTERING'),
         },
         'web': {
             'template_path': ('TEMPLATE_PATH', path_exists, val_or_none),
