@@ -43,7 +43,7 @@ def migrate(conn, *, check_only):
         rows = conn.execute(
             "SELECT room, old_message_id_max, message_id_offset FROM room_import_hacks"
         )
-        for (room, id_max, offset) in rows:
+        for room, id_max, offset in rows:
             db.ROOM_IMPORT_HACKS[room] = (id_max, offset)
 
     if not db.HAVE_FILE_ID_HACKS and 'room_import_hacks' not in db.metadata.tables:

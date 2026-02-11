@@ -10,7 +10,6 @@ import json
 
 
 def test_list(client, room, room2, user, user2, admin, mod, global_mod, global_admin):
-
     room2.default_write = False
     room2.default_upload = False
 
@@ -750,17 +749,13 @@ def test_fetch_since_skip_deletions(client, room, user, no_rate_limit):
         *(deleted_entry(i, s) for i, s in ((2, 11), (4, 12), (5, 13), (8, 14), (9, 15))),
     ]
     assert get_and_clean_since(10) == [
-        *(deleted_entry(i, s) for i, s in ((2, 11), (4, 12), (5, 13), (8, 14), (9, 15))),
+        *(deleted_entry(i, s) for i, s in ((2, 11), (4, 12), (5, 13), (8, 14), (9, 15)))
     ]
     assert get_and_clean_since(11) == [
-        *(deleted_entry(i, s) for i, s in ((4, 12), (5, 13), (8, 14), (9, 15))),
+        *(deleted_entry(i, s) for i, s in ((4, 12), (5, 13), (8, 14), (9, 15)))
     ]
-    assert get_and_clean_since(13) == [
-        *(deleted_entry(i, s) for i, s in ((8, 14), (9, 15))),
-    ]
-    assert get_and_clean_since(14) == [
-        *(deleted_entry(i, s) for i, s in ((9, 15),)),
-    ]
+    assert get_and_clean_since(13) == [*(deleted_entry(i, s) for i, s in ((8, 14), (9, 15)))]
+    assert get_and_clean_since(14) == [*(deleted_entry(i, s) for i, s in ((9, 15),))]
     assert get_and_clean_since(15) == []
 
 
@@ -934,7 +929,6 @@ def test_pinning(client, room, user, admin, no_rate_limit):
 
 
 def test_posting(client, room, user, user2, mod, global_mod):
-
     url_post = "/room/test-room/message"
     d, s = (utils.encode_base64(x) for x in (b"post 1", pad64("sig 1")))
     r = sogs_post(client, url_post, {"data": d, "signature": s}, user)
@@ -957,7 +951,6 @@ def test_posting(client, room, user, user2, mod, global_mod):
 
 
 def test_whisper_to(client, room, user, user2, mod, global_mod):
-
     url_post = "/room/test-room/message"
     d, s = (utils.encode_base64(x) for x in (b"whisper 1", pad64("sig 1")))
     p = {"data": d, "signature": s, "whisper_to": user2.session_id}
@@ -1005,7 +998,6 @@ def test_whisper_to(client, room, user, user2, mod, global_mod):
 
 
 def test_whisper_mods(client, room, user, user2, mod, global_mod, admin):
-
     url_post = "/room/test-room/message"
     d, s = (utils.encode_base64(x) for x in (b"whisper 1", pad64("sig 1")))
     p = {"data": d, "signature": s, "whisper_mods": True}
@@ -1045,7 +1037,6 @@ def test_whisper_mods(client, room, user, user2, mod, global_mod, admin):
 
 
 def test_whisper_both(client, room, user, user2, mod, admin):
-
     # A whisper aimed at both a user *and* all mods (e.g. a warning to a user)
 
     url_post = "/room/test-room/message"
@@ -1138,7 +1129,6 @@ def test_whisper_both(client, room, user, user2, mod, admin):
 
 
 def test_edits(client, room, user, user2, mod, global_admin):
-
     url_post = "/room/test-room/message"
     d, s = (utils.encode_base64(x) for x in (b"post 1", pad64("sig 1")))
     r = sogs_post(client, url_post, {"data": d, "signature": s}, user)
@@ -1401,7 +1391,6 @@ def test_set_room_perms(client, room, user, mod):
 
 
 def test_set_room_perm_futures(client, room, user, mod):
-
     r = sogs_post(
         client,
         '/sequence',

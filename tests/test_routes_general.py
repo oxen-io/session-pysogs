@@ -134,7 +134,6 @@ def batch_test_endpoint4():
 
 
 def test_batch(client):
-
     d1, b1_exp = batch_data()
     b1 = client.post("/batch", json=d1)
     assert b1.json == b1_exp

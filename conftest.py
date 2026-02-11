@@ -267,7 +267,7 @@ def blind_user2(db):
 @pytest.fixture
 def no_rate_limit():
     """Disables post rate limiting for the test"""
-    import sogs.model.room as mroom
+    from sogs.model.room import Room as mroom
 
     saved = (mroom.rate_limit_size, mroom.rate_limit_interval)
     mroom.rate_limit_size, mroom.rate_limit_interval = None, None

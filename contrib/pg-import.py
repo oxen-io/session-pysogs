@@ -86,7 +86,6 @@ pgsql = psycopg.connect(args.postgresql_url[0], autocommit=True)
 
 
 with pgsql.transaction():
-
     curin = old.cursor()
     curout = pgsql.cursor()
 
@@ -131,7 +130,6 @@ with pgsql.transaction():
     curout.execute("ALTER TABLE rooms DROP CONSTRAINT room_image_fk")
 
     def copy(table):
-
         cols = [r['name'] for r in curin.execute(f"PRAGMA table_info({table})")]
         if not cols:
             raise RuntimeError(f"Expected table {table} does not exist in sqlite db")

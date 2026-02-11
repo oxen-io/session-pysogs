@@ -2,7 +2,6 @@ from flask import abort, request, jsonify, g, Blueprint, Response
 from werkzeug.exceptions import HTTPException
 from ..web import app
 from .. import crypto, config, db, http, utils
-from ..omq import send_mule
 from ..utils import jsonify_with_base64
 from ..model.room import Room, get_accessible_rooms, get_deletions_deprecated
 from ..model.user import User
@@ -186,7 +185,6 @@ def legacy_transform_message(m):
 
 @legacy.post("/messages")
 def handle_post_legacy_message():
-
     user, room = legacy_check_user_room(write=True)
 
     req = request.json
@@ -322,7 +320,13 @@ def handle_legacy_delete_messages(ids=None):
     ids = room.delete_posts(ids, user)
 
     if ids:
-        send_mule("messages_deleted", ids)
+        # avoid circular imports
+        try:
+            from ..omq import omq_global
+        except ModuleNotFoundError:
+            return
+
+        omq_global.send_mule("messages_deleted", ids)
 
     return jsonify({'status_code': http.OK})
 

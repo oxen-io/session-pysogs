@@ -1,12 +1,15 @@
 from .. import http, utils
-from . import auth
+from . import auth, omq_auth
+from model.room import Room
+from ..omq import omq_global
+from ..web import app
 
 from flask import abort, jsonify, g, Blueprint, request
 
 # Room message retrieving/submitting endpoints
 
-
 messages = Blueprint('messages', __name__)
+app.register_blueprint(messages)
 
 
 def qs_reactors():
@@ -15,7 +18,7 @@ def qs_reactors():
 
 @messages.get("/room/<Room:room>/messages/since/<int:seqno>")
 @auth.read_required
-def messages_since(room, seqno):
+def messages_since(room: Room, seqno):
     """
     Retrieves message *updates* from a room.  This is the main message polling endpoint in SOGS.
 
@@ -99,7 +102,7 @@ def messages_since(room, seqno):
 
 @messages.get("/room/<Room:room>/messages/before/<int:msg_id>")
 @auth.read_required
-def messages_before(room, msg_id):
+def messages_before(room: Room, msg_id):
     """
     Retrieves messages from the room preceding a given id.
 
@@ -142,7 +145,7 @@ def messages_before(room, msg_id):
 
 @messages.get("/room/<Room:room>/messages/recent")
 @auth.read_required
-def messages_recent(room):
+def messages_recent(room: Room):
     """
     Retrieves recent messages posted to this room.
 
@@ -181,7 +184,7 @@ def messages_recent(room):
 
 @messages.get("/room/<Room:room>/message/<int:msg_id>")
 @auth.read_required
-def message_single(room, msg_id):
+def message_single(room: Room, msg_id):
     """
     Returns a single message by ID.
 
@@ -308,9 +311,15 @@ def message_single(room, msg_id):
     return utils.jsonify_with_base64(msgs[0])
 
 
+"""
+    TOFIX:
+        - add some decorator to this s.t. it routes it to the correct OMQ endpoint
+"""
+
+
 @messages.post("/room/<Room:room>/message")
 @auth.user_required
-def post_message(room):
+def post_message(room: Room):
     """
     Posts a new message to a room.
 
@@ -359,8 +368,9 @@ def post_message(room):
     """
     req = request.json
 
-    msg = room.add_post(
-        g.user,
+    msg = omq_global.manager.receive_message(
+        user=g.user,
+        room=room,
         data=utils.decode_base64(req.get('data')),
         sig=utils.decode_base64(req.get('signature')),
         whisper_to=req.get('whisper_to'),
@@ -373,7 +383,7 @@ def post_message(room):
 
 @messages.put("/room/<Room:room>/message/<int:msg_id>")
 @auth.user_required
-def edit_message(room, msg_id):
+def edit_message(room: Room, msg_id):
     """
     Edits a message, replacing its existing content with new content and a new signature.
 
@@ -420,7 +430,7 @@ def edit_message(room, msg_id):
 
 @messages.delete("/room/<Room:room>/message/<int:msg_id>")
 @auth.user_required
-def remove_message(room, msg_id):
+def remove_message(room: Room, msg_id):
     """
     Remove a message by its message id
 
@@ -447,7 +457,7 @@ def remove_message(room, msg_id):
 
 
 @messages.post("/room/<Room:room>/pin/<int:msg_id>")
-def message_pin(room, msg_id):
+def message_pin(room: Room, msg_id):
     """
     Adds a pinned message to this room.
 
@@ -490,7 +500,7 @@ def message_pin(room, msg_id):
 
 
 @messages.post("/room/<Room:room>/unpin/<int:msg_id>")
-def message_unpin(room, msg_id):
+def message_unpin(room: Room, msg_id):
     """
     Remove a message from this room's pinned message list.
 
@@ -524,7 +534,7 @@ def message_unpin(room, msg_id):
 
 
 @messages.post("/room/<Room:room>/unpin/all")
-def message_unpin_all(room):
+def message_unpin_all(room: Room):
     """
     Removes *all* pinned messages from this room.
 
@@ -553,7 +563,7 @@ def message_unpin_all(room):
 @messages.put("/room/<Room:room>/reaction/<int:msg_id>/<path:reaction>")
 @auth.user_required
 @auth.read_required
-def message_react(room, msg_id, reaction):
+def message_react(room: Room, msg_id, reaction):
     """
     Adds a reaction to the given message in this room.  The user must have read access in the room.
 
@@ -606,7 +616,7 @@ def message_react(room, msg_id, reaction):
 @messages.delete("/room/<Room:room>/reaction/<int:msg_id>/<path:reaction>")
 @auth.user_required
 @auth.read_required
-def message_unreact(room, msg_id, reaction):
+def message_unreact(room: Room, msg_id, reaction):
     """
     Removes a reaction from a post this room.  The user must have read access in the room.  This
     only removes the user's own reaction but does not affect the reactions of other users.
@@ -642,7 +652,7 @@ def message_unreact(room, msg_id, reaction):
 @messages.delete("/room/<Room:room>/reactions/<int:msg_id>/<path:reaction>")
 @messages.delete("/room/<Room:room>/reactions/<int:msg_id>")
 @auth.mod_required
-def message_delete_reactions(room, msg_id, reaction=None):
+def message_delete_reactions(room: Room, msg_id, reaction=None):
     """
     Removes all reactions of all users from a post in this room.  The calling must have moderator
     permissions in the room.  This endpoint can either remove a single reaction (e.g. remove all 🍆
@@ -677,7 +687,7 @@ def message_delete_reactions(room, msg_id, reaction=None):
 
 @messages.get("/room/<Room:room>/reactors/<int:msg_id>/<path:reaction>")
 @auth.read_required
-def message_get_reactors(room, msg_id, reaction):
+def message_get_reactors(room: Room, msg_id, reaction):
     """
     Returns the list of all reactors who have added a particular reaction to a particular message.
 
