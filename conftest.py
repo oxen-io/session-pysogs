@@ -251,17 +251,31 @@ def banned_user(db):
 
 
 @pytest.fixture
-def blind_user(db):
+def blind15_user(db):
     import user
 
-    return user.User(blinded=True)
+    return user.User(blinded15=True)
 
 
 @pytest.fixture
-def blind_user2(db):
+def blind15_user2(db):
     import user
 
-    return user.User(blinded=True)
+    return user.User(blinded15=True)
+
+
+@pytest.fixture
+def blind25_user(db):
+    import user
+
+    return user.User(blinded25=True)
+
+
+@pytest.fixture
+def blind25_user2(db):
+    import user
+
+    return user.User(blinded25=True)
 
 
 @pytest.fixture

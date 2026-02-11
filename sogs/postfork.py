@@ -11,7 +11,6 @@ except ModuleNotFoundError:
         def __call__(self, f):
             pass
 
-
 else:
     import uwsgidecorators
 

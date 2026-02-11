@@ -54,22 +54,6 @@ CREATE TABLE inbox (
 CREATE INDEX inbox_recipient ON inbox(recipient);
 """,
     },
-    'needs_blinding': {
-        'sqlite': [
-            """
-CREATE TABLE needs_blinding (
-    blinded_abs TEXT NOT NULL PRIMARY KEY,
-    "user" BIGINT NOT NULL UNIQUE REFERENCES users ON DELETE CASCADE
-)
-"""
-        ],
-        'pgsql': """
-CREATE TABLE needs_blinding (
-    blinded_abs TEXT NOT NULL PRIMARY KEY,
-    "user" BIGINT NOT NULL UNIQUE REFERENCES users ON DELETE CASCADE
-)
-""",
-    },
 }
 
 

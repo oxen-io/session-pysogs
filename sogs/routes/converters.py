@@ -27,10 +27,10 @@ class RoomTokenConverter(BaseConverter):
 
 class AnySessionIDConverter(BaseConverter):
     """
-    A 66-hex-character Session ID (`05...`) or blinded Session ID (`15...`).
+    A 66-hex-character Session ID (`05...`) or blinded Session ID (`15...` or `25...`).
     """
 
-    regex = r"[01]5[0-9a-fA-F]{64}"
+    regex = r"[012]5[0-9a-fA-F]{64}"
 
     def to_python(self, value):
         return value
@@ -38,10 +38,10 @@ class AnySessionIDConverter(BaseConverter):
 
 class BlindSessionIDConverter(BaseConverter):
     """
-    A 66-hex-character blinded Session ID (`15...`).  Non-blinded Session IDs are not permitted.
+    A 66-hex-character blinded Session ID (`15...` or `25...`).  Non-blinded Session IDs are not permitted.
     """
 
-    regex = r"15[0-9a-fA-F]{64}"
+    regex = r"[12]5[0-9a-fA-F]{64}"
 
     def to_python(self, value):
         return value

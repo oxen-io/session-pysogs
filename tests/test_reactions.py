@@ -124,7 +124,7 @@ def test_reactions(client, room, room2, user, user2, mod, admin, global_mod, glo
             'data': 'ZWRpdGVkIGZha2UgZGF0YSA0',
             'signature': 'ZmFrZSBzaWcgNGI' + 'A' * 71 + '==',
             'seqno': seqno + 17,
-            'session_id': mod.session_id,
+            'session_id': mod.using_id,
             'reactions': exp_reactions,
         }
     ]
@@ -258,7 +258,7 @@ def test_reactions(client, room, room2, user, user2, mod, admin, global_mod, glo
         'data': None,
         'deleted': True,
         'seqno': seqno,
-        'session_id': user.session_id,
+        'session_id': user.using_id,
     }
 
 
@@ -291,7 +291,7 @@ def test_reaction_encoding(client, room, user, user2):
             'data': 'ZmFrZSBkYXRh',  # fake data
             'id': 1,
             'seqno': 5,
-            'session_id': user.session_id,
+            'session_id': user.using_id,
             'signature': 'ZmFrZSBzaWc' + 'A' * 75 + '==',
             'reactions': {
                 '❤️': {'count': 2, 'index': 1, 'you': True},

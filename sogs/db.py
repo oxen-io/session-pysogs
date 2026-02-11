@@ -5,6 +5,7 @@ import os
 import logging
 import importlib.resources
 import sqlalchemy
+from sys import version_info as python_version
 from sqlalchemy.sql.expression import bindparam
 
 HAVE_FILE_ID_HACKS = False
@@ -51,7 +52,7 @@ def query(query, *, dbconn=None, bind_expanding=None, **params):
     if bind_expanding:
         q = q.bindparams(*(bindparam(c, expanding=True) for c in bind_expanding))
 
-    return dbconn.execute(q, **params)
+    return dbconn.execute(q, params)
 
 
 # Begins a (potentially nested) transaction.  Takes an optional connection; if omitted uses
@@ -108,6 +109,16 @@ def insert_and_get_row(insert, _table, _pk, *, dbconn=None, **params):
         return query(f"SELECT * FROM {_table} WHERE {_pk} = :pk", pk=pkval).first()
 
 
+def read_schema(flavour: str):
+    if python_version >= (3, 9):
+        with (importlib.resources.files('sogs') / f"schema.{flavour}").open(
+            "r", encoding='utf-8', errors='strict'
+        ) as f:
+            return f.read()
+    else:
+        return importlib.resources.read_text('sogs', f"schema.{flavour}")
+
+
 def database_init(create=None, upgrade=True):
     """
     Perform database initialization: constructs the schema, if necessary, and performs any required
@@ -140,10 +151,10 @@ def database_init(create=None, upgrade=True):
 
         logging.warning("No database detected; creating new database schema")
         if engine.name == "sqlite":
-            conn.connection.executescript(importlib.resources.read_text('sogs', 'schema.sqlite'))
+            conn.connection.executescript(read_schema('sqlite'))
         elif engine.name == "postgresql":
             cur = conn.connection.cursor()
-            cur.execute(importlib.resources.read_text('sogs', 'schema.pgsql'))
+            cur.execute(read_schema('pgsql'))
             cur.close()
         else:
             err = f"Don't know how to create the database for {engine.name}"
@@ -174,8 +185,6 @@ def database_init(create=None, upgrade=True):
     # Make sure the system admin users exists
     create_admin_user(conn)
 
-    check_needs_blinding(conn)
-
     return created or migrated
 
 
@@ -195,42 +204,6 @@ def create_admin_user(dbconn):
         sid="ff" + crypto.server_pubkey_hex,
         dbconn=dbconn,
     )
-
-
-def check_needs_blinding(dbconn):
-    if not config.REQUIRE_BLIND_KEYS:
-        return
-
-    with transaction(dbconn):
-        for uid, sid in query(
-            """
-            SELECT id, session_id FROM users WHERE id IN (
-                SELECT "user" FROM user_permission_overrides
-                UNION
-                SELECT "user" FROM user_permission_futures
-                UNION
-                SELECT "user" FROM user_ban_futures
-                UNION
-                SELECT id FROM users WHERE session_id LIKE '05%' AND (admin OR moderator OR banned)
-                EXCEPT
-                SELECT "user" FROM needs_blinding
-            )
-            AND session_id LIKE '05%'
-            """,
-            dbconn=dbconn,
-        ):
-            try:
-                pos_derived = crypto.compute_blinded_abs_id(sid)
-            except Exception as e:
-                logging.warning(f"Failed to blind session_id {sid}: {e}")
-                continue
-
-            query(
-                'INSERT INTO needs_blinding (blinded_abs, "user") VALUES (:blinded, :uid)',
-                blinded=pos_derived,
-                uid=uid,
-                dbconn=dbconn,
-            )
 
 
 engine, engine_initial_pid, metadata = None, None, None
@@ -300,7 +273,7 @@ def init_engine(*args, **kwargs):
         @sqlalchemy.event.listens_for(engine, "begin")
         def do_begin(conn):
             # emit our own BEGIN
-            conn.execute("BEGIN IMMEDIATE")
+            conn.exec_driver_sql("BEGIN IMMEDIATE")
 
     else:
         have_returning = True

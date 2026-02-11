@@ -36,6 +36,7 @@ ALPHABET_FILTERS = set()
 ALPHABET_SILENT = True
 FILTER_MODS = False
 REQUIRE_BLIND_KEYS = True
+REQUIRE_BLIND_V2 = False
 TEMPLATE_PATH = 'templates'
 STATIC_PATH = 'static'
 UPLOAD_PATH = 'uploads'
@@ -147,7 +148,10 @@ def load_config():
             'active_prune_threshold': ('ROOM_ACTIVE_PRUNE_THRESHOLD', None, days_to_seconds),
         },
         'direct_messages': {'expiry': ('DM_EXPIRY', None, days_to_seconds)},
-        'users': {'require_blind_keys': bool_opt('REQUIRE_BLIND_KEYS')},
+        'users': {
+            'require_blind_keys': bool_opt('REQUIRE_BLIND_KEYS'),
+            'require_blind_v2': bool_opt('REQUIRE_BLIND_V2'),
+        },
         'messages': {
             'history_prune_threshold': ('MESSAGE_HISTORY_PRUNE_THRESHOLD', None, days_to_seconds),
             'profanity_filter': bool_opt('PROFANITY_FILTER'),

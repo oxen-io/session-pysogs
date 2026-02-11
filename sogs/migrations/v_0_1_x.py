@@ -5,10 +5,11 @@ import os
 import logging
 import time
 from .exc import DatabaseUpgradeRequired
+from .. import db
 
 
 def migrate(conn, *, check_only):
-    n_rooms = conn.execute("SELECT COUNT(*) FROM rooms").first()[0]
+    n_rooms = db.query("SELECT COUNT(*) FROM rooms", dbconn=conn).first()[0]
 
     # Migration from a v0.1.x database:
     if n_rooms > 0 or not os.path.exists("database.db"):
@@ -39,7 +40,6 @@ def sqlite_connect_readonly(path):
 
 
 def import_from_0_1_x(conn):
-
     from .. import config, db, utils
 
     # Old database database.db is a single table database containing just the list of rooms:
@@ -109,7 +109,6 @@ def import_from_0_1_x(conn):
         )
 
         with sqlite_connect_readonly(room_db_path) as rconn:
-
             # Messages were stored in this:
             #
             #    CREATE TABLE IF NOT EXISTS messages (
@@ -235,7 +234,6 @@ def import_from_0_1_x(conn):
                     and data in (None, "deleted")
                     and signature in (None, "deleted")
                 ):
-
                     # Deleted message; we still need to insert a tombstone for it, and copy the
                     # deletion id as the "seqno" field.  (We do this with a second query
                     # because the first query is going to trigger an automatic update of the
@@ -340,7 +338,6 @@ def import_from_0_1_x(conn):
             n_files = rconn.execute("SELECT COUNT(*) FROM files").fetchone()[0]
 
             for file_id, timestamp in rconn.execute("SELECT id, timestamp FROM files"):
-
                 # file_id is an integer value but stored in a TEXT field, of course.
                 file_id = int(file_id)
 
@@ -507,7 +504,6 @@ def import_from_0_1_x(conn):
                 """,
                 (import_cutoff,),
             ):
-
                 ins_user(session_id)
                 db.query(
                     """
