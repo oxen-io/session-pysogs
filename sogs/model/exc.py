@@ -61,7 +61,7 @@ class BadPermission(RuntimeError):
 
 class InvalidData(RuntimeError):
     """Thrown if something in model was fed invalid data, for example a signature of an invalid
-    size, or an unparseable entity."""
+    size, or an unparsable entity."""
 
 
 class PostRejected(RuntimeError):

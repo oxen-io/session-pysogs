@@ -55,7 +55,7 @@ def poll_outbox(msgid):
 @auth.blind_user_required
 def get_inbox():
     """
-    Retrieves all of the user's recieved messages (up to `limit`).
+    Retrieves all of the user's received messages (up to `limit`).
     """
     return _box(False)
 

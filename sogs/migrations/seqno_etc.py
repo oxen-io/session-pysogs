@@ -27,7 +27,7 @@ def migrate(conn, *, check_only):
         raise DatabaseUpgradeRequired("sequence column renames & pinned_messages table")
 
     # We can't insert the required pinned_messages because we don't have the pinned_by user, but
-    # that isn't a big deal since we didn't have any endpoints for pinned messsages before this
+    # that isn't a big deal since we didn't have any endpoints for pinned messages before this
     # anyway, so we just recreate the whole thing (along with triggers which we also need to
     # update/fix)
     logging.warning("Recreating pinned_messages table")

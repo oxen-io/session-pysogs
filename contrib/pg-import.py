@@ -6,7 +6,7 @@
 # - update the sogs.ini to change the db to postgres
 # - start sogs
 #
-# This operation is not currently reversible, this script is only ocassionally tested and may be
+# This operation is not currently reversible, this script is only occasionally tested and may be
 # outdated, and you should not do this unless you know what you are doing.
 
 import psycopg
