@@ -1,4 +1,3 @@
-
 const makebuffer = (raw) => {
     let b = Uint8Array.from(window.atob(raw), (v) => v.charCodeAt(0));
     // This data is padded with a 0x80 delimiter followed by any number of 0x00 bytes, but these are
@@ -10,6 +9,19 @@ const makebuffer = (raw) => {
         realLength--;
     return b.subarray(0, realLength);
 };
+
+const formatBytes = (bytes, decimals = 2) => {
+    if (bytes === 0) return '0 Bytes';
+
+    const k = 1024;
+    const dm = decimals < 0 ? 0 : decimals;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+};
+
 const setup = async () => {
     const elem = document.getElementById("messages");
     if(elem)
@@ -37,12 +49,12 @@ const setup = async () => {
 
             if(msgs.length === 0)
             {
-                elem.appendChild(document.createTextNode(`the ${window.view_room} room is empty`));
+                elem.appendChild(document.createTextNode(`the ${window.view_room_token} room is empty`));
             }
 
             for(let msg of msgs.reverse())
             {
-                let e = document.createElement("li")
+                let e = document.createElement("li");
                 try
                 {
                     const data = makebuffer(msg.data);
@@ -53,8 +65,41 @@ const setup = async () => {
                     }
 
                     const plain = Message.decode(data).dataMessage;
+
+                    // reply
+                    if (plain.quote)
+                    {
+                        let originalMsg = document.createElement('p');
+                        originalMsg.classList.add('text-sm', 'italic', 'border-l-2', 'border-accent', 'pl-2');
+
+                        let authorId = plain.quote.author;
+                        authorId = authorId.substr(authorId.length - 8);
+                        originalMsg.appendChild(document.createTextNode("..." + authorId +": "+plain.quote.text));
+                        e.appendChild(originalMsg);
+                    }
+
+                    // message body
                     e.appendChild(document.createTextNode(plain.profile.displayName +": "+plain.body));
+                    e.classList.add('bg-gray-300','dark:bg-lightGray', 'w-fit', 'rounded-lg', 'p-2', 'my-2')
                     elem.appendChild(e);
+
+                    // show attachments
+                    for(let attachment of plain.attachments)
+                    {
+
+                        let attachmentElement = document.createElement('p');
+                        attachmentElement.appendChild(document.createTextNode("📎\xa0\xa0\xa0"));
+
+                        let attachmentLink = document.createElement('a');
+                        attachmentLink.appendChild(document.createTextNode((attachment.fileName || attachment.contentType) + ` (${formatBytes(attachment.size)})` ));
+                        attachmentLink.href = attachment.url;
+                        attachmentLink.download = (attachment.fileName || "");
+
+                        attachmentElement.appendChild(attachmentLink);
+                        attachmentElement.classList.add('text-sm', 'italic', 'pl-1');
+                        e.appendChild(attachmentElement);
+
+                    }
 
                 }
                 catch(ex)
@@ -66,7 +111,7 @@ const setup = async () => {
         if(url)
         {
             await update();
-            setInterval(update, 5000);
+            setInterval(update, 60000);
         }
         else
         {

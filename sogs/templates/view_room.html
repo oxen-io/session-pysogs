@@ -1,20 +1,58 @@
 {% extends "base.html" %}
 
+<script src="{{ url_for('static', filename='invite_modal.js') }}"></script>
+
+{% block modal %}
+<div id="modal" style="display: none;" class="bg-black bg-opacity-80 w-screen h-screen absolute">
+  <div onclick="handleCloseModalClick()" class="flex flex-col justify-center absolute bg-lightGray rounded-lg w-5/6 max-w-2xl aspect-square left-1/2 translate-x-[-50%] top-1/2 translate-y-[-50%] ">
+    <div class="flex w-full justify-between ">
+      <pre class="text-white break-all whitespace-normal m-2">{{room.url}}</pre>
+      <button onclick="handleCloseModalClick()" class="text-white bold text-center rounded px-1 m-2 font-sans"> X</button>
+    </div>
+    <img class="aspect-square " src="invite.png" />
+  </div>
+</div>
+
+  
+{% endblock %}
+
+{% block heading %}
+{{room.token}}
+{% endblock %}
+
+{% block invite %}
+<div class=" h-28 flex flex-col justify-center ">
+  <button onclick="handleOpenModalClick()" class="dark:text-white text-center text-xs sm:text-base">
+    <img class="h-16 sm:h-20 sm:pt-2 aspect-square" src="invite.png" />
+    Invite Link
+  </button>
+</div>
+
+{% endblock %}
+
+
 {% block body %}
-<center>
-  <img src="invite.png" style="margin: 2em" />
-  <pre>{{room.url}}</pre>
-</center>
-{% if show_recent %}
-  <ul id="messages">
-    <li>loading...</li>
-  </ul>
-  <script>
-    window.view_room = "{{room.token}}";
-    window.poll_room_url = "/room/{{room.token}}/messages/recent";
-  </script>
-  <script src="/static/protobuf.min.js"></script>
-  <script src="/static/view_room.js"></script>
-{%endif%}
+
+<section class="overflow-y-auto text-black dark:text-white flex flex-col-reverse items-center ">
+  {% if show_recent %}
+
+    <div id="messages-container" class=" m-2 flex flex-col-reverse w-[93vw] " >
+      <ul id="messages" class="m-2">
+        <!-- message styles applied in view_room.js -->
+        <li class='bg-gray-300, dark:bg-lightGray, w-fit, rounded-lg, p-2, my-2'>loading...</li>
+      </ul>
+    </div>
+    <script>
+      window.view_room_token = "{{room.token}}";
+      window.view_room_url = "{{room.url}}";
+      window.poll_room_url = "/room/{{room.token}}/messages/recent";
+    </script>
+    <script src="/static/protobuf.min.js"></script>
+    <script src="/static/view_room.js"></script>
+  {%endif%}
+</section>
+
+
+
 
 {% endblock %}
