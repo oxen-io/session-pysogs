@@ -14,9 +14,10 @@ class Message:
         recip: recipant user of the message
         data: opaque message data
         signature: signature of data
+        alt_id: signing key if not 25-blinded session id
     """
 
-    def __init__(self, row=None, *, sender=None, recip=None, data=None):
+    def __init__(self, row=None, *, sender=None, recip=None, data=None, alt_id=None):
         """
         Constructs a Message from a pre-retrieved row *or* sender recipient and data.
         """
@@ -28,8 +29,8 @@ class Message:
 
             row = insert_and_get_row(
                 """
-                INSERT INTO inbox (sender, recipient, body, expiry)
-                VALUES (:sender, :recipient, :data, :expiry)
+                INSERT INTO inbox (sender, recipient, body, expiry, alt_id)
+                VALUES (:sender, :recipient, :data, :expiry, :alt_id)
                 """,
                 "inbox",
                 "id",
@@ -37,6 +38,7 @@ class Message:
                 recipient=recip.id,
                 data=data,
                 expiry=time.time() + config.DM_EXPIRY,
+                alt_id=alt_id,
             )
         # sanity check
         assert row is not None
@@ -111,6 +113,14 @@ class Message:
         if not hasattr(self, "_sender"):
             self._sender = User(id=self._row['sender'], autovivify=False)
         return self._sender
+
+    @property
+    def signing_key(self):
+        if not hasattr(self, "_signing_key"):
+            self._signing_key = self._row['alt_id']
+            if self._signing_key is None:
+                self._signing_key = User(id=self._row['sender'], autovivify=False).session_id
+        return self._signing_key
 
     @property
     def recipient(self):

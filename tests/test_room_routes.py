@@ -10,7 +10,6 @@ import json
 
 
 def test_list(client, room, room2, user, user2, admin, mod, global_mod, global_admin):
-
     room2.default_write = False
     room2.default_upload = False
 
@@ -750,17 +749,13 @@ def test_fetch_since_skip_deletions(client, room, user, no_rate_limit):
         *(deleted_entry(i, s) for i, s in ((2, 11), (4, 12), (5, 13), (8, 14), (9, 15))),
     ]
     assert get_and_clean_since(10) == [
-        *(deleted_entry(i, s) for i, s in ((2, 11), (4, 12), (5, 13), (8, 14), (9, 15))),
+        *(deleted_entry(i, s) for i, s in ((2, 11), (4, 12), (5, 13), (8, 14), (9, 15)))
     ]
     assert get_and_clean_since(11) == [
-        *(deleted_entry(i, s) for i, s in ((4, 12), (5, 13), (8, 14), (9, 15))),
+        *(deleted_entry(i, s) for i, s in ((4, 12), (5, 13), (8, 14), (9, 15)))
     ]
-    assert get_and_clean_since(13) == [
-        *(deleted_entry(i, s) for i, s in ((8, 14), (9, 15))),
-    ]
-    assert get_and_clean_since(14) == [
-        *(deleted_entry(i, s) for i, s in ((9, 15),)),
-    ]
+    assert get_and_clean_since(13) == [*(deleted_entry(i, s) for i, s in ((8, 14), (9, 15)))]
+    assert get_and_clean_since(14) == [*(deleted_entry(i, s) for i, s in ((9, 15),))]
     assert get_and_clean_since(15) == []
 
 
@@ -934,7 +929,6 @@ def test_pinning(client, room, user, admin, no_rate_limit):
 
 
 def test_posting(client, room, user, user2, mod, global_mod):
-
     url_post = "/room/test-room/message"
     d, s = (utils.encode_base64(x) for x in (b"post 1", pad64("sig 1")))
     r = sogs_post(client, url_post, {"data": d, "signature": s}, user)
@@ -957,7 +951,6 @@ def test_posting(client, room, user, user2, mod, global_mod):
 
 
 def test_whisper_to(client, room, user, user2, mod, global_mod):
-
     url_post = "/room/test-room/message"
     d, s = (utils.encode_base64(x) for x in (b"whisper 1", pad64("sig 1")))
     p = {"data": d, "signature": s, "whisper_to": user2.session_id}
@@ -1005,7 +998,6 @@ def test_whisper_to(client, room, user, user2, mod, global_mod):
 
 
 def test_whisper_mods(client, room, user, user2, mod, global_mod, admin):
-
     url_post = "/room/test-room/message"
     d, s = (utils.encode_base64(x) for x in (b"whisper 1", pad64("sig 1")))
     p = {"data": d, "signature": s, "whisper_mods": True}
@@ -1045,7 +1037,6 @@ def test_whisper_mods(client, room, user, user2, mod, global_mod, admin):
 
 
 def test_whisper_both(client, room, user, user2, mod, admin):
-
     # A whisper aimed at both a user *and* all mods (e.g. a warning to a user)
 
     url_post = "/room/test-room/message"
@@ -1138,7 +1129,6 @@ def test_whisper_both(client, room, user, user2, mod, admin):
 
 
 def test_edits(client, room, user, user2, mod, global_admin):
-
     url_post = "/room/test-room/message"
     d, s = (utils.encode_base64(x) for x in (b"post 1", pad64("sig 1")))
     r = sogs_post(client, url_post, {"data": d, "signature": s}, user)
@@ -1401,7 +1391,6 @@ def test_set_room_perms(client, room, user, mod):
 
 
 def test_set_room_perm_futures(client, room, user, mod):
-
     r = sogs_post(
         client,
         '/sequence',
@@ -1499,7 +1488,7 @@ def test_set_room_perms_blinding(client, db, room, user, user2, mod):
         r = client.get(
             f'/room/{room.token}',
             headers=x_sogs(
-                user.ed_key, crypto.server_pubkey, 'GET', f'/room/{room.token}', blinded=True
+                user.ed_key, crypto.server_pubkey, 'GET', f'/room/{room.token}', blinded15=True
             ),
         )
         assert r.status_code == 200
@@ -1531,7 +1520,7 @@ def test_set_room_perms_blinding(client, db, room, user, user2, mod):
         r = client.post(
             '/sequence',
             headers=x_sogs(
-                mod.ed_key, crypto.server_pubkey, 'POST', '/sequence', body, blinded=True
+                mod.ed_key, crypto.server_pubkey, 'POST', '/sequence', body, blinded15=True
             ),
             content_type='application/json',
             data=body,
@@ -1570,16 +1559,16 @@ def test_set_room_perms_blinding(client, db, room, user, user2, mod):
                 crypto.server_pubkey,
                 'GET',
                 f'/room/{room.token}/permissions',
-                blinded=True,
+                blinded15=True,
             ),
         )
         assert r.status_code == 200
         assert r.json == {
             # user has a known blinded id so should have been inserted blinded:
-            user.blinded_id: {'read': True, 'write': False},
+            user.blinded15_id: {'read': True, 'write': False},
             # user2 doesn't, so would be set up unblinded:
             user2.session_id: {'upload': False},
-            mod.blinded_id: {'moderator': True},
+            mod.blinded15_id: {'moderator': True},
         }
 
         r = client.get(
@@ -1589,12 +1578,12 @@ def test_set_room_perms_blinding(client, db, room, user, user2, mod):
                 crypto.server_pubkey,
                 'GET',
                 f'/room/{room.token}/futurePermissions',
-                blinded=True,
+                blinded15=True,
             ),
         )
         assert r.status_code == 200
         assert filter_timestamps(r.json) == [
-            {'session_id': user.blinded_id, 'write': True},
+            {'session_id': user.blinded15_id, 'write': True},
             {'session_id': user2.session_id, 'upload': True},
         ]
         assert r.json[0]['at'] == from_now.seconds(0.001)
@@ -1605,7 +1594,7 @@ def test_set_room_perms_blinding(client, db, room, user, user2, mod):
         r = client.get(
             f'/room/{room.token}',
             headers=x_sogs(
-                user2.ed_key, crypto.server_pubkey, 'GET', f'/room/{room.token}', blinded=True
+                user2.ed_key, crypto.server_pubkey, 'GET', f'/room/{room.token}', blinded15=True
             ),
         )
         assert r.status_code == 200
@@ -1617,14 +1606,14 @@ def test_set_room_perms_blinding(client, db, room, user, user2, mod):
                 crypto.server_pubkey,
                 'GET',
                 f'/room/{room.token}/permissions',
-                blinded=True,
+                blinded15=True,
             ),
         )
         assert r.status_code == 200
         assert r.json == {
-            user.blinded_id: {'read': True, 'write': False},
-            user2.blinded_id: {'upload': False},
-            mod.blinded_id: {'moderator': True},
+            user.blinded15_id: {'read': True, 'write': False},
+            user2.blinded15_id: {'upload': False},
+            mod.blinded15_id: {'moderator': True},
         }
 
         r = client.get(
@@ -1634,13 +1623,13 @@ def test_set_room_perms_blinding(client, db, room, user, user2, mod):
                 crypto.server_pubkey,
                 'GET',
                 f'/room/{room.token}/futurePermissions',
-                blinded=True,
+                blinded15=True,
             ),
         )
         assert r.status_code == 200
         assert filter_timestamps(r.json) == [
-            {'session_id': user.blinded_id, 'write': True},
-            {'session_id': user2.blinded_id, 'upload': True},
+            {'session_id': user.blinded15_id, 'write': True},
+            {'session_id': user2.blinded15_id, 'upload': True},
         ]
         assert r.json[0]['at'] == from_now.seconds(0.001)
         assert r.json[1]['at'] == from_now.seconds(0.002)
@@ -1653,19 +1642,19 @@ def test_set_room_perms_blinding(client, db, room, user, user2, mod):
                 crypto.server_pubkey,
                 'GET',
                 f'/room/{room.token}/permissions/{user.session_id}',
-                blinded=True,
+                blinded15=True,
             ),
         )
         assert r.status_code == 200
         assert r.json == {'read': True, 'write': False}
         r2 = client.get(
-            f'/room/{room.token}/permissions/{user.blinded_id}',
+            f'/room/{room.token}/permissions/{user.blinded15_id}',
             headers=x_sogs(
                 mod.ed_key,
                 crypto.server_pubkey,
                 'GET',
-                f'/room/{room.token}/permissions/{user.blinded_id}',
-                blinded=True,
+                f'/room/{room.token}/permissions/{user.blinded15_id}',
+                blinded15=True,
             ),
         )
         assert r2.status_code == 200
@@ -1678,20 +1667,20 @@ def test_set_room_perms_blinding(client, db, room, user, user2, mod):
                 crypto.server_pubkey,
                 'GET',
                 f'/room/{room.token}/futurePermissions/{user2.session_id}',
-                blinded=True,
+                blinded15=True,
             ),
         )
         assert r.status_code == 200
         assert filter_timestamps(r.json) == [{'upload': True}]
         assert r.json[0]['at'] == from_now.seconds(0.002)
         r2 = client.get(
-            f'/room/{room.token}/futurePermissions/{user2.blinded_id}',
+            f'/room/{room.token}/futurePermissions/{user2.blinded15_id}',
             headers=x_sogs(
                 mod.ed_key,
                 crypto.server_pubkey,
                 'GET',
-                f'/room/{room.token}/futurePermissions/{user2.blinded_id}',
-                blinded=True,
+                f'/room/{room.token}/futurePermissions/{user2.blinded15_id}',
+                blinded15=True,
             ),
         )
         assert r2.status_code == 200
